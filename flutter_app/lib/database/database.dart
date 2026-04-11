@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -53,6 +53,32 @@ class AppDatabase extends _$AppDatabase {
       if (from < 8) {
         await m.addColumn(exerciseCategories, exerciseCategories.exerciseType);
         await m.addColumn(workoutSets, workoutSets.grade);
+      }
+      if (from < 9) {
+        // Insert Bouldering exercises if not already present (case-insensitive)
+        const bouldering = [
+          ('Max Boulder',  'Bouldering', 1),
+          ('Flash',        'Bouldering', 1),
+          ('Onsight',      'Bouldering', 1),
+          ('Moonboard',    'Bouldering', 1),
+          ('Kilter Board', 'Bouldering', 1),
+        ];
+        for (final (name, group, type) in bouldering) {
+          final existing = await (select(exerciseCategories)
+                ..where((t) => t.name.like(name)))
+              .get();
+          final found = existing.any(
+              (c) => c.name.toLowerCase() == name.toLowerCase());
+          if (!found) {
+            await into(exerciseCategories).insert(
+              ExerciseCategoriesCompanion.insert(
+                name:         name,
+                groupName:    Value(group),
+                exerciseType: Value(type),
+              ),
+            );
+          }
+        }
       }
     },
   );
