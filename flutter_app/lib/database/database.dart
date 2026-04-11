@@ -420,6 +420,45 @@ class AppDatabase extends _$AppDatabase {
         rows.map((r) => r.read<int>('category_id')).toSet());
   }
 
+  /// Returns workouts scheduled for [dateStr] (by weekday or specific date),
+  /// each paired with the exercises it contains — ordered alphabetically.
+  Stream<List<(Workout, List<ExerciseCategory>)>> watchPlannedWorkoutsForDate(
+      String dateStr) {
+    final weekday = dateFromStr(dateStr).weekday;
+    return customSelect(
+      'SELECT DISTINCT w.id AS w_id, w.name AS w_name, '
+      'ec.id AS c_id, ec.name AS c_name, ec.group_name '
+      'FROM plan_workouts pw '
+      'JOIN workouts w ON w.id = pw.workout_id '
+      'JOIN workout_exercises we ON we.workout_id = pw.workout_id '
+      'JOIN exercise_categories ec ON ec.id = we.category_id '
+      'WHERE pw.date_str = ? OR pw.weekday = ? '
+      'ORDER BY w.name, ec.name',
+      variables: [Variable.withString(dateStr), Variable.withInt(weekday)],
+      readsFrom: {planWorkouts, workouts, workoutExercises, exerciseCategories},
+    ).watch().map((rows) {
+      final order        = <int>[];
+      final names        = <int, String>{};
+      final exMap        = <int, List<ExerciseCategory>>{};
+      for (final row in rows) {
+        final wId    = row.read<int>('w_id');
+        final wName  = row.read<String>('w_name');
+        final cId    = row.read<int>('c_id');
+        final cName  = row.read<String>('c_name');
+        final cGroup = row.readNullable<String>('group_name');
+        if (!names.containsKey(wId)) {
+          order.add(wId);
+          names[wId] = wName;
+          exMap[wId] = [];
+        }
+        exMap[wId]!.add(ExerciseCategory(id: cId, name: cName, groupName: cGroup));
+      }
+      return order
+          .map((wId) => (Workout(id: wId, name: names[wId]!), exMap[wId]!))
+          .toList();
+    });
+  }
+
   static String? _nullIfEmpty(String? s) =>
       (s == null || s.trim().isEmpty) ? null : s.trim();
 

@@ -57,6 +57,11 @@ final plannedCategoryIdsProvider =
     StreamProvider.family<Set<int>, String>((ref, dateStr) =>
         ref.watch(dbProvider).watchPlannedCategoryIdsForDate(dateStr));
 
+final plannedWorkoutsForDateProvider =
+    StreamProvider.family<List<(Workout, List<ExerciseCategory>)>, String>(
+        (ref, dateStr) =>
+            ref.watch(dbProvider).watchPlannedWorkoutsForDate(dateStr));
+
 // ── Selected date (home screen) ────────────────────────────────────────────
 
 final selectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());

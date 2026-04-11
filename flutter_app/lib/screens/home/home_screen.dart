@@ -12,12 +12,13 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selected    = ref.watch(selectedDateProvider);
-    final dateStr     = dateStrFrom(selected);
-    final setsAsync   = ref.watch(setsForDayProvider(dateStr));
-    final cats        = ref.watch(categoriesProvider).value ?? [];
-    final woDates     = ref.watch(workoutDatesProvider).value ?? [];
-    final plannedIds  = ref.watch(plannedCategoryIdsProvider(dateStr)).value ?? <int>{};
+    final selected  = ref.watch(selectedDateProvider);
+    final dateStr   = dateStrFrom(selected);
+    final setsAsync = ref.watch(setsForDayProvider(dateStr));
+    final cats      = ref.watch(categoriesProvider).value ?? [];
+    final woDates   = ref.watch(workoutDatesProvider).value ?? [];
+    final plannedWorkouts =
+        ref.watch(plannedWorkoutsForDateProvider(dateStr)).value ?? [];
 
     return Scaffold(
       body: Column(
@@ -35,32 +36,73 @@ class HomeScreen extends ConsumerWidget {
           ),
           Expanded(
             child: setsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () =>
+                  const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('$e')),
               data: (sets) {
                 final grouped = <int, List<WorkoutSet>>{};
                 for (final s in sets) {
                   grouped.putIfAbsent(s.categoryId, () => []).add(s);
                 }
-                // Union of logged exercises and plan-scheduled exercises
-                final allIds = <int>{...grouped.keys, ...plannedIds};
-                if (allIds.isEmpty) {
-                  return _EmptyState(onStart: () => context.go('/exercises'));
+
+                // Category IDs accounted for by planned workouts
+                final plannedCatIds = plannedWorkouts
+                    .expand((w) => w.$2.map((e) => e.id))
+                    .toSet();
+
+                // Logged sets whose exercise is not in any planned workout
+                final extraIds = grouped.keys
+                    .where((id) => !plannedCatIds.contains(id))
+                    .toList();
+
+                if (plannedWorkouts.isEmpty && grouped.isEmpty) {
+                  return _EmptyState(
+                      onStart: () => context.go('/exercises'));
                 }
-                return ListView.separated(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: allIds.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) {
-                    final catId = allIds.elementAt(i);
-                    final name  = cats.firstWhere((c) => c.id == catId,
-                        orElse: () => ExerciseCategory(id: catId, name: 'Unknown')).name;
-                    return _DayExerciseCard(
-                      name:  name,
-                      sets:  grouped[catId] ?? [],
-                      onTap: () => context.push('/exercise/$catId/$dateStr'),
-                    );
-                  },
+
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
+                  children: [
+                    // ── Planned workout sections ─────────────────────────
+                    for (final (workout, exercises) in plannedWorkouts) ...[
+                      _SectionHeader(name: workout.name),
+                      const SizedBox(height: 4),
+                      ...exercises.map((cat) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _DayExerciseCard(
+                              name: cat.name,
+                              sets: grouped[cat.id] ?? [],
+                              onTap: () => context
+                                  .push('/exercise/${cat.id}/$dateStr'),
+                            ),
+                          )),
+                      const SizedBox(height: 8),
+                    ],
+
+                    // ── Logged sets not in any planned workout ───────────
+                    if (extraIds.isNotEmpty) ...[
+                      if (plannedWorkouts.isNotEmpty)
+                        const _SectionHeader(name: 'Other'),
+                      if (plannedWorkouts.isNotEmpty)
+                        const SizedBox(height: 4),
+                      ...extraIds.map((catId) {
+                        final name = cats
+                            .firstWhere((c) => c.id == catId,
+                                orElse: () =>
+                                    ExerciseCategory(id: catId, name: 'Unknown'))
+                            .name;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _DayExerciseCard(
+                            name: name,
+                            sets: grouped[catId]!,
+                            onTap: () =>
+                                context.push('/exercise/$catId/$dateStr'),
+                          ),
+                        );
+                      }),
+                    ],
+                  ],
                 );
               },
             ),
@@ -98,7 +140,28 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-// ── Day nav bar ────────────────────────────────────────────────────────────
+// ── Section header ──────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  final String name;
+  const _SectionHeader({required this.name});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 0, 0),
+        child: Text(
+          name.toUpperCase(),
+          style: TextStyle(
+            fontSize: 11,
+            letterSpacing: 1.4,
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+      );
+}
+
+// ── Day nav bar ─────────────────────────────────────────────────────────────
 
 class _DayNavBar extends StatelessWidget {
   final DateTime selected;
@@ -137,7 +200,8 @@ class _DayNavBar extends StatelessWidget {
                           letterSpacing: 1)),
                   const SizedBox(width: 6),
                   Icon(Icons.calendar_month,
-                      size: 17, color: Theme.of(context).colorScheme.primary),
+                      size: 17,
+                      color: Theme.of(context).colorScheme.primary),
                 ],
               ),
             ),
@@ -161,16 +225,17 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.fitness_center,
-                size: 72, color: Colors.white.withValues(alpha:0.1)),
+                size: 72, color: Colors.white.withValues(alpha: 0.1)),
             const SizedBox(height: 16),
-            Text('Workout Log Empty',
+            Text('Nothing planned here.',
                 style: TextStyle(
-                    fontSize: 16, color: Colors.white.withValues(alpha:0.35))),
+                    fontSize: 16,
+                    color: Colors.white.withValues(alpha: 0.35))),
             const SizedBox(height: 28),
             TextButton.icon(
               onPressed: onStart,
               icon: const Icon(Icons.add),
-              label: const Text('Start New Workout'),
+              label: const Text('Log an exercise'),
             ),
           ],
         ),
@@ -202,21 +267,29 @@ class _DayExerciseCard extends StatelessWidget {
                     Text(name,
                         style: const TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 15)),
-                    Text(
-                      '${sets.length} set${sets.length != 1 ? "s" : ""}',
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontSize: 13),
-                    ),
+                    sets.isEmpty
+                        ? Text('not started',
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.3),
+                                fontSize: 13))
+                        : Text(
+                            '${sets.length} set${sets.length != 1 ? "s" : ""}',
+                            style: TextStyle(
+                                color:
+                                    Theme.of(context).colorScheme.primary,
+                                fontSize: 13),
+                          ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                ...sets.asMap().entries.map((e) => Text(
-                      '  Set ${e.key + 1}:  ${formatSet(weightKg: e.value.weightKg, reps: e.value.reps, timeSecs: e.value.timeSecs)}',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.white.withValues(alpha:0.55)),
-                    )),
+                if (sets.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  ...sets.asMap().entries.map((e) => Text(
+                        '  Set ${e.key + 1}:  ${formatSet(weightKg: e.value.weightKg, reps: e.value.reps, timeSecs: e.value.timeSecs)}',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.white.withValues(alpha: 0.55)),
+                      )),
+                ],
               ],
             ),
           ),
@@ -271,8 +344,10 @@ class _CalendarSheetState extends State<_CalendarSheet> {
               shape: BoxShape.circle,
             ),
             todayDecoration: BoxDecoration(
-              color:
-                  Theme.of(context).colorScheme.primary.withValues(alpha:0.3),
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withValues(alpha: 0.3),
               shape: BoxShape.circle,
             ),
             markerDecoration: BoxDecoration(
