@@ -31,7 +31,51 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final all     = ref.watch(categoriesProvider).value ?? [];
+    final asyncCats = ref.watch(categoriesProvider);
+
+    // Show spinner while the database is still initialising (common on web/WASM).
+    if (asyncCats.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Show actionable error if the database failed to open.
+    if (asyncCats.hasError) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text(
+                  'Database failed to load.',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'If you are on the web, try a hard-refresh\n'
+                  '(Ctrl+Shift+R / Cmd+Shift+R) or clear the\n'
+                  'site data in your browser settings.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '${asyncCats.error}',
+                  style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final all     = asyncCats.value ?? [];
     final visible = _query.isEmpty
         ? all
         : all.where((c) => c.name.toLowerCase().contains(_query.toLowerCase())).toList();
