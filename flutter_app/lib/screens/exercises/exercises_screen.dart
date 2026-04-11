@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io' as io;
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
+import '../../providers/theme_provider.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/format_utils.dart';
 import '../../utils/share_file.dart';
 
@@ -115,6 +117,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
               if (action == _DataAction.exportBackup)   _exportBackup();
               if (action == _DataAction.importBackup)   _importBackup(context);
               if (action == _DataAction.importFitNotes) context.push('/import');
+              if (action == _DataAction.appearance)     _showAppearanceSheet(context);
             },
             itemBuilder: (_) => const [
               PopupMenuItem(
@@ -131,6 +134,12 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                   child: ListTile(
                       leading: Icon(Icons.upload_file),
                       title: Text('Import FitNotes CSV'))),
+              PopupMenuDivider(),
+              PopupMenuItem(
+                  value: _DataAction.appearance,
+                  child: ListTile(
+                      leading: Icon(Icons.palette_outlined),
+                      title: Text('Appearance'))),
             ],
           ),
         ],
@@ -321,6 +330,20 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     if (xFile == null) return;
     final bytes = await xFile.readAsBytes();
     await ref.saveCategoryImage(categoryId, bytes);
+  }
+
+  void _showAppearanceSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: false,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => _AppearanceSheet(
+        currentIndex: ref.read(themeIndexProvider),
+        onSelect: (i) => ref.read(themeIndexProvider.notifier).setTheme(i),
+      ),
+    );
   }
 
   void _showAddDialog(BuildContext context, List<String> existingGroups) {
@@ -624,7 +647,84 @@ class _AddToWorkoutSheet extends ConsumerWidget {
   }
 }
 
-enum _DataAction { exportBackup, importBackup, importFitNotes }
+// ── Appearance picker ─────────────────────────────────────────────────────────
+
+class _AppearanceSheet extends StatefulWidget {
+  final int currentIndex;
+  final void Function(int) onSelect;
+  const _AppearanceSheet({required this.currentIndex, required this.onSelect});
+
+  @override
+  State<_AppearanceSheet> createState() => _AppearanceSheetState();
+}
+
+class _AppearanceSheetState extends State<_AppearanceSheet> {
+  late int _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.currentIndex;
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Appearance',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: List.generate(themeAccents.length, (i) {
+                final accent = themeAccents[i];
+                final selected = _selected == i;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() => _selected = i);
+                    widget.onSelect(i);
+                  },
+                  child: Column(
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: accent.color,
+                          shape: BoxShape.circle,
+                          border: selected
+                              ? Border.all(color: Colors.white, width: 3)
+                              : Border.all(color: Colors.transparent, width: 3),
+                          boxShadow: selected
+                              ? [BoxShadow(color: accent.color.withValues(alpha: 0.5), blurRadius: 12)]
+                              : null,
+                        ),
+                        child: selected
+                            ? const Icon(Icons.check, color: Colors.white, size: 22)
+                            : null,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(accent.name,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: selected
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.5))),
+                    ],
+                  ),
+                );
+              }),
+            ),
+          ],
+        ),
+      );
+}
+
+enum _DataAction { exportBackup, importBackup, importFitNotes, appearance }
 
 enum _ExAction { rename, changeCategory, addToWorkout, delete }
 

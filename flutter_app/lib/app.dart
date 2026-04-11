@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/exercises/exercises_screen.dart';
@@ -8,6 +9,7 @@ import 'screens/plans/plans_screen.dart';
 import 'screens/plans/plan_detail_screen.dart';
 import 'screens/plans/workout_detail_screen.dart';
 import 'theme/app_theme.dart';
+import 'providers/theme_provider.dart';
 
 final router = GoRouter(
   routes: [
@@ -45,16 +47,19 @@ final router = GoRouter(
   ],
 );
 
-class TrainingLoggerApp extends StatelessWidget {
+class TrainingLoggerApp extends ConsumerWidget {
   const TrainingLoggerApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp.router(
-        title: 'Training Logger',
-        theme: appTheme,
-        routerConfig: router,
-        debugShowCheckedModeBanner: false,
-      );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final idx = ref.watch(themeIndexProvider);
+    return MaterialApp.router(
+      title: 'Training Logger',
+      theme: buildTheme(themeAccents[idx].color),
+      routerConfig: router,
+      debugShowCheckedModeBanner: false,
+    );
+  }
 }
 
 class _AppShell extends StatelessWidget {
