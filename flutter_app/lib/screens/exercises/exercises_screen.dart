@@ -190,6 +190,8 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                             } else if (action == _ExAction.changeCategory) {
                               _showChangeCategoryDialog(
                                   context, cat.id, cat.groupName, groups);
+                            } else if (action == _ExAction.addToWorkout) {
+                              _showAddToWorkoutSheet(context, cat.id, cat.name);
                             } else {
                               _showDeleteDialog(context, cat.id, cat.name);
                             }
@@ -201,6 +203,9 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                             PopupMenuItem(
                                 value: _ExAction.changeCategory,
                                 child: Text('Change category')),
+                            PopupMenuItem(
+                                value: _ExAction.addToWorkout,
+                                child: Text('Add to workout')),
                             PopupMenuItem(
                                 value: _ExAction.delete,
                                 child: Text('Delete')),
@@ -268,6 +273,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
       BuildContext context, int categoryId, Uint8List? current) async {
     final action = await showModalBottomSheet<_ImageAction>(
       context: context,
+      useRootNavigator: false,
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -323,6 +329,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
 
     showDialog(
       context: context,
+      useRootNavigator: false,
       builder: (_) => AlertDialog(
         title: const Text('New Exercise'),
         content: Column(
@@ -380,6 +387,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     final ctrl = TextEditingController(text: currentGroup ?? '');
     showDialog(
       context: context,
+      useRootNavigator: false,
       builder: (_) => AlertDialog(
         title: const Text('Change Category'),
         content: Autocomplete<String>(
@@ -423,6 +431,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     final ctrl = TextEditingController(text: currentName);
     showDialog(
       context: context,
+      useRootNavigator: false,
       builder: (_) => AlertDialog(
         title: const Text('Rename Exercise'),
         content: TextField(
@@ -450,9 +459,24 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     Navigator.pop(context);
   }
 
+  void _showAddToWorkoutSheet(BuildContext context, int categoryId, String exerciseName) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: false,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => _AddToWorkoutSheet(
+        categoryId: categoryId,
+        exerciseName: exerciseName,
+      ),
+    );
+  }
+
   void _showDeleteDialog(BuildContext context, int id, String name) {
     showDialog(
       context: context,
+      useRootNavigator: false,
       builder: (_) => AlertDialog(
         title: Text('Delete "$name"?'),
         content: const Text(
@@ -499,9 +523,100 @@ class _GroupHeader extends StatelessWidget {
 
 // ── Image avatar ──────────────────────────────────────────────────────────────
 
+// ── Add-to-workout sheet ──────────────────────────────────────────────────────
+
+class _AddToWorkoutSheet extends ConsumerWidget {
+  final int    categoryId;
+  final String exerciseName;
+  const _AddToWorkoutSheet(
+      {required this.categoryId, required this.exerciseName});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final workouts        = ref.watch(allWorkoutsProvider).value ?? [];
+    final workoutsWithThis =
+        ref.watch(workoutsForExerciseProvider(categoryId)).value ?? [];
+    final inWorkoutIds    = workoutsWithThis.map((w) => w.id).toSet();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Add "$exerciseName" to workout',
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const SizedBox(height: 12),
+          if (workouts.isEmpty)
+            Text('No workouts yet.',
+                style:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.4)))
+          else
+            ...workouts.map((workout) {
+              final inWorkout = inWorkoutIds.contains(workout.id);
+              return CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: inWorkout,
+                title: Text(workout.name),
+                onChanged: (_) {
+                  if (inWorkout) {
+                    ref.removeExerciseFromWorkout(workout.id, categoryId);
+                  } else {
+                    ref.addExerciseToWorkout(workout.id, categoryId);
+                  }
+                },
+              );
+            }),
+          const Divider(height: 24),
+          TextButton.icon(
+            onPressed: () => _createAndAdd(context, ref),
+            icon: const Icon(Icons.add),
+            label: const Text('New workout…'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _createAndAdd(BuildContext context, WidgetRef ref) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      useRootNavigator: false,
+      builder: (_) => AlertDialog(
+        title: const Text('New Workout'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Workout name'),
+          textCapitalization: TextCapitalization.words,
+          onSubmitted: (_) => _doCreate(context, ref, ctrl.text),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => _doCreate(context, ref, ctrl.text),
+              child: const Text('Create')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _doCreate(
+      BuildContext context, WidgetRef ref, String name) async {
+    if (name.trim().isEmpty) return;
+    final workoutId = await ref.insertWorkout(name.trim());
+    await ref.addExerciseToWorkout(workoutId, categoryId);
+    if (context.mounted) Navigator.pop(context);
+  }
+}
+
 enum _DataAction { exportBackup, importBackup, importFitNotes }
 
-enum _ExAction { rename, changeCategory, delete }
+enum _ExAction { rename, changeCategory, addToWorkout, delete }
 
 enum _ImageAction { gallery, camera, remove }
 

@@ -12,11 +12,12 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selected  = ref.watch(selectedDateProvider);
-    final dateStr   = dateStrFrom(selected);
-    final setsAsync = ref.watch(setsForDayProvider(dateStr));
-    final cats      = ref.watch(categoriesProvider).value ?? [];
-    final woDates   = ref.watch(workoutDatesProvider).value ?? [];
+    final selected    = ref.watch(selectedDateProvider);
+    final dateStr     = dateStrFrom(selected);
+    final setsAsync   = ref.watch(setsForDayProvider(dateStr));
+    final cats        = ref.watch(categoriesProvider).value ?? [];
+    final woDates     = ref.watch(workoutDatesProvider).value ?? [];
+    final plannedIds  = ref.watch(plannedCategoryIdsProvider(dateStr)).value ?? <int>{};
 
     return Scaffold(
       body: Column(
@@ -37,23 +38,26 @@ class HomeScreen extends ConsumerWidget {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('$e')),
               data: (sets) {
-                if (sets.isEmpty) return _EmptyState(onStart: () => context.go('/exercises'));
-
                 final grouped = <int, List<WorkoutSet>>{};
                 for (final s in sets) {
                   grouped.putIfAbsent(s.categoryId, () => []).add(s);
                 }
+                // Union of logged exercises and plan-scheduled exercises
+                final allIds = <int>{...grouped.keys, ...plannedIds};
+                if (allIds.isEmpty) {
+                  return _EmptyState(onStart: () => context.go('/exercises'));
+                }
                 return ListView.separated(
                   padding: const EdgeInsets.all(12),
-                  itemCount: grouped.length,
+                  itemCount: allIds.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (_, i) {
-                    final catId = grouped.keys.elementAt(i);
+                    final catId = allIds.elementAt(i);
                     final name  = cats.firstWhere((c) => c.id == catId,
                         orElse: () => ExerciseCategory(id: catId, name: 'Unknown')).name;
                     return _DayExerciseCard(
                       name:  name,
-                      sets:  grouped[catId]!,
+                      sets:  grouped[catId] ?? [],
                       onTap: () => context.push('/exercise/$catId/$dateStr'),
                     );
                   },
@@ -78,6 +82,7 @@ class HomeScreen extends ConsumerWidget {
   ) {
     showModalBottomSheet(
       context: context,
+      useRootNavigator: false,
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
