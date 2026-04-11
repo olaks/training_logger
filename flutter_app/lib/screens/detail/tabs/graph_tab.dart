@@ -37,7 +37,7 @@ class _Graph extends StatefulWidget {
   State<_Graph> createState() => _GraphState();
 }
 
-enum _Metric { weight, oneRM, reps, time }
+enum _Metric { weight, oneRM, volume, reps, time }
 
 class _GraphState extends State<_Graph> {
   _Metric _metric = _Metric.weight;
@@ -78,6 +78,10 @@ class _GraphState extends State<_Graph> {
           value = daySets.fold(0, (sum, s) => sum + (s.reps ?? 0));
         case _Metric.time:
           value = daySets.fold(0, (sum, s) => sum + (s.timeSecs ?? 0));
+        case _Metric.volume:
+          value = daySets.fold(0.0, (sum, s) =>
+              sum + (s.weightKg ?? 0) * (s.reps ?? 0));
+          if (value == 0) continue;
         case _Metric.oneRM:
           // Only sets with positive weight and at least 1 rep
           final eligible = daySets
@@ -96,6 +100,7 @@ class _GraphState extends State<_Graph> {
   String _metricLabel(_Metric m) => switch (m) {
         _Metric.weight => 'Max Weight',
         _Metric.oneRM  => 'Est. 1RM',
+        _Metric.volume => 'Volume',
         _Metric.reps   => 'Total Reps',
         _Metric.time   => 'Total Time',
       };
@@ -104,16 +109,19 @@ class _GraphState extends State<_Graph> {
         _Metric.weight => widget.sets.any((s) => (s.weightKg ?? 0) != 0),
         _Metric.oneRM  => widget.sets.any(
             (s) => (s.weightKg ?? 0) > 0 && (s.reps ?? 0) > 0),
+        _Metric.volume => widget.sets.any(
+            (s) => (s.weightKg ?? 0) > 0 && (s.reps ?? 0) > 0),
         _Metric.reps   => widget.sets.any((s) => (s.reps ?? 0) > 0),
         _Metric.time   => widget.sets.any((s) => (s.timeSecs ?? 0) > 0),
       };
 
   String _formatValue(double v) {
     return switch (_metric) {
-      _Metric.time  => formatTime(v.toInt()),
-      _Metric.reps  => '${v.toInt()} reps',
+      _Metric.time   => formatTime(v.toInt()),
+      _Metric.reps   => '${v.toInt()} reps',
       _Metric.weight => '${formatWeight(v)} kg',
       _Metric.oneRM  => '${formatWeight(v)} kg',
+      _Metric.volume => '${formatWeight(v)} kg·reps',
     };
   }
 
@@ -155,11 +163,13 @@ class _GraphState extends State<_Graph> {
             }).toList(),
           ),
 
-          // 1RM note
-          if (_metric == _Metric.oneRM) ...[
+          // metric notes
+          if (_metric == _Metric.oneRM || _metric == _Metric.volume) ...[
             const SizedBox(height: 6),
             Text(
-              'Epley formula · best set per session',
+              _metric == _Metric.oneRM
+                  ? 'Epley formula · best set per session'
+                  : 'Sum of weight × reps across all sets',
               style: TextStyle(
                   fontSize: 11, color: Colors.white.withValues(alpha:0.35)),
             ),
