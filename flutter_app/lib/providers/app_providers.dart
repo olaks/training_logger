@@ -31,6 +31,27 @@ final categoryByIdProvider =
     FutureProvider.family<ExerciseCategory?, int>((ref, id) =>
         ref.watch(dbProvider).getCategoryById(id));
 
+// ── Plans ──────────────────────────────────────────────────────────────────
+
+final allPlansProvider = StreamProvider<List<Plan>>((ref) =>
+    ref.watch(dbProvider).watchAllPlans());
+
+final planExercisesProvider =
+    StreamProvider.family<List<ExerciseCategory>, int>((ref, planId) =>
+        ref.watch(dbProvider).watchExercisesForPlan(planId));
+
+final plansForExerciseProvider =
+    StreamProvider.family<List<Plan>, int>((ref, categoryId) =>
+        ref.watch(dbProvider).watchPlansForExercise(categoryId));
+
+final schedulesForPlanProvider =
+    StreamProvider.family<List<ScheduledPlan>, int>((ref, planId) =>
+        ref.watch(dbProvider).watchSchedulesForPlan(planId));
+
+final plannedCategoryIdsProvider =
+    StreamProvider.family<Set<int>, String>((ref, dateStr) =>
+        ref.watch(dbProvider).watchPlannedCategoryIdsForDate(dateStr));
+
 // ── Selected date (home screen) ────────────────────────────────────────────
 
 final selectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -105,4 +126,18 @@ extension DbMutations on WidgetRef {
 
   Future<void> saveCategoryImage(int id, Uint8List? data) =>
       db.updateCategoryImage(id, data);
+
+  // Plans
+  Future<int>  insertPlan(String name)              => db.insertPlan(name);
+  Future<int>  renamePlan(int id, String name)      => db.renamePlan(id, name);
+  Future<void> deletePlan(int id)                   => db.deletePlan(id);
+  Future<void> addExerciseToPlan(int planId, int categoryId) =>
+      db.addExerciseToPlan(planId, categoryId);
+  Future<int>  removeExerciseFromPlan(int planId, int categoryId) =>
+      db.removeExerciseFromPlan(planId, categoryId);
+  Future<int>  schedulePlanOnDate(int planId, String dateStr) =>
+      db.schedulePlanOnDate(planId, dateStr);
+  Future<int>  schedulePlanOnWeekday(int planId, int weekday) =>
+      db.schedulePlanOnWeekday(planId, weekday);
+  Future<int>  deleteSchedule(int id)               => db.deleteSchedule(id);
 }

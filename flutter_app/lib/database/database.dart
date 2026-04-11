@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'tables.dart';
+import '../utils/format_utils.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [ExerciseCategories, WorkoutSets])
+@DriftDatabase(tables: [Plans, PlanExercises, ScheduledPlans, ExerciseCategories, WorkoutSets])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(
     name: 'training_logger',
@@ -16,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -30,6 +31,11 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 3) {
         await m.addColumn(exerciseCategories, exerciseCategories.groupName);
+      }
+      if (from < 4) {
+        await m.createTable(plans);
+        await m.createTable(planExercises);
+        await m.createTable(scheduledPlans);
       }
     },
   );
@@ -306,6 +312,84 @@ class AppDatabase extends _$AppDatabase {
       }
     });
     return inserted;
+  }
+
+  // ── Plans ─────────────────────────────────────────────────────────────────
+
+  Stream<List<Plan>> watchAllPlans() =>
+      (select(plans)..orderBy([(t) => OrderingTerm.asc(t.name)])).watch();
+
+  Future<int> insertPlan(String name) =>
+      into(plans).insert(PlansCompanion.insert(name: name));
+
+  Future<int> renamePlan(int id, String name) =>
+      (update(plans)..where((t) => t.id.equals(id)))
+          .write(PlansCompanion(name: Value(name)));
+
+  Future<void> deletePlan(int id) async {
+    await (delete(scheduledPlans)..where((t) => t.planId.equals(id))).go();
+    await (delete(planExercises)..where((t) => t.planId.equals(id))).go();
+    await (delete(plans)..where((t) => t.id.equals(id))).go();
+  }
+
+  // ── Plan exercises ────────────────────────────────────────────────────────
+
+  Stream<List<ExerciseCategory>> watchExercisesForPlan(int planId) {
+    final q = select(planExercises).join([
+      innerJoin(exerciseCategories,
+          exerciseCategories.id.equalsExp(planExercises.categoryId)),
+    ])
+      ..where(planExercises.planId.equals(planId))
+      ..orderBy([OrderingTerm.asc(exerciseCategories.name)]);
+    return q.watch().map((rows) =>
+        rows.map((r) => r.readTable(exerciseCategories)).toList());
+  }
+
+  Stream<List<Plan>> watchPlansForExercise(int categoryId) {
+    final q = select(planExercises).join([
+      innerJoin(plans, plans.id.equalsExp(planExercises.planId)),
+    ])
+      ..where(planExercises.categoryId.equals(categoryId));
+    return q.watch().map((rows) => rows.map((r) => r.readTable(plans)).toList());
+  }
+
+  Future<void> addExerciseToPlan(int planId, int categoryId) =>
+      into(planExercises).insertOnConflictUpdate(
+        PlanExercisesCompanion.insert(planId: planId, categoryId: categoryId),
+      );
+
+  Future<int> removeExerciseFromPlan(int planId, int categoryId) =>
+      (delete(planExercises)
+            ..where((t) =>
+                t.planId.equals(planId) & t.categoryId.equals(categoryId)))
+          .go();
+
+  // ── Scheduled plans ───────────────────────────────────────────────────────
+
+  Stream<List<ScheduledPlan>> watchSchedulesForPlan(int planId) =>
+      (select(scheduledPlans)..where((t) => t.planId.equals(planId))).watch();
+
+  Future<int> schedulePlanOnDate(int planId, String dateStr) =>
+      into(scheduledPlans).insert(
+          ScheduledPlansCompanion.insert(planId: planId, dateStr: Value(dateStr)));
+
+  Future<int> schedulePlanOnWeekday(int planId, int weekday) =>
+      into(scheduledPlans).insert(
+          ScheduledPlansCompanion.insert(planId: planId, weekday: Value(weekday)));
+
+  Future<int> deleteSchedule(int id) =>
+      (delete(scheduledPlans)..where((t) => t.id.equals(id))).go();
+
+  Stream<Set<int>> watchPlannedCategoryIdsForDate(String dateStr) {
+    final weekday = dateFromStr(dateStr).weekday;
+    return customSelect(
+      'SELECT DISTINCT pe.category_id FROM plan_exercises pe '
+      'INNER JOIN scheduled_plans sp ON pe.plan_id = sp.plan_id '
+      'WHERE sp.date_str = ? OR sp.weekday = ?',
+      variables: [Variable.withString(dateStr), Variable.withInt(weekday)],
+      readsFrom: {planExercises, scheduledPlans},
+    ).watch().map((rows) =>
+        rows.map((r) => r.read<int>('category_id')).toSet());
   }
 
   static String? _nullIfEmpty(String? s) =>

@@ -190,6 +190,8 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                             } else if (action == _ExAction.changeCategory) {
                               _showChangeCategoryDialog(
                                   context, cat.id, cat.groupName, groups);
+                            } else if (action == _ExAction.addToPlan) {
+                              _showAddToPlanSheet(context, cat.id, cat.name);
                             } else {
                               _showDeleteDialog(context, cat.id, cat.name);
                             }
@@ -201,6 +203,9 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                             PopupMenuItem(
                                 value: _ExAction.changeCategory,
                                 child: Text('Change category')),
+                            PopupMenuItem(
+                                value: _ExAction.addToPlan,
+                                child: Text('Add to plan')),
                             PopupMenuItem(
                                 value: _ExAction.delete,
                                 child: Text('Delete')),
@@ -450,6 +455,19 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     Navigator.pop(context);
   }
 
+  void _showAddToPlanSheet(BuildContext context, int categoryId, String exerciseName) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => _AddToPlanSheet(
+        categoryId: categoryId,
+        exerciseName: exerciseName,
+      ),
+    );
+  }
+
   void _showDeleteDialog(BuildContext context, int id, String name) {
     showDialog(
       context: context,
@@ -499,9 +517,99 @@ class _GroupHeader extends StatelessWidget {
 
 // ── Image avatar ──────────────────────────────────────────────────────────────
 
+// ── Add-to-plan sheet ─────────────────────────────────────────────────────────
+
+class _AddToPlanSheet extends ConsumerStatefulWidget {
+  final int    categoryId;
+  final String exerciseName;
+  const _AddToPlanSheet({required this.categoryId, required this.exerciseName});
+
+  @override
+  ConsumerState<_AddToPlanSheet> createState() => _AddToPlanSheetState();
+}
+
+class _AddToPlanSheetState extends ConsumerState<_AddToPlanSheet> {
+  @override
+  Widget build(BuildContext context) {
+    final plans         = ref.watch(allPlansProvider).value ?? [];
+    final plansWithThis = ref.watch(plansForExerciseProvider(widget.categoryId)).value ?? [];
+    final inPlanIds     = plansWithThis.map((p) => p.id).toSet();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Add "${widget.exerciseName}" to plan',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const SizedBox(height: 12),
+          if (plans.isEmpty)
+            Text('No plans yet.',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.4)))
+          else
+            ...plans.map((plan) {
+              final inPlan = inPlanIds.contains(plan.id);
+              return CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: inPlan,
+                title: Text(plan.name),
+                onChanged: (_) {
+                  if (inPlan) {
+                    ref.removeExerciseFromPlan(plan.id, widget.categoryId);
+                  } else {
+                    ref.addExerciseToPlan(plan.id, widget.categoryId);
+                  }
+                },
+              );
+            }),
+          const Divider(height: 24),
+          TextButton.icon(
+            onPressed: () => _createAndAdd(context),
+            icon: const Icon(Icons.add),
+            label: const Text('New plan…'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _createAndAdd(BuildContext context) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('New Plan'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Plan name'),
+          textCapitalization: TextCapitalization.words,
+          onSubmitted: (_) => _doCreate(context, ctrl.text),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => _doCreate(context, ctrl.text),
+              child: const Text('Create')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _doCreate(BuildContext context, String name) async {
+    if (name.trim().isEmpty) return;
+    final planId = await ref.insertPlan(name.trim());
+    await ref.addExerciseToPlan(planId, widget.categoryId);
+    if (context.mounted) Navigator.pop(context);
+  }
+}
+
 enum _DataAction { exportBackup, importBackup, importFitNotes }
 
-enum _ExAction { rename, changeCategory, delete }
+enum _ExAction { rename, changeCategory, addToPlan, delete }
 
 enum _ImageAction { gallery, camera, remove }
 
