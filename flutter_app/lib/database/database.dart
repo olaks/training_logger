@@ -140,6 +140,64 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteSet(int id) =>
       (delete(workoutSets)..where((t) => t.id.equals(id))).go();
 
+  // ── Export plan ───────────────────────────────────────────────────────────
+
+  Future<String> exportPlanToJson(int planId) async {
+    final plan = await (select(plans)..where((t) => t.id.equals(planId)))
+        .getSingleOrNull();
+    if (plan == null) throw StateError('Plan $planId not found');
+
+    final assignments =
+        await (select(planWorkouts)..where((t) => t.planId.equals(planId))).get();
+    final workoutIds = assignments.map((a) => a.workoutId).toSet().toList();
+
+    final planWorkoutsList = await (select(workouts)
+          ..where((t) => t.id.isIn(workoutIds))
+          ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+        .get();
+    final workoutById = {for (final w in planWorkoutsList) w.id: w};
+
+    final workoutsJson = <Map<String, dynamic>>[];
+    for (final workout in planWorkoutsList) {
+      final q = select(workoutExercises).join([
+        innerJoin(exerciseCategories,
+            exerciseCategories.id.equalsExp(workoutExercises.categoryId)),
+      ])
+        ..where(workoutExercises.workoutId.equals(workout.id))
+        ..orderBy([OrderingTerm.asc(exerciseCategories.name)]);
+      final rows = await q.get();
+
+      workoutsJson.add({
+        'name': workout.name,
+        'exercises': rows.map((row) {
+          final we = row.readTable(workoutExercises);
+          final ec = row.readTable(exerciseCategories);
+          return <String, dynamic>{
+            'name': ec.name,
+            if (ec.groupName  != null) 'group':      ec.groupName,
+            if (we.targetReps != null) 'targetReps': we.targetReps,
+          };
+        }).toList(),
+      });
+    }
+
+    final assignmentsJson = assignments.map((a) => <String, dynamic>{
+          'workout': workoutById[a.workoutId]?.name ?? '',
+          if (a.weekday != null) 'weekday': a.weekday,
+          if (a.dateStr != null) 'date':    a.dateStr,
+        }).toList();
+
+    return const JsonEncoder.withIndent('  ').convert({
+      'version':    1,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'plan': {
+        'name':        plan.name,
+        'workouts':    workoutsJson,
+        'assignments': assignmentsJson,
+      },
+    });
+  }
+
   // ── Export / Import backup ────────────────────────────────────────────────
 
   Future<String> exportToJson() async {

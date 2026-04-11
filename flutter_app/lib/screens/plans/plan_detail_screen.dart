@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
 import '../../utils/format_utils.dart';
+import '../../utils/share_file.dart';
 
 class PlanDetailScreen extends ConsumerWidget {
   final int planId;
@@ -42,11 +43,18 @@ class PlanDetailScreen extends ConsumerWidget {
           if (plan != null)
             PopupMenuButton<_DetailAction>(
               icon: const Icon(Icons.more_vert),
-              onSelected: (a) => a == _DetailAction.rename
-                  ? _showRenameDialog(context, ref, plan.id, plan.name)
-                  : _showDeleteDialog(context, ref, plan.id, plan.name),
+              onSelected: (a) {
+                if (a == _DetailAction.rename) {
+                  _showRenameDialog(context, ref, plan.id, plan.name);
+                } else if (a == _DetailAction.export) {
+                  _exportPlan(context, ref, plan.id, plan.name);
+                } else {
+                  _showDeleteDialog(context, ref, plan.id, plan.name);
+                }
+              },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: _DetailAction.rename, child: Text('Rename')),
+                PopupMenuItem(value: _DetailAction.export, child: Text('Export plan')),
                 PopupMenuItem(value: _DetailAction.delete, child: Text('Delete plan')),
               ],
             ),
@@ -159,6 +167,20 @@ class PlanDetailScreen extends ConsumerWidget {
     );
     if (picked == null || !context.mounted) return;
     _showAddWorkoutSheet(context, ref, dateStr: dateStrFrom(picked));
+  }
+
+  Future<void> _exportPlan(
+      BuildContext context, WidgetRef ref, int id, String name) async {
+    try {
+      final json = await ref.read(dbProvider).exportPlanToJson(id);
+      final safeName = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      await shareJsonFile(json, 'plan_${safeName}_${dateStrFrom(DateTime.now())}.json');
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      }
+    }
   }
 
   void _showRenameDialog(
@@ -352,4 +374,4 @@ class _SectionHeader extends StatelessWidget {
       );
 }
 
-enum _DetailAction { rename, delete }
+enum _DetailAction { rename, export, delete }
