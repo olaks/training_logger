@@ -235,7 +235,7 @@ class _GraphState extends State<_Graph> {
                 lineBarsData: [
                   LineChartBarData(
                     spots:    spots,
-                    isCurved: spots.length > 2,
+                    isCurved: false,
                     color:    primary,
                     barWidth: 2.5,
                     dotData: FlDotData(
