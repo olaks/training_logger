@@ -16,6 +16,7 @@ class TrackTab extends ConsumerWidget {
     final todaySets = ref.watch(setsForDayProvider(dateStr)).value
             ?.where((s) => s.categoryId == categoryId).toList() ??
         [];
+    final imageData = ref.watch(categoryByIdProvider(categoryId)).value?.imageData;
 
     final displayDate = DateFormat('MMM d').format(dateFromStr(dateStr));
 
@@ -24,6 +25,18 @@ class TrackTab extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (imageData != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(
+                imageData,
+                width: double.infinity,
+                height: 180,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
           Text(
             displayDate,
             style: TextStyle(
