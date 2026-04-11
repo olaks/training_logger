@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../database/database.dart';
 import '../../../providers/app_providers.dart';
 import '../../../utils/format_utils.dart';
+import '../../../utils/grades.dart';
 
 class GraphTab extends ConsumerWidget {
   final int categoryId;
@@ -11,7 +12,9 @@ class GraphTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final setsAsync = ref.watch(setsForCategoryProvider(categoryId));
+    final setsAsync  = ref.watch(setsForCategoryProvider(categoryId));
+    final catAsync   = ref.watch(categoryByIdProvider(categoryId));
+    final isClimbing = catAsync.value?.exerciseType == 1;
 
     return setsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -20,10 +23,10 @@ class GraphTab extends ConsumerWidget {
         if (sets.isEmpty) {
           return Center(
             child: Text('No data yet.',
-                style: TextStyle(color: Colors.white.withValues(alpha:0.35))),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.35))),
           );
         }
-        return _Graph(sets: sets);
+        return _Graph(sets: sets, isClimbing: isClimbing);
       },
     );
   }
@@ -31,21 +34,31 @@ class GraphTab extends ConsumerWidget {
 
 class _Graph extends StatefulWidget {
   final List<WorkoutSet> sets;
-  const _Graph({required this.sets});
+  final bool isClimbing;
+  const _Graph({required this.sets, required this.isClimbing});
 
   @override
   State<_Graph> createState() => _GraphState();
 }
 
-enum _Metric { weight, oneRM, volume, reps, time }
+enum _Metric { weight, oneRM, volume, reps, time, grade }
 
 class _GraphState extends State<_Graph> {
   _Metric _metric = _Metric.weight;
+  List<String> _gradeScale = fontGrades;
 
   @override
   void initState() {
     super.initState();
-    _metric = _autoMetric(widget.sets);
+    if (widget.isClimbing) {
+      final gradeStrings = widget.sets
+          .where((s) => s.grade != null)
+          .map((s) => s.grade!);
+      _gradeScale = detectGradeScale(gradeStrings);
+      _metric = _Metric.grade;
+    } else {
+      _metric = _autoMetric(widget.sets);
+    }
   }
 
   static _Metric _autoMetric(List<WorkoutSet> sets) {
@@ -54,7 +67,6 @@ class _GraphState extends State<_Graph> {
     return _Metric.time;
   }
 
-  // Epley formula: 1RM = w × (1 + reps/30)
   static double _epley(double w, int reps) => w * (1 + reps / 30);
 
   List<({String date, double value})> _buildPoints(_Metric metric) {
@@ -79,17 +91,23 @@ class _GraphState extends State<_Graph> {
         case _Metric.time:
           value = daySets.fold(0, (sum, s) => sum + (s.timeSecs ?? 0));
         case _Metric.volume:
-          value = daySets.fold(0.0, (sum, s) =>
-              sum + (s.weightKg ?? 0) * (s.reps ?? 0));
+          value = daySets.fold(0.0,
+              (sum, s) => sum + (s.weightKg ?? 0) * (s.reps ?? 0));
           if (value == 0) continue;
         case _Metric.oneRM:
-          // Only sets with positive weight and at least 1 rep
           final eligible = daySets
               .where((s) => (s.weightKg ?? 0) > 0 && (s.reps ?? 0) > 0);
-          if (eligible.isEmpty) continue; // skip days with no valid sets
+          if (eligible.isEmpty) continue;
           value = eligible
               .map((s) => _epley(s.weightKg!, s.reps!))
               .reduce((a, b) => a > b ? a : b);
+        case _Metric.grade:
+          final idxs = daySets
+              .where((s) => s.grade != null)
+              .map((s) => gradeToIndex(s.grade!, _gradeScale))
+              .where((i) => i >= 0);
+          if (idxs.isEmpty) continue;
+          value = idxs.reduce((a, b) => a > b ? a : b).toDouble();
       }
 
       points.add((date: d, value: value));
@@ -103,27 +121,28 @@ class _GraphState extends State<_Graph> {
         _Metric.volume => 'Volume',
         _Metric.reps   => 'Total Reps',
         _Metric.time   => 'Total Time',
+        _Metric.grade  => 'Best Grade',
       };
 
   bool _metricAvailable(_Metric m) => switch (m) {
         _Metric.weight => widget.sets.any((s) => (s.weightKg ?? 0) != 0),
-        _Metric.oneRM  => widget.sets.any(
-            (s) => (s.weightKg ?? 0) > 0 && (s.reps ?? 0) > 0),
-        _Metric.volume => widget.sets.any(
-            (s) => (s.weightKg ?? 0) > 0 && (s.reps ?? 0) > 0),
+        _Metric.oneRM  => widget.sets
+            .any((s) => (s.weightKg ?? 0) > 0 && (s.reps ?? 0) > 0),
+        _Metric.volume => widget.sets
+            .any((s) => (s.weightKg ?? 0) > 0 && (s.reps ?? 0) > 0),
         _Metric.reps   => widget.sets.any((s) => (s.reps ?? 0) > 0),
         _Metric.time   => widget.sets.any((s) => (s.timeSecs ?? 0) > 0),
+        _Metric.grade  => widget.sets.any((s) => s.grade != null),
       };
 
-  String _formatValue(double v) {
-    return switch (_metric) {
-      _Metric.time   => formatTime(v.toInt()),
-      _Metric.reps   => '${v.toInt()} reps',
-      _Metric.weight => '${formatWeight(v)} kg',
-      _Metric.oneRM  => '${formatWeight(v)} kg',
-      _Metric.volume => '${formatWeight(v)} kg·reps',
-    };
-  }
+  String _formatValue(double v) => switch (_metric) {
+        _Metric.time  => formatTime(v.toInt()),
+        _Metric.reps  => '${v.toInt()} reps',
+        _Metric.weight => '${formatWeight(v)} kg',
+        _Metric.oneRM  => '${formatWeight(v)} kg',
+        _Metric.volume => '${formatWeight(v)} kg·reps',
+        _Metric.grade  => _gradeScale[v.toInt().clamp(0, _gradeScale.length - 1)],
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -140,30 +159,44 @@ class _GraphState extends State<_Graph> {
     final maxY  = spots.isEmpty ? 1.0 : spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
     final range = (maxY - minY).clamp(1.0, double.infinity);
 
+    // For grade axis: snap to integer ticks, show grade strings
+    final isGrade = _metric == _Metric.grade;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 16, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Metric chips — Wrap so they reflow on narrow screens
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: _Metric.values.map((m) {
-              final available = _metricAvailable(m);
-              return ChoiceChip(
-                label: Text(_metricLabel(m),
-                    style: const TextStyle(fontSize: 12)),
-                selected: _metric == m,
-                onSelected:
-                    available ? (_) => setState(() => _metric = m) : null,
-                selectedColor: primary.withValues(alpha:0.25),
-                disabledColor: Colors.white.withValues(alpha:0.05),
-              );
-            }).toList(),
-          ),
+          // Metric chips — hide for climbing (only one metric)
+          if (!widget.isClimbing) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: _Metric.values
+                  .where((m) => m != _Metric.grade)
+                  .map((m) {
+                final available = _metricAvailable(m);
+                return ChoiceChip(
+                  label: Text(_metricLabel(m),
+                      style: const TextStyle(fontSize: 12)),
+                  selected: _metric == m,
+                  onSelected:
+                      available ? (_) => setState(() => _metric = m) : null,
+                  selectedColor: primary.withValues(alpha: 0.25),
+                  disabledColor: Colors.white.withValues(alpha: 0.05),
+                );
+              }).toList(),
+            ),
+          ] else ...[
+            Text(
+              _metricLabel(_Metric.grade),
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: primary),
+            ),
+          ],
 
-          // metric notes
           if (_metric == _Metric.oneRM || _metric == _Metric.volume) ...[
             const SizedBox(height: 6),
             Text(
@@ -171,7 +204,7 @@ class _GraphState extends State<_Graph> {
                   ? 'Epley formula · best set per session'
                   : 'Sum of weight × reps across all sets',
               style: TextStyle(
-                  fontSize: 11, color: Colors.white.withValues(alpha:0.35)),
+                  fontSize: 11, color: Colors.white.withValues(alpha: 0.35)),
             ),
           ],
 
@@ -181,19 +214,22 @@ class _GraphState extends State<_Graph> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text('Log more sessions to see a graph.',
-                  style: TextStyle(color: Colors.white.withValues(alpha:0.35))),
+                  style:
+                      TextStyle(color: Colors.white.withValues(alpha: 0.35))),
             ),
 
           Expanded(
             child: LineChart(
               LineChartData(
-                minY: minY - range * 0.1,   // allow negative values
-                maxY: maxY + range * 0.15,
+                minY: isGrade
+                    ? (minY - 1).clamp(0, double.infinity)
+                    : minY - range * 0.1,
+                maxY: isGrade ? maxY + 1 : maxY + range * 0.15,
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
                   getDrawingHorizontalLine: (_) => FlLine(
-                    color: Colors.white.withValues(alpha:0.07),
+                    color: Colors.white.withValues(alpha: 0.07),
                     strokeWidth: 1,
                   ),
                 ),
@@ -202,17 +238,33 @@ class _GraphState extends State<_Graph> {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 48,
-                      getTitlesWidget: (val, _) => Text(
-                        _metric == _Metric.time
-                            ? formatTime(val.toInt())
-                            : val % 1 == 0
-                                ? val.toInt().toString()
-                                : val.toStringAsFixed(1),
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.white.withValues(alpha:0.45)),
-                      ),
+                      reservedSize: isGrade ? 52 : 48,
+                      interval: isGrade ? 1 : null,
+                      getTitlesWidget: (val, meta) {
+                        if (isGrade) {
+                          final idx = val.round();
+                          if (idx < 0 || idx >= _gradeScale.length) {
+                            return const SizedBox.shrink();
+                          }
+                          // Only label every other grade to avoid crowding
+                          if (idx % 2 != 0) return const SizedBox.shrink();
+                          return Text(_gradeScale[idx],
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color:
+                                      Colors.white.withValues(alpha: 0.45)));
+                        }
+                        return Text(
+                          _metric == _Metric.time
+                              ? formatTime(val.toInt())
+                              : val % 1 == 0
+                                  ? val.toInt().toString()
+                                  : val.toStringAsFixed(1),
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.white.withValues(alpha: 0.45)),
+                        );
+                      },
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -231,7 +283,7 @@ class _GraphState extends State<_Graph> {
                             points[i].date.substring(5), // MM-DD
                             style: TextStyle(
                                 fontSize: 9,
-                                color: Colors.white.withValues(alpha:0.45)),
+                                color: Colors.white.withValues(alpha: 0.45)),
                           ),
                         );
                       },
@@ -249,16 +301,17 @@ class _GraphState extends State<_Graph> {
                     color:    primary,
                     barWidth: 2.5,
                     dotData: FlDotData(
-                      getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+                      getDotPainter: (_, __, ___, ____) =>
+                          FlDotCirclePainter(
                         radius: 4,
                         color: primary,
                         strokeWidth: 2,
-                        strokeColor: Colors.black.withValues(alpha:0.5),
+                        strokeColor: Colors.black.withValues(alpha: 0.5),
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
-                      color: primary.withValues(alpha:0.08),
+                      color: primary.withValues(alpha: 0.08),
                     ),
                   ),
                 ],
@@ -272,7 +325,7 @@ class _GraphState extends State<_Graph> {
                       return LineTooltipItem(
                         '${pt.date.substring(5)}\n',
                         TextStyle(
-                            color: Colors.white.withValues(alpha:0.55),
+                            color: Colors.white.withValues(alpha: 0.55),
                             fontSize: 11),
                         children: [
                           TextSpan(
@@ -286,7 +339,7 @@ class _GraphState extends State<_Graph> {
                             TextSpan(
                               text: ' est.',
                               style: TextStyle(
-                                  color: Colors.white.withValues(alpha:0.45),
+                                  color: Colors.white.withValues(alpha: 0.45),
                                   fontWeight: FontWeight.normal,
                                   fontSize: 11),
                             ),

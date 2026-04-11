@@ -6,7 +6,7 @@ import '../utils/format_utils.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Workouts, WorkoutExercises, Plans, PlanWorkouts, ExerciseCategories, WorkoutSets])
+@DriftDatabase(tables: [Workouts, WorkoutExercises, Plans, PlanWorkouts, ExerciseCategories, WorkoutSets, DayNotes, BodyWeights])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(
     name: 'training_logger',
@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -34,42 +34,65 @@ class AppDatabase extends _$AppDatabase {
       }
       // from < 4: old v4 tables are superseded — handled in from < 5 below
       if (from < 5) {
-        // Drop old v4 tables if present (users who tested the old feature branch)
         await customStatement('DROP TABLE IF EXISTS plan_exercises');
         await customStatement('DROP TABLE IF EXISTS scheduled_plans');
         await customStatement('DROP TABLE IF EXISTS plans');
-        // Create v5 tables — uses current schema, which already includes
-        // target_reps, so the from<6 addColumn below must be skipped.
         await m.createTable(workouts);
         await m.createTable(workoutExercises);
         await m.createTable(plans);
         await m.createTable(planWorkouts);
       }
       if (from >= 5 && from < 6) {
-        // Only needed when upgrading from exactly v5; v5→current created the
-        // table without target_reps, so we add it here.  When from<5 we
-        // already created the table with the full current schema above.
         await m.addColumn(workoutExercises, workoutExercises.targetReps);
+      }
+      if (from < 7) {
+        await m.addColumn(workoutSets, workoutSets.rpe);
+        await m.createTable(dayNotes);
+        await m.createTable(bodyWeights);
+      }
+      if (from < 8) {
+        await m.addColumn(exerciseCategories, exerciseCategories.exerciseType);
+        await m.addColumn(workoutSets, workoutSets.grade);
       }
     },
   );
 
   Future<void> _seedDefaults() async {
     const defaults = [
-      ('Deadlift',                          'Back'),
-      ('Lat Pulldown',                      'Back'),
-      ('Pull Up',                           'Back'),
-      ('T-Bar Row',                         'Back'),
-      ('Dumbbell Curl',                     'Biceps'),
-      ('One Arm Pullup',                    'Biceps'),
-      ('Incline Dumbbell Fly',              'Chest'),
-      ('Dumbell Finger Curl',               'Fingers'),
-      ('Nature Climbing 15 mm High Angle',  'Fingers'),
-      ('Nature Climbing 20mm HC',           'Fingers'),
-      ('Tension Block 15 mm',               'Fingers'),
-      ('Heel Hook Isometrics',              'Hamstring'),
-      ('Overhead Press',                    'Shoulders'),
-      ('Rotator Cuff Sitting',              'Shoulders'),
+      // Finger Strength
+      ('Dead Hang',                         'Finger Strength'),
+      ('One-Arm Hang',                      'Finger Strength'),
+      ('Tension Block 15 mm',               'Finger Strength'),
+      ('Tension Block 20 mm',               'Finger Strength'),
+      ('Nature Board 15 mm',                'Finger Strength'),
+      ('Nature Board 20 mm',                'Finger Strength'),
+      // Power
+      ('Campus Rungs',                      'Power'),
+      ('Double Dynos',                      'Power'),
+      ('Explosive Pull Up',                 'Power'),
+      // Power Endurance
+      ('4×4 Bouldering',                   'Power Endurance'),
+      ('Linked Boulder Circuit',            'Power Endurance'),
+      // Endurance
+      ('ARC Traversing',                    'Endurance'),
+      ('Continuous Climbing',               'Endurance'),
+      // Movement
+      ('Footwork Drills',                   'Movement'),
+      ('Slab Technique',                    'Movement'),
+      // Antagonist
+      ('Wrist Extension',                   'Antagonist'),
+      ('Rotator Cuff',                      'Antagonist'),
+      ('Push Up',                           'Antagonist'),
+      ('Reverse Curl',                      'Antagonist'),
+      // General Strength
+      ('Pull Up',                           'General Strength'),
+      ('Lat Pulldown',                      'General Strength'),
+      ('One-Arm Pull Up',                   'General Strength'),
+      ('Deadlift',                          'General Strength'),
+      // Core
+      ('Front Lever',                       'Core'),
+      ('Hollow Body Hold',                  'Core'),
+      ('Hanging Leg Raise',                 'Core'),
     ];
     await batch((b) {
       for (final (name, group) in defaults) {
@@ -129,6 +152,10 @@ class AppDatabase extends _$AppDatabase {
       (update(exerciseCategories)..where((t) => t.id.equals(id)))
           .write(ExerciseCategoriesCompanion(imageData: Value(data)));
 
+  Future<int> setExerciseType(int id, int type) =>
+      (update(exerciseCategories)..where((t) => t.id.equals(id)))
+          .write(ExerciseCategoriesCompanion(exerciseType: Value(type)));
+
   // ── Workout sets ──────────────────────────────────────────────────────────
 
   Stream<List<WorkoutSet>> watchSetsForDay(String dateStr) =>
@@ -156,6 +183,37 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> deleteSet(int id) =>
       (delete(workoutSets)..where((t) => t.id.equals(id))).go();
+
+  // ── Day notes ─────────────────────────────────────────────────────────────
+
+  Stream<DayNote?> watchDayNote(String dateStr) =>
+      (select(dayNotes)..where((t) => t.dateStr.equals(dateStr)))
+          .watchSingleOrNull();
+
+  Future<void> saveDayNote(String dateStr, String note) =>
+      into(dayNotes).insertOnConflictUpdate(
+          DayNotesCompanion.insert(dateStr: dateStr, note: note));
+
+  Future<void> deleteDayNote(String dateStr) =>
+      (delete(dayNotes)..where((t) => t.dateStr.equals(dateStr))).go();
+
+  // ── Body weight log ───────────────────────────────────────────────────────
+
+  Stream<List<BodyWeight>> watchBodyWeights() =>
+      (select(bodyWeights)
+            ..orderBy([(t) => OrderingTerm.asc(t.dateStr)]))
+          .watch();
+
+  Stream<BodyWeight?> watchBodyWeightForDate(String dateStr) =>
+      (select(bodyWeights)..where((t) => t.dateStr.equals(dateStr)))
+          .watchSingleOrNull();
+
+  Future<void> saveBodyWeight(String dateStr, double kg) =>
+      into(bodyWeights).insertOnConflictUpdate(
+          BodyWeightsCompanion.insert(dateStr: dateStr, kg: kg));
+
+  Future<void> deleteBodyWeight(String dateStr) =>
+      (delete(bodyWeights)..where((t) => t.dateStr.equals(dateStr))).go();
 
   // ── Export plan ───────────────────────────────────────────────────────────
 
@@ -526,7 +584,7 @@ class AppDatabase extends _$AppDatabase {
           names[wId] = wName;
           exMap[wId] = [];
         }
-        exMap[wId]!.add(ExerciseCategory(id: cId, name: cName, groupName: cGroup));
+        exMap[wId]!.add(ExerciseCategory(id: cId, name: cName, groupName: cGroup, exerciseType: 0));
       }
       return order
           .map((wId) => (Workout(id: wId, name: names[wId]!), exMap[wId]!))

@@ -34,6 +34,11 @@ class HomeScreen extends ConsumerWidget {
               onCalendar: () => _openCalendar(context, ref, selected, woDates),
             ),
           ),
+
+          // ── Day meta row (body weight + session note) ──────────────────
+          _DayMetaSection(dateStr: dateStr),
+          const Divider(height: 1, thickness: 0.5),
+
           Expanded(
             child: setsAsync.when(
               loading: () =>
@@ -89,7 +94,7 @@ class HomeScreen extends ConsumerWidget {
                         final name = cats
                             .firstWhere((c) => c.id == catId,
                                 orElse: () =>
-                                    ExerciseCategory(id: catId, name: 'Unknown'))
+                                    ExerciseCategory(id: catId, name: 'Unknown', exerciseType: 0))
                             .name;
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 8),
@@ -138,6 +143,249 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+// ── Day meta section (body weight + session note) ───────────────────────────
+
+class _DayMetaSection extends ConsumerWidget {
+  final String dateStr;
+  const _DayMetaSection({required this.dateStr});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bodyWeight = ref.watch(bodyWeightForDateProvider(dateStr)).value;
+    final dayNote    = ref.watch(dayNoteProvider(dateStr)).value;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Row(
+        children: [
+          _MetaChip(
+            icon: Icons.monitor_weight_outlined,
+            label: bodyWeight != null
+                ? '${bodyWeight.kg.toStringAsFixed(1)} kg'
+                : 'Log weight',
+            active: bodyWeight != null,
+            onTap: () => _editWeight(context, ref, bodyWeight?.kg),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _MetaChip(
+              icon: Icons.notes_outlined,
+              label: (dayNote?.note.isNotEmpty == true)
+                  ? dayNote!.note
+                  : 'Add note',
+              active: dayNote != null && dayNote.note.isNotEmpty,
+              onTap: () => _editNote(context, ref, dayNote?.note),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _editWeight(BuildContext context, WidgetRef ref, double? current) {
+    showDialog(
+      context: context,
+      builder: (_) => _WeightDialog(
+        initial: current,
+        onSave:  (kg) => ref.saveBodyWeight(dateStr, kg),
+        onClear: current != null ? () => ref.deleteBodyWeight(dateStr) : null,
+      ),
+    );
+  }
+
+  void _editNote(BuildContext context, WidgetRef ref, String? current) {
+    showDialog(
+      context: context,
+      builder: (_) => _NoteDialog(
+        initial: current,
+        onSave:  (note) {
+          if (note.isEmpty) {
+            ref.deleteDayNote(dateStr);
+          } else {
+            ref.saveDayNote(dateStr, note);
+          }
+        },
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final IconData icon;
+  final String   label;
+  final bool     active;
+  final VoidCallback onTap;
+  const _MetaChip(
+      {required this.icon,
+      required this.label,
+      required this.active,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: active
+              ? primary.withValues(alpha: 0.10)
+              : Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: active
+                  ? primary.withValues(alpha: 0.35)
+                  : Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 15,
+                color: active ? primary : Colors.white.withValues(alpha: 0.35)),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 13,
+                    color: active
+                        ? Colors.white.withValues(alpha: 0.85)
+                        : Colors.white.withValues(alpha: 0.35)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Weight entry dialog ─────────────────────────────────────────────────────
+
+class _WeightDialog extends StatefulWidget {
+  final double? initial;
+  final Future<void> Function(double) onSave;
+  final VoidCallback? onClear;
+  const _WeightDialog({this.initial, required this.onSave, this.onClear});
+
+  @override
+  State<_WeightDialog> createState() => _WeightDialogState();
+}
+
+class _WeightDialogState extends State<_WeightDialog> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(
+      text: widget.initial != null
+          ? widget.initial!.toStringAsFixed(1)
+          : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Body weight'),
+        content: TextField(
+          controller: _ctrl,
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+          decoration: const InputDecoration(suffixText: 'kg'),
+          onSubmitted: (_) => _save(),
+        ),
+        actions: [
+          if (widget.onClear != null)
+            TextButton(
+              onPressed: () {
+                widget.onClear!();
+                Navigator.pop(context);
+              },
+              child: Text('Clear',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.error)),
+            ),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(onPressed: _save, child: const Text('Save')),
+        ],
+      );
+
+  void _save() {
+    final v = double.tryParse(_ctrl.text.replaceAll(',', '.'));
+    if (v != null && v > 0) {
+      widget.onSave(v);
+      Navigator.pop(context);
+    }
+  }
+}
+
+// ── Session note dialog ─────────────────────────────────────────────────────
+
+class _NoteDialog extends StatefulWidget {
+  final String? initial;
+  final void Function(String) onSave;
+  const _NoteDialog({this.initial, required this.onSave});
+
+  @override
+  State<_NoteDialog> createState() => _NoteDialogState();
+}
+
+class _NoteDialogState extends State<_NoteDialog> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initial ?? '');
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Session note'),
+        content: TextField(
+          controller: _ctrl,
+          maxLines: 5,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'How did the session go?',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              widget.onSave(_ctrl.text.trim());
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      );
 }
 
 // ── Section header ──────────────────────────────────────────────────────────

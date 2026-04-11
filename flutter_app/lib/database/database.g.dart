@@ -211,8 +211,17 @@ class $ExerciseCategoriesTable extends ExerciseCategories
   late final GeneratedColumn<Uint8List> imageData = GeneratedColumn<Uint8List>(
       'image_data', aliasedName, true,
       type: DriftSqlType.blob, requiredDuringInsert: false);
+  static const VerificationMeta _exerciseTypeMeta =
+      const VerificationMeta('exerciseType');
   @override
-  List<GeneratedColumn> get $columns => [id, name, groupName, imageData];
+  late final GeneratedColumn<int> exerciseType = GeneratedColumn<int>(
+      'exercise_type', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, name, groupName, imageData, exerciseType];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -240,6 +249,12 @@ class $ExerciseCategoriesTable extends ExerciseCategories
       context.handle(_imageDataMeta,
           imageData.isAcceptableOrUnknown(data['image_data']!, _imageDataMeta));
     }
+    if (data.containsKey('exercise_type')) {
+      context.handle(
+          _exerciseTypeMeta,
+          exerciseType.isAcceptableOrUnknown(
+              data['exercise_type']!, _exerciseTypeMeta));
+    }
     return context;
   }
 
@@ -257,6 +272,8 @@ class $ExerciseCategoriesTable extends ExerciseCategories
           .read(DriftSqlType.string, data['${effectivePrefix}group_name']),
       imageData: attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}image_data']),
+      exerciseType: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}exercise_type'])!,
     );
   }
 
@@ -272,8 +289,13 @@ class ExerciseCategory extends DataClass
   final String name;
   final String? groupName;
   final Uint8List? imageData;
+  final int exerciseType;
   const ExerciseCategory(
-      {required this.id, required this.name, this.groupName, this.imageData});
+      {required this.id,
+      required this.name,
+      this.groupName,
+      this.imageData,
+      required this.exerciseType});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -285,6 +307,7 @@ class ExerciseCategory extends DataClass
     if (!nullToAbsent || imageData != null) {
       map['image_data'] = Variable<Uint8List>(imageData);
     }
+    map['exercise_type'] = Variable<int>(exerciseType);
     return map;
   }
 
@@ -298,6 +321,7 @@ class ExerciseCategory extends DataClass
       imageData: imageData == null && nullToAbsent
           ? const Value.absent()
           : Value(imageData),
+      exerciseType: Value(exerciseType),
     );
   }
 
@@ -309,6 +333,7 @@ class ExerciseCategory extends DataClass
       name: serializer.fromJson<String>(json['name']),
       groupName: serializer.fromJson<String?>(json['groupName']),
       imageData: serializer.fromJson<Uint8List?>(json['imageData']),
+      exerciseType: serializer.fromJson<int>(json['exerciseType']),
     );
   }
   @override
@@ -319,6 +344,7 @@ class ExerciseCategory extends DataClass
       'name': serializer.toJson<String>(name),
       'groupName': serializer.toJson<String?>(groupName),
       'imageData': serializer.toJson<Uint8List?>(imageData),
+      'exerciseType': serializer.toJson<int>(exerciseType),
     };
   }
 
@@ -326,12 +352,14 @@ class ExerciseCategory extends DataClass
           {int? id,
           String? name,
           Value<String?> groupName = const Value.absent(),
-          Value<Uint8List?> imageData = const Value.absent()}) =>
+          Value<Uint8List?> imageData = const Value.absent(),
+          int? exerciseType}) =>
       ExerciseCategory(
         id: id ?? this.id,
         name: name ?? this.name,
         groupName: groupName.present ? groupName.value : this.groupName,
         imageData: imageData.present ? imageData.value : this.imageData,
+        exerciseType: exerciseType ?? this.exerciseType,
       );
   ExerciseCategory copyWithCompanion(ExerciseCategoriesCompanion data) {
     return ExerciseCategory(
@@ -339,6 +367,9 @@ class ExerciseCategory extends DataClass
       name: data.name.present ? data.name.value : this.name,
       groupName: data.groupName.present ? data.groupName.value : this.groupName,
       imageData: data.imageData.present ? data.imageData.value : this.imageData,
+      exerciseType: data.exerciseType.present
+          ? data.exerciseType.value
+          : this.exerciseType,
     );
   }
 
@@ -348,14 +379,15 @@ class ExerciseCategory extends DataClass
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('groupName: $groupName, ')
-          ..write('imageData: $imageData')
+          ..write('imageData: $imageData, ')
+          ..write('exerciseType: $exerciseType')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, groupName, $driftBlobEquality.hash(imageData));
+  int get hashCode => Object.hash(
+      id, name, groupName, $driftBlobEquality.hash(imageData), exerciseType);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -363,7 +395,8 @@ class ExerciseCategory extends DataClass
           other.id == this.id &&
           other.name == this.name &&
           other.groupName == this.groupName &&
-          $driftBlobEquality.equals(other.imageData, this.imageData));
+          $driftBlobEquality.equals(other.imageData, this.imageData) &&
+          other.exerciseType == this.exerciseType);
 }
 
 class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
@@ -371,29 +404,34 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
   final Value<String> name;
   final Value<String?> groupName;
   final Value<Uint8List?> imageData;
+  final Value<int> exerciseType;
   const ExerciseCategoriesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.groupName = const Value.absent(),
     this.imageData = const Value.absent(),
+    this.exerciseType = const Value.absent(),
   });
   ExerciseCategoriesCompanion.insert({
     this.id = const Value.absent(),
     required String name,
     this.groupName = const Value.absent(),
     this.imageData = const Value.absent(),
+    this.exerciseType = const Value.absent(),
   }) : name = Value(name);
   static Insertable<ExerciseCategory> custom({
     Expression<int>? id,
     Expression<String>? name,
     Expression<String>? groupName,
     Expression<Uint8List>? imageData,
+    Expression<int>? exerciseType,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (groupName != null) 'group_name': groupName,
       if (imageData != null) 'image_data': imageData,
+      if (exerciseType != null) 'exercise_type': exerciseType,
     });
   }
 
@@ -401,12 +439,14 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
       {Value<int>? id,
       Value<String>? name,
       Value<String?>? groupName,
-      Value<Uint8List?>? imageData}) {
+      Value<Uint8List?>? imageData,
+      Value<int>? exerciseType}) {
     return ExerciseCategoriesCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
       groupName: groupName ?? this.groupName,
       imageData: imageData ?? this.imageData,
+      exerciseType: exerciseType ?? this.exerciseType,
     );
   }
 
@@ -425,6 +465,9 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
     if (imageData.present) {
       map['image_data'] = Variable<Uint8List>(imageData.value);
     }
+    if (exerciseType.present) {
+      map['exercise_type'] = Variable<int>(exerciseType.value);
+    }
     return map;
   }
 
@@ -434,7 +477,8 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('groupName: $groupName, ')
-          ..write('imageData: $imageData')
+          ..write('imageData: $imageData, ')
+          ..write('exerciseType: $exerciseType')
           ..write(')'))
         .toString();
   }
@@ -1253,9 +1297,28 @@ class $WorkoutSetsTable extends WorkoutSets
   late final GeneratedColumn<int> timeSecs = GeneratedColumn<int>(
       'time_secs', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _rpeMeta = const VerificationMeta('rpe');
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, categoryId, dateStr, timestamp, weightKg, reps, timeSecs];
+  late final GeneratedColumn<int> rpe = GeneratedColumn<int>(
+      'rpe', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _gradeMeta = const VerificationMeta('grade');
+  @override
+  late final GeneratedColumn<String> grade = GeneratedColumn<String>(
+      'grade', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        categoryId,
+        dateStr,
+        timestamp,
+        weightKg,
+        reps,
+        timeSecs,
+        rpe,
+        grade
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1301,6 +1364,14 @@ class $WorkoutSetsTable extends WorkoutSets
       context.handle(_timeSecsMeta,
           timeSecs.isAcceptableOrUnknown(data['time_secs']!, _timeSecsMeta));
     }
+    if (data.containsKey('rpe')) {
+      context.handle(
+          _rpeMeta, rpe.isAcceptableOrUnknown(data['rpe']!, _rpeMeta));
+    }
+    if (data.containsKey('grade')) {
+      context.handle(
+          _gradeMeta, grade.isAcceptableOrUnknown(data['grade']!, _gradeMeta));
+    }
     return context;
   }
 
@@ -1324,6 +1395,10 @@ class $WorkoutSetsTable extends WorkoutSets
           .read(DriftSqlType.int, data['${effectivePrefix}reps']),
       timeSecs: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}time_secs']),
+      rpe: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}rpe']),
+      grade: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}grade']),
     );
   }
 
@@ -1341,6 +1416,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
   final double? weightKg;
   final int? reps;
   final int? timeSecs;
+  final int? rpe;
+  final String? grade;
   const WorkoutSet(
       {required this.id,
       required this.categoryId,
@@ -1348,7 +1425,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       required this.timestamp,
       this.weightKg,
       this.reps,
-      this.timeSecs});
+      this.timeSecs,
+      this.rpe,
+      this.grade});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1364,6 +1443,12 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
     }
     if (!nullToAbsent || timeSecs != null) {
       map['time_secs'] = Variable<int>(timeSecs);
+    }
+    if (!nullToAbsent || rpe != null) {
+      map['rpe'] = Variable<int>(rpe);
+    }
+    if (!nullToAbsent || grade != null) {
+      map['grade'] = Variable<String>(grade);
     }
     return map;
   }
@@ -1381,6 +1466,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       timeSecs: timeSecs == null && nullToAbsent
           ? const Value.absent()
           : Value(timeSecs),
+      rpe: rpe == null && nullToAbsent ? const Value.absent() : Value(rpe),
+      grade:
+          grade == null && nullToAbsent ? const Value.absent() : Value(grade),
     );
   }
 
@@ -1395,6 +1483,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       weightKg: serializer.fromJson<double?>(json['weightKg']),
       reps: serializer.fromJson<int?>(json['reps']),
       timeSecs: serializer.fromJson<int?>(json['timeSecs']),
+      rpe: serializer.fromJson<int?>(json['rpe']),
+      grade: serializer.fromJson<String?>(json['grade']),
     );
   }
   @override
@@ -1408,6 +1498,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       'weightKg': serializer.toJson<double?>(weightKg),
       'reps': serializer.toJson<int?>(reps),
       'timeSecs': serializer.toJson<int?>(timeSecs),
+      'rpe': serializer.toJson<int?>(rpe),
+      'grade': serializer.toJson<String?>(grade),
     };
   }
 
@@ -1418,7 +1510,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
           int? timestamp,
           Value<double?> weightKg = const Value.absent(),
           Value<int?> reps = const Value.absent(),
-          Value<int?> timeSecs = const Value.absent()}) =>
+          Value<int?> timeSecs = const Value.absent(),
+          Value<int?> rpe = const Value.absent(),
+          Value<String?> grade = const Value.absent()}) =>
       WorkoutSet(
         id: id ?? this.id,
         categoryId: categoryId ?? this.categoryId,
@@ -1427,6 +1521,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
         weightKg: weightKg.present ? weightKg.value : this.weightKg,
         reps: reps.present ? reps.value : this.reps,
         timeSecs: timeSecs.present ? timeSecs.value : this.timeSecs,
+        rpe: rpe.present ? rpe.value : this.rpe,
+        grade: grade.present ? grade.value : this.grade,
       );
   WorkoutSet copyWithCompanion(WorkoutSetsCompanion data) {
     return WorkoutSet(
@@ -1438,6 +1534,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       weightKg: data.weightKg.present ? data.weightKg.value : this.weightKg,
       reps: data.reps.present ? data.reps.value : this.reps,
       timeSecs: data.timeSecs.present ? data.timeSecs.value : this.timeSecs,
+      rpe: data.rpe.present ? data.rpe.value : this.rpe,
+      grade: data.grade.present ? data.grade.value : this.grade,
     );
   }
 
@@ -1450,14 +1548,16 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
           ..write('timestamp: $timestamp, ')
           ..write('weightKg: $weightKg, ')
           ..write('reps: $reps, ')
-          ..write('timeSecs: $timeSecs')
+          ..write('timeSecs: $timeSecs, ')
+          ..write('rpe: $rpe, ')
+          ..write('grade: $grade')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, categoryId, dateStr, timestamp, weightKg, reps, timeSecs);
+  int get hashCode => Object.hash(
+      id, categoryId, dateStr, timestamp, weightKg, reps, timeSecs, rpe, grade);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1468,7 +1568,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
           other.timestamp == this.timestamp &&
           other.weightKg == this.weightKg &&
           other.reps == this.reps &&
-          other.timeSecs == this.timeSecs);
+          other.timeSecs == this.timeSecs &&
+          other.rpe == this.rpe &&
+          other.grade == this.grade);
 }
 
 class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
@@ -1479,6 +1581,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
   final Value<double?> weightKg;
   final Value<int?> reps;
   final Value<int?> timeSecs;
+  final Value<int?> rpe;
+  final Value<String?> grade;
   const WorkoutSetsCompanion({
     this.id = const Value.absent(),
     this.categoryId = const Value.absent(),
@@ -1487,6 +1591,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     this.weightKg = const Value.absent(),
     this.reps = const Value.absent(),
     this.timeSecs = const Value.absent(),
+    this.rpe = const Value.absent(),
+    this.grade = const Value.absent(),
   });
   WorkoutSetsCompanion.insert({
     this.id = const Value.absent(),
@@ -1496,6 +1602,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     this.weightKg = const Value.absent(),
     this.reps = const Value.absent(),
     this.timeSecs = const Value.absent(),
+    this.rpe = const Value.absent(),
+    this.grade = const Value.absent(),
   })  : categoryId = Value(categoryId),
         dateStr = Value(dateStr),
         timestamp = Value(timestamp);
@@ -1507,6 +1615,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     Expression<double>? weightKg,
     Expression<int>? reps,
     Expression<int>? timeSecs,
+    Expression<int>? rpe,
+    Expression<String>? grade,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1516,6 +1626,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
       if (weightKg != null) 'weight_kg': weightKg,
       if (reps != null) 'reps': reps,
       if (timeSecs != null) 'time_secs': timeSecs,
+      if (rpe != null) 'rpe': rpe,
+      if (grade != null) 'grade': grade,
     });
   }
 
@@ -1526,7 +1638,9 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
       Value<int>? timestamp,
       Value<double?>? weightKg,
       Value<int?>? reps,
-      Value<int?>? timeSecs}) {
+      Value<int?>? timeSecs,
+      Value<int?>? rpe,
+      Value<String?>? grade}) {
     return WorkoutSetsCompanion(
       id: id ?? this.id,
       categoryId: categoryId ?? this.categoryId,
@@ -1535,6 +1649,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
       weightKg: weightKg ?? this.weightKg,
       reps: reps ?? this.reps,
       timeSecs: timeSecs ?? this.timeSecs,
+      rpe: rpe ?? this.rpe,
+      grade: grade ?? this.grade,
     );
   }
 
@@ -1562,6 +1678,12 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     if (timeSecs.present) {
       map['time_secs'] = Variable<int>(timeSecs.value);
     }
+    if (rpe.present) {
+      map['rpe'] = Variable<int>(rpe.value);
+    }
+    if (grade.present) {
+      map['grade'] = Variable<String>(grade.value);
+    }
     return map;
   }
 
@@ -1574,7 +1696,389 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
           ..write('timestamp: $timestamp, ')
           ..write('weightKg: $weightKg, ')
           ..write('reps: $reps, ')
-          ..write('timeSecs: $timeSecs')
+          ..write('timeSecs: $timeSecs, ')
+          ..write('rpe: $rpe, ')
+          ..write('grade: $grade')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $DayNotesTable extends DayNotes with TableInfo<$DayNotesTable, DayNote> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DayNotesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dateStrMeta =
+      const VerificationMeta('dateStr');
+  @override
+  late final GeneratedColumn<String> dateStr = GeneratedColumn<String>(
+      'date_str', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+      'note', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [dateStr, note];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'day_notes';
+  @override
+  VerificationContext validateIntegrity(Insertable<DayNote> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('date_str')) {
+      context.handle(_dateStrMeta,
+          dateStr.isAcceptableOrUnknown(data['date_str']!, _dateStrMeta));
+    } else if (isInserting) {
+      context.missing(_dateStrMeta);
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+          _noteMeta, note.isAcceptableOrUnknown(data['note']!, _noteMeta));
+    } else if (isInserting) {
+      context.missing(_noteMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {dateStr};
+  @override
+  DayNote map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DayNote(
+      dateStr: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_str'])!,
+      note: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}note'])!,
+    );
+  }
+
+  @override
+  $DayNotesTable createAlias(String alias) {
+    return $DayNotesTable(attachedDatabase, alias);
+  }
+}
+
+class DayNote extends DataClass implements Insertable<DayNote> {
+  final String dateStr;
+  final String note;
+  const DayNote({required this.dateStr, required this.note});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['date_str'] = Variable<String>(dateStr);
+    map['note'] = Variable<String>(note);
+    return map;
+  }
+
+  DayNotesCompanion toCompanion(bool nullToAbsent) {
+    return DayNotesCompanion(
+      dateStr: Value(dateStr),
+      note: Value(note),
+    );
+  }
+
+  factory DayNote.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DayNote(
+      dateStr: serializer.fromJson<String>(json['dateStr']),
+      note: serializer.fromJson<String>(json['note']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'dateStr': serializer.toJson<String>(dateStr),
+      'note': serializer.toJson<String>(note),
+    };
+  }
+
+  DayNote copyWith({String? dateStr, String? note}) => DayNote(
+        dateStr: dateStr ?? this.dateStr,
+        note: note ?? this.note,
+      );
+  DayNote copyWithCompanion(DayNotesCompanion data) {
+    return DayNote(
+      dateStr: data.dateStr.present ? data.dateStr.value : this.dateStr,
+      note: data.note.present ? data.note.value : this.note,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DayNote(')
+          ..write('dateStr: $dateStr, ')
+          ..write('note: $note')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(dateStr, note);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DayNote &&
+          other.dateStr == this.dateStr &&
+          other.note == this.note);
+}
+
+class DayNotesCompanion extends UpdateCompanion<DayNote> {
+  final Value<String> dateStr;
+  final Value<String> note;
+  final Value<int> rowid;
+  const DayNotesCompanion({
+    this.dateStr = const Value.absent(),
+    this.note = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DayNotesCompanion.insert({
+    required String dateStr,
+    required String note,
+    this.rowid = const Value.absent(),
+  })  : dateStr = Value(dateStr),
+        note = Value(note);
+  static Insertable<DayNote> custom({
+    Expression<String>? dateStr,
+    Expression<String>? note,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (dateStr != null) 'date_str': dateStr,
+      if (note != null) 'note': note,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DayNotesCompanion copyWith(
+      {Value<String>? dateStr, Value<String>? note, Value<int>? rowid}) {
+    return DayNotesCompanion(
+      dateStr: dateStr ?? this.dateStr,
+      note: note ?? this.note,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (dateStr.present) {
+      map['date_str'] = Variable<String>(dateStr.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DayNotesCompanion(')
+          ..write('dateStr: $dateStr, ')
+          ..write('note: $note, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $BodyWeightsTable extends BodyWeights
+    with TableInfo<$BodyWeightsTable, BodyWeight> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BodyWeightsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dateStrMeta =
+      const VerificationMeta('dateStr');
+  @override
+  late final GeneratedColumn<String> dateStr = GeneratedColumn<String>(
+      'date_str', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _kgMeta = const VerificationMeta('kg');
+  @override
+  late final GeneratedColumn<double> kg = GeneratedColumn<double>(
+      'kg', aliasedName, false,
+      type: DriftSqlType.double, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [dateStr, kg];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'body_weights';
+  @override
+  VerificationContext validateIntegrity(Insertable<BodyWeight> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('date_str')) {
+      context.handle(_dateStrMeta,
+          dateStr.isAcceptableOrUnknown(data['date_str']!, _dateStrMeta));
+    } else if (isInserting) {
+      context.missing(_dateStrMeta);
+    }
+    if (data.containsKey('kg')) {
+      context.handle(_kgMeta, kg.isAcceptableOrUnknown(data['kg']!, _kgMeta));
+    } else if (isInserting) {
+      context.missing(_kgMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {dateStr};
+  @override
+  BodyWeight map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BodyWeight(
+      dateStr: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_str'])!,
+      kg: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}kg'])!,
+    );
+  }
+
+  @override
+  $BodyWeightsTable createAlias(String alias) {
+    return $BodyWeightsTable(attachedDatabase, alias);
+  }
+}
+
+class BodyWeight extends DataClass implements Insertable<BodyWeight> {
+  final String dateStr;
+  final double kg;
+  const BodyWeight({required this.dateStr, required this.kg});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['date_str'] = Variable<String>(dateStr);
+    map['kg'] = Variable<double>(kg);
+    return map;
+  }
+
+  BodyWeightsCompanion toCompanion(bool nullToAbsent) {
+    return BodyWeightsCompanion(
+      dateStr: Value(dateStr),
+      kg: Value(kg),
+    );
+  }
+
+  factory BodyWeight.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BodyWeight(
+      dateStr: serializer.fromJson<String>(json['dateStr']),
+      kg: serializer.fromJson<double>(json['kg']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'dateStr': serializer.toJson<String>(dateStr),
+      'kg': serializer.toJson<double>(kg),
+    };
+  }
+
+  BodyWeight copyWith({String? dateStr, double? kg}) => BodyWeight(
+        dateStr: dateStr ?? this.dateStr,
+        kg: kg ?? this.kg,
+      );
+  BodyWeight copyWithCompanion(BodyWeightsCompanion data) {
+    return BodyWeight(
+      dateStr: data.dateStr.present ? data.dateStr.value : this.dateStr,
+      kg: data.kg.present ? data.kg.value : this.kg,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BodyWeight(')
+          ..write('dateStr: $dateStr, ')
+          ..write('kg: $kg')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(dateStr, kg);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BodyWeight &&
+          other.dateStr == this.dateStr &&
+          other.kg == this.kg);
+}
+
+class BodyWeightsCompanion extends UpdateCompanion<BodyWeight> {
+  final Value<String> dateStr;
+  final Value<double> kg;
+  final Value<int> rowid;
+  const BodyWeightsCompanion({
+    this.dateStr = const Value.absent(),
+    this.kg = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  BodyWeightsCompanion.insert({
+    required String dateStr,
+    required double kg,
+    this.rowid = const Value.absent(),
+  })  : dateStr = Value(dateStr),
+        kg = Value(kg);
+  static Insertable<BodyWeight> custom({
+    Expression<String>? dateStr,
+    Expression<double>? kg,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (dateStr != null) 'date_str': dateStr,
+      if (kg != null) 'kg': kg,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  BodyWeightsCompanion copyWith(
+      {Value<String>? dateStr, Value<double>? kg, Value<int>? rowid}) {
+    return BodyWeightsCompanion(
+      dateStr: dateStr ?? this.dateStr,
+      kg: kg ?? this.kg,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (dateStr.present) {
+      map['date_str'] = Variable<String>(dateStr.value);
+    }
+    if (kg.present) {
+      map['kg'] = Variable<double>(kg.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BodyWeightsCompanion(')
+          ..write('dateStr: $dateStr, ')
+          ..write('kg: $kg, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -1591,6 +2095,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PlansTable plans = $PlansTable(this);
   late final $PlanWorkoutsTable planWorkouts = $PlanWorkoutsTable(this);
   late final $WorkoutSetsTable workoutSets = $WorkoutSetsTable(this);
+  late final $DayNotesTable dayNotes = $DayNotesTable(this);
+  late final $BodyWeightsTable bodyWeights = $BodyWeightsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1601,7 +2107,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         workoutExercises,
         plans,
         planWorkouts,
-        workoutSets
+        workoutSets,
+        dayNotes,
+        bodyWeights
       ];
 }
 
@@ -1888,6 +2396,7 @@ typedef $$ExerciseCategoriesTableCreateCompanionBuilder
   required String name,
   Value<String?> groupName,
   Value<Uint8List?> imageData,
+  Value<int> exerciseType,
 });
 typedef $$ExerciseCategoriesTableUpdateCompanionBuilder
     = ExerciseCategoriesCompanion Function({
@@ -1895,6 +2404,7 @@ typedef $$ExerciseCategoriesTableUpdateCompanionBuilder
   Value<String> name,
   Value<String?> groupName,
   Value<Uint8List?> imageData,
+  Value<int> exerciseType,
 });
 
 final class $$ExerciseCategoriesTableReferences extends BaseReferences<
@@ -1955,6 +2465,9 @@ class $$ExerciseCategoriesTableFilterComposer
 
   ColumnFilters<Uint8List> get imageData => $composableBuilder(
       column: $table.imageData, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get exerciseType => $composableBuilder(
+      column: $table.exerciseType, builder: (column) => ColumnFilters(column));
 
   Expression<bool> workoutExercisesRefs(
       Expression<bool> Function($$WorkoutExercisesTableFilterComposer f) f) {
@@ -2019,6 +2532,10 @@ class $$ExerciseCategoriesTableOrderingComposer
 
   ColumnOrderings<Uint8List> get imageData => $composableBuilder(
       column: $table.imageData, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get exerciseType => $composableBuilder(
+      column: $table.exerciseType,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$ExerciseCategoriesTableAnnotationComposer
@@ -2041,6 +2558,9 @@ class $$ExerciseCategoriesTableAnnotationComposer
 
   GeneratedColumn<Uint8List> get imageData =>
       $composableBuilder(column: $table.imageData, builder: (column) => column);
+
+  GeneratedColumn<int> get exerciseType => $composableBuilder(
+      column: $table.exerciseType, builder: (column) => column);
 
   Expression<T> workoutExercisesRefs<T extends Object>(
       Expression<T> Function($$WorkoutExercisesTableAnnotationComposer a) f) {
@@ -2114,24 +2634,28 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
             Value<String> name = const Value.absent(),
             Value<String?> groupName = const Value.absent(),
             Value<Uint8List?> imageData = const Value.absent(),
+            Value<int> exerciseType = const Value.absent(),
           }) =>
               ExerciseCategoriesCompanion(
             id: id,
             name: name,
             groupName: groupName,
             imageData: imageData,
+            exerciseType: exerciseType,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             required String name,
             Value<String?> groupName = const Value.absent(),
             Value<Uint8List?> imageData = const Value.absent(),
+            Value<int> exerciseType = const Value.absent(),
           }) =>
               ExerciseCategoriesCompanion.insert(
             id: id,
             name: name,
             groupName: groupName,
             imageData: imageData,
+            exerciseType: exerciseType,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
@@ -3081,6 +3605,8 @@ typedef $$WorkoutSetsTableCreateCompanionBuilder = WorkoutSetsCompanion
   Value<double?> weightKg,
   Value<int?> reps,
   Value<int?> timeSecs,
+  Value<int?> rpe,
+  Value<String?> grade,
 });
 typedef $$WorkoutSetsTableUpdateCompanionBuilder = WorkoutSetsCompanion
     Function({
@@ -3091,6 +3617,8 @@ typedef $$WorkoutSetsTableUpdateCompanionBuilder = WorkoutSetsCompanion
   Value<double?> weightKg,
   Value<int?> reps,
   Value<int?> timeSecs,
+  Value<int?> rpe,
+  Value<String?> grade,
 });
 
 final class $$WorkoutSetsTableReferences
@@ -3141,6 +3669,12 @@ class $$WorkoutSetsTableFilterComposer
   ColumnFilters<int> get timeSecs => $composableBuilder(
       column: $table.timeSecs, builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<int> get rpe => $composableBuilder(
+      column: $table.rpe, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get grade => $composableBuilder(
+      column: $table.grade, builder: (column) => ColumnFilters(column));
+
   $$ExerciseCategoriesTableFilterComposer get categoryId {
     final $$ExerciseCategoriesTableFilterComposer composer = $composerBuilder(
         composer: this,
@@ -3189,6 +3723,12 @@ class $$WorkoutSetsTableOrderingComposer
   ColumnOrderings<int> get timeSecs => $composableBuilder(
       column: $table.timeSecs, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get rpe => $composableBuilder(
+      column: $table.rpe, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get grade => $composableBuilder(
+      column: $table.grade, builder: (column) => ColumnOrderings(column));
+
   $$ExerciseCategoriesTableOrderingComposer get categoryId {
     final $$ExerciseCategoriesTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -3236,6 +3776,12 @@ class $$WorkoutSetsTableAnnotationComposer
 
   GeneratedColumn<int> get timeSecs =>
       $composableBuilder(column: $table.timeSecs, builder: (column) => column);
+
+  GeneratedColumn<int> get rpe =>
+      $composableBuilder(column: $table.rpe, builder: (column) => column);
+
+  GeneratedColumn<String> get grade =>
+      $composableBuilder(column: $table.grade, builder: (column) => column);
 
   $$ExerciseCategoriesTableAnnotationComposer get categoryId {
     final $$ExerciseCategoriesTableAnnotationComposer composer =
@@ -3289,6 +3835,8 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             Value<double?> weightKg = const Value.absent(),
             Value<int?> reps = const Value.absent(),
             Value<int?> timeSecs = const Value.absent(),
+            Value<int?> rpe = const Value.absent(),
+            Value<String?> grade = const Value.absent(),
           }) =>
               WorkoutSetsCompanion(
             id: id,
@@ -3298,6 +3846,8 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             weightKg: weightKg,
             reps: reps,
             timeSecs: timeSecs,
+            rpe: rpe,
+            grade: grade,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -3307,6 +3857,8 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             Value<double?> weightKg = const Value.absent(),
             Value<int?> reps = const Value.absent(),
             Value<int?> timeSecs = const Value.absent(),
+            Value<int?> rpe = const Value.absent(),
+            Value<String?> grade = const Value.absent(),
           }) =>
               WorkoutSetsCompanion.insert(
             id: id,
@@ -3316,6 +3868,8 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             weightKg: weightKg,
             reps: reps,
             timeSecs: timeSecs,
+            rpe: rpe,
+            grade: grade,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
@@ -3373,6 +3927,248 @@ typedef $$WorkoutSetsTableProcessedTableManager = ProcessedTableManager<
     (WorkoutSet, $$WorkoutSetsTableReferences),
     WorkoutSet,
     PrefetchHooks Function({bool categoryId})>;
+typedef $$DayNotesTableCreateCompanionBuilder = DayNotesCompanion Function({
+  required String dateStr,
+  required String note,
+  Value<int> rowid,
+});
+typedef $$DayNotesTableUpdateCompanionBuilder = DayNotesCompanion Function({
+  Value<String> dateStr,
+  Value<String> note,
+  Value<int> rowid,
+});
+
+class $$DayNotesTableFilterComposer
+    extends Composer<_$AppDatabase, $DayNotesTable> {
+  $$DayNotesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get dateStr => $composableBuilder(
+      column: $table.dateStr, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnFilters(column));
+}
+
+class $$DayNotesTableOrderingComposer
+    extends Composer<_$AppDatabase, $DayNotesTable> {
+  $$DayNotesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get dateStr => $composableBuilder(
+      column: $table.dateStr, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnOrderings(column));
+}
+
+class $$DayNotesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DayNotesTable> {
+  $$DayNotesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get dateStr =>
+      $composableBuilder(column: $table.dateStr, builder: (column) => column);
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+}
+
+class $$DayNotesTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $DayNotesTable,
+    DayNote,
+    $$DayNotesTableFilterComposer,
+    $$DayNotesTableOrderingComposer,
+    $$DayNotesTableAnnotationComposer,
+    $$DayNotesTableCreateCompanionBuilder,
+    $$DayNotesTableUpdateCompanionBuilder,
+    (DayNote, BaseReferences<_$AppDatabase, $DayNotesTable, DayNote>),
+    DayNote,
+    PrefetchHooks Function()> {
+  $$DayNotesTableTableManager(_$AppDatabase db, $DayNotesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DayNotesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DayNotesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DayNotesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> dateStr = const Value.absent(),
+            Value<String> note = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              DayNotesCompanion(
+            dateStr: dateStr,
+            note: note,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String dateStr,
+            required String note,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              DayNotesCompanion.insert(
+            dateStr: dateStr,
+            note: note,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$DayNotesTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $DayNotesTable,
+    DayNote,
+    $$DayNotesTableFilterComposer,
+    $$DayNotesTableOrderingComposer,
+    $$DayNotesTableAnnotationComposer,
+    $$DayNotesTableCreateCompanionBuilder,
+    $$DayNotesTableUpdateCompanionBuilder,
+    (DayNote, BaseReferences<_$AppDatabase, $DayNotesTable, DayNote>),
+    DayNote,
+    PrefetchHooks Function()>;
+typedef $$BodyWeightsTableCreateCompanionBuilder = BodyWeightsCompanion
+    Function({
+  required String dateStr,
+  required double kg,
+  Value<int> rowid,
+});
+typedef $$BodyWeightsTableUpdateCompanionBuilder = BodyWeightsCompanion
+    Function({
+  Value<String> dateStr,
+  Value<double> kg,
+  Value<int> rowid,
+});
+
+class $$BodyWeightsTableFilterComposer
+    extends Composer<_$AppDatabase, $BodyWeightsTable> {
+  $$BodyWeightsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get dateStr => $composableBuilder(
+      column: $table.dateStr, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get kg => $composableBuilder(
+      column: $table.kg, builder: (column) => ColumnFilters(column));
+}
+
+class $$BodyWeightsTableOrderingComposer
+    extends Composer<_$AppDatabase, $BodyWeightsTable> {
+  $$BodyWeightsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get dateStr => $composableBuilder(
+      column: $table.dateStr, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get kg => $composableBuilder(
+      column: $table.kg, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BodyWeightsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $BodyWeightsTable> {
+  $$BodyWeightsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get dateStr =>
+      $composableBuilder(column: $table.dateStr, builder: (column) => column);
+
+  GeneratedColumn<double> get kg =>
+      $composableBuilder(column: $table.kg, builder: (column) => column);
+}
+
+class $$BodyWeightsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $BodyWeightsTable,
+    BodyWeight,
+    $$BodyWeightsTableFilterComposer,
+    $$BodyWeightsTableOrderingComposer,
+    $$BodyWeightsTableAnnotationComposer,
+    $$BodyWeightsTableCreateCompanionBuilder,
+    $$BodyWeightsTableUpdateCompanionBuilder,
+    (BodyWeight, BaseReferences<_$AppDatabase, $BodyWeightsTable, BodyWeight>),
+    BodyWeight,
+    PrefetchHooks Function()> {
+  $$BodyWeightsTableTableManager(_$AppDatabase db, $BodyWeightsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BodyWeightsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BodyWeightsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BodyWeightsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> dateStr = const Value.absent(),
+            Value<double> kg = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BodyWeightsCompanion(
+            dateStr: dateStr,
+            kg: kg,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String dateStr,
+            required double kg,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              BodyWeightsCompanion.insert(
+            dateStr: dateStr,
+            kg: kg,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$BodyWeightsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $BodyWeightsTable,
+    BodyWeight,
+    $$BodyWeightsTableFilterComposer,
+    $$BodyWeightsTableOrderingComposer,
+    $$BodyWeightsTableAnnotationComposer,
+    $$BodyWeightsTableCreateCompanionBuilder,
+    $$BodyWeightsTableUpdateCompanionBuilder,
+    (BodyWeight, BaseReferences<_$AppDatabase, $BodyWeightsTable, BodyWeight>),
+    BodyWeight,
+    PrefetchHooks Function()>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3389,4 +4185,8 @@ class $AppDatabaseManager {
       $$PlanWorkoutsTableTableManager(_db, _db.planWorkouts);
   $$WorkoutSetsTableTableManager get workoutSets =>
       $$WorkoutSetsTableTableManager(_db, _db.workoutSets);
+  $$DayNotesTableTableManager get dayNotes =>
+      $$DayNotesTableTableManager(_db, _db.dayNotes);
+  $$BodyWeightsTableTableManager get bodyWeights =>
+      $$BodyWeightsTableTableManager(_db, _db.bodyWeights);
 }

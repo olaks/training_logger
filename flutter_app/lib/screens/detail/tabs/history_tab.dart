@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../../database/database.dart';
 import '../../../providers/app_providers.dart';
 import '../../../utils/format_utils.dart';
+import '../../../utils/grades.dart';
 
 class HistoryTab extends ConsumerWidget {
   final int categoryId;
@@ -20,8 +21,45 @@ class HistoryTab extends ConsumerWidget {
         if (sets.isEmpty) {
           return Center(
             child: Text('No sets logged yet.',
-                style: TextStyle(color: Colors.white.withValues(alpha:0.35))),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.35))),
           );
+        }
+
+        // Compute all-time PR thresholds
+        final isClimbing = sets.any((s) => s.grade != null);
+
+        // Standard PRs (weight / reps / time)
+        double? maxWeight;
+        int? maxReps;
+        int? maxTime;
+        // Climbing PR (best grade index)
+        int maxGradeIdx = -1;
+        List<String> gradeScale = fontGrades;
+
+        if (isClimbing) {
+          final gradeStrings = sets
+              .where((s) => s.grade != null)
+              .map((s) => s.grade!);
+          gradeScale = detectGradeScale(gradeStrings);
+          for (final s in sets) {
+            if (s.grade == null) continue;
+            final idx = gradeToIndex(s.grade!, gradeScale);
+            if (idx > maxGradeIdx) maxGradeIdx = idx;
+          }
+        } else {
+          for (final s in sets) {
+            if (s.weightKg != null &&
+                (maxWeight == null || s.weightKg! > maxWeight)) {
+              maxWeight = s.weightKg;
+            }
+            if (s.reps != null && (maxReps == null || s.reps! > maxReps)) {
+              maxReps = s.reps;
+            }
+            if (s.timeSecs != null &&
+                (maxTime == null || s.timeSecs! > maxTime)) {
+              maxTime = s.timeSecs;
+            }
+          }
         }
 
         // Group by date (already sorted desc by date from DB)
@@ -52,11 +90,25 @@ class HistoryTab extends ConsumerWidget {
                           color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.w600)),
                 ),
-                ...daySets.asMap().entries.map((e) => _SetRow(
-                      set:     e.value,
-                      index:   e.key,
-                      onDelete: () => _confirmDelete(context, ref, e.value.id),
-                    )),
+                ...daySets.asMap().entries.map((e) {
+                  final s = e.value;
+                  bool isPr;
+                  if (isClimbing) {
+                    isPr = s.grade != null &&
+                        gradeToIndex(s.grade!, gradeScale) == maxGradeIdx;
+                  } else {
+                    isPr =
+                        (s.weightKg != null && s.weightKg == maxWeight) ||
+                        (s.reps != null && s.reps == maxReps) ||
+                        (s.timeSecs != null && s.timeSecs == maxTime);
+                  }
+                  return _SetRow(
+                    set:      s,
+                    index:    e.key,
+                    isPr:     isPr,
+                    onDelete: () => _confirmDelete(context, ref, s.id),
+                  );
+                }),
               ],
             );
           },
@@ -91,8 +143,13 @@ class HistoryTab extends ConsumerWidget {
 class _SetRow extends StatelessWidget {
   final WorkoutSet set;
   final int index;
+  final bool isPr;
   final VoidCallback onDelete;
-  const _SetRow({required this.set, required this.index, required this.onDelete});
+  const _SetRow(
+      {required this.set,
+      required this.index,
+      required this.isPr,
+      required this.onDelete});
 
   @override
   Widget build(BuildContext context) => Card(
@@ -106,21 +163,55 @@ class _SetRow extends StatelessWidget {
                 child: Text('Set ${index + 1}',
                     style: TextStyle(
                         fontSize: 13,
-                        color: Colors.white.withValues(alpha:0.4))),
+                        color: Colors.white.withValues(alpha: 0.4))),
               ),
               Expanded(
-                child: Text(
-                    formatSet(
-                        weightKg: set.weightKg,
-                        reps:     set.reps,
-                        timeSecs: set.timeSecs),
-                    style: const TextStyle(fontSize: 14)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      set.grade != null
+                          ? set.grade!
+                          : formatSet(
+                              weightKg: set.weightKg,
+                              reps:     set.reps,
+                              timeSecs: set.timeSecs),
+                      style: TextStyle(
+                          fontSize: set.grade != null ? 20 : 14,
+                          fontWeight: set.grade != null
+                              ? FontWeight.w700
+                              : FontWeight.normal),
+                    ),
+                    if (set.rpe != null)
+                      Text(
+                        'RPE ${set.rpe}',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.8)),
+                      ),
+                  ],
+                ),
               ),
+              if (isPr)
+                const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: Tooltip(
+                    message: 'Personal record',
+                    child: Icon(Icons.star_rounded,
+                        size: 17, color: Colors.amber),
+                  ),
+                ),
               GestureDetector(
                 onTap: onDelete,
                 child: Icon(Icons.delete_outline,
                     size: 18,
-                    color: Theme.of(context).colorScheme.error.withValues(alpha:0.5)),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .error
+                        .withValues(alpha: 0.5)),
               ),
             ],
           ),

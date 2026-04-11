@@ -1,24 +1,96 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../providers/app_providers.dart';
 import '../../../utils/format_utils.dart';
+import '../../../utils/grades.dart';
 
-class TrackTab extends ConsumerWidget {
+class TrackTab extends ConsumerStatefulWidget {
   final int    categoryId;
   final String dateStr;
   const TrackTab({super.key, required this.categoryId, required this.dateStr});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state    = ref.watch(trackProvider(categoryId));
-    final notifier = ref.read(trackProvider(categoryId).notifier);
-    final todaySets = ref.watch(setsForDayProvider(dateStr)).value
-            ?.where((s) => s.categoryId == categoryId).toList() ??
-        [];
-    final imageData = ref.watch(categoryByIdProvider(categoryId)).value?.imageData;
+  ConsumerState<TrackTab> createState() => _TrackTabState();
+}
 
-    final displayDate = DateFormat('MMM d').format(dateFromStr(dateStr));
+class _TrackTabState extends ConsumerState<TrackTab> {
+  // ── Rest timer ────────────────────────────────────────────────────────────
+  static const _restOptions = [60, 120, 180, 300]; // 1 2 3 5 min
+  int  _restSecs    = 180; // default 3 min
+  int  _remaining   = 0;
+  bool _timerActive = false;
+  Timer? _timer;
+
+  void _startTimer() {
+    _timer?.cancel();
+    setState(() {
+      _remaining   = _restSecs;
+      _timerActive = true;
+    });
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_remaining > 0) {
+          _remaining--;
+        } else {
+          _timerActive = false;
+          _timer?.cancel();
+        }
+      });
+    });
+  }
+
+  void _cancelTimer() {
+    _timer?.cancel();
+    setState(() => _timerActive = false);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  static String _weightEditStr(double v) {
+    if (v == 0) return '';
+    return v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
+  }
+
+  static String _rpeLabel(int rpe) => switch (rpe) {
+        0           => '—',
+        1 || 2 || 3 => 'Easy',
+        4 || 5      => 'Moderate',
+        6 || 7      => 'Hard',
+        8 || 9      => 'Very Hard',
+        _           => 'Max',
+      };
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final cat       = ref.watch(categoryByIdProvider(widget.categoryId)).value;
+    final isClimbing = cat?.exerciseType == 1;
+    final imageData  = cat?.imageData;
+
+    final state    = ref.watch(trackProvider(widget.categoryId));
+    final notifier = ref.read(trackProvider(widget.categoryId).notifier);
+    final todaySets = ref.watch(setsForDayProvider(widget.dateStr)).value
+            ?.where((s) => s.categoryId == widget.categoryId).toList() ??
+        [];
+    final displayDate =
+        DateFormat('MMM d').format(dateFromStr(widget.dateStr));
+    final primary = Theme.of(context).colorScheme.primary;
+
+    // Detect grade scale from any already-logged grades (or default Font)
+    final loggedGrades = todaySets
+        .where((s) => s.grade != null)
+        .map((s) => s.grade!);
+    final grades = detectGradeScale(loggedGrades);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
@@ -28,68 +100,19 @@ class TrackTab extends ConsumerWidget {
           if (imageData != null) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.memory(
-                imageData,
-                width: double.infinity,
-                height: 180,
-                fit: BoxFit.cover,
-              ),
+              child: Image.memory(imageData,
+                  width: double.infinity, height: 180, fit: BoxFit.cover),
             ),
             const SizedBox(height: 20),
           ],
-          Text(
-            displayDate,
-            style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.primary,
-                letterSpacing: 1),
-          ),
+          Text(displayDate,
+              style: TextStyle(fontSize: 12, color: primary, letterSpacing: 1)),
           const SizedBox(height: 20),
 
-          // Weight
-          _StepperRow(
-            label: state.weightKg < 0 ? 'WEIGHT (kg) — ASSISTED' : 'WEIGHT (kg)',
-            value:     formatWeight(state.weightKg),
-            editValue: _weightEditStr(state.weightKg),
-            keyboardType: const TextInputType.numberWithOptions(
-                signed: true, decimal: true),
-            onDecrement: notifier.decrementWeight,
-            onIncrement: notifier.incrementWeight,
-            onTyped: (s) {
-              final v = double.tryParse(s);
-              if (v != null) notifier.setWeight(v);
-            },
-          ),
-          const Divider(height: 32),
-
-          // Reps
-          _StepperRow(
-            label:     'REPS',
-            value:     '${state.reps}',
-            editValue: state.reps == 0 ? '' : '${state.reps}',
-            keyboardType: TextInputType.number,
-            onDecrement: notifier.decrementReps,
-            onIncrement: notifier.incrementReps,
-            onTyped: (s) {
-              final v = int.tryParse(s);
-              if (v != null) notifier.setReps(v);
-            },
-          ),
-          const Divider(height: 32),
-
-          // Time
-          _StepperRow(
-            label:     'TIME (tap to enter seconds)',
-            value:     state.timeSecs == 0 ? '0s' : formatTime(state.timeSecs),
-            editValue: state.timeSecs == 0 ? '' : '${state.timeSecs}',
-            keyboardType: TextInputType.number,
-            onDecrement: notifier.decrementTime,
-            onIncrement: notifier.incrementTime,
-            onTyped: (s) {
-              final v = int.tryParse(s);
-              if (v != null) notifier.setTimeSecs(v);
-            },
-          ),
+          if (isClimbing)
+            _buildClimbingInputs(context, state, notifier, grades, primary)
+          else
+            _buildStandardInputs(context, state, notifier, primary),
 
           const SizedBox(height: 28),
 
@@ -100,10 +123,22 @@ class TrackTab extends ConsumerWidget {
                 child: FilledButton(
                   onPressed: () async {
                     FocusScope.of(context).unfocus();
-                    await ref.saveSet(
-                        categoryId: categoryId,
-                        dateStr: dateStr,
-                        state: state);
+                    if (isClimbing) {
+                      if (state.gradeIndex < 0) return;
+                      await ref.saveSet(
+                        categoryId: widget.categoryId,
+                        dateStr:    widget.dateStr,
+                        state:      state,
+                        grade:      grades[state.gradeIndex],
+                      );
+                    } else {
+                      await ref.saveSet(
+                        categoryId: widget.categoryId,
+                        dateStr:    widget.dateStr,
+                        state:      state,
+                      );
+                    }
+                    _startTimer();
                   },
                   child: const Text('SAVE'),
                 ),
@@ -114,6 +149,7 @@ class TrackTab extends ConsumerWidget {
                   onPressed: () {
                     FocusScope.of(context).unfocus();
                     notifier.clear();
+                    _cancelTimer();
                   },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white70,
@@ -121,11 +157,27 @@ class TrackTab extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text('CLEAR',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 15)),
                 ),
               ),
             ],
           ),
+
+          // ── Rest timer ──────────────────────────────────────────────────
+          if (_timerActive) ...[
+            const SizedBox(height: 20),
+            _RestTimerWidget(
+              remaining:    _remaining,
+              restSecs:     _restSecs,
+              restOptions:  _restOptions,
+              onCancel:     _cancelTimer,
+              onSetDuration: (s) {
+                setState(() => _restSecs = s);
+                _startTimer();
+              },
+            ),
+          ],
 
           // Sets logged today
           if (todaySets.isNotEmpty) ...[
@@ -145,11 +197,33 @@ class TrackTab extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Set ${e.key + 1}',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
-                    Text(formatSet(
-                        weightKg: e.value.weightKg,
-                        reps:     e.value.reps,
-                        timeSecs: e.value.timeSecs)),
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4))),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(e.value.grade != null
+                            ? e.value.grade!
+                            : formatSet(
+                                weightKg: e.value.weightKg,
+                                reps:     e.value.reps,
+                                timeSecs: e.value.timeSecs)),
+                        if (e.value.rpe != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text('RPE ${e.value.rpe}',
+                                style: TextStyle(
+                                    fontSize: 11, color: primary)),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -160,9 +234,282 @@ class TrackTab extends ConsumerWidget {
     );
   }
 
-  static String _weightEditStr(double v) {
-    if (v == 0) return '';
-    return v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
+  Widget _buildClimbingInputs(
+    BuildContext context,
+    TrackState state,
+    TrackNotifier notifier,
+    List<String> grades,
+    Color primary,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Grade picker
+        Text('GRADE',
+            style: TextStyle(
+                fontSize: 12,
+                letterSpacing: 1.2,
+                color: primary,
+                fontWeight: FontWeight.w600)),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _StepBtn(
+              label: '−',
+              onTap: notifier.decrementGrade,
+            ),
+            Expanded(
+              child: Text(
+                state.gradeIndex < 0 ? '—' : grades[state.gradeIndex],
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 48, fontWeight: FontWeight.w700,
+                    letterSpacing: 1),
+              ),
+            ),
+            _StepBtn(
+              label: '+',
+              onTap: () => notifier.incrementGrade(grades.length - 1),
+            ),
+          ],
+        ),
+        const Divider(height: 32),
+
+        // RPE
+        _RpeRow(
+          rpe:         state.rpe,
+          label:       _rpeLabel(state.rpe),
+          onDecrement: () => notifier.setRpe(state.rpe > 0 ? state.rpe - 1 : 0),
+          onIncrement: () => notifier.setRpe(state.rpe < 10 ? state.rpe + 1 : 10),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStandardInputs(
+    BuildContext context,
+    TrackState state,
+    TrackNotifier notifier,
+    Color primary,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Weight
+        _StepperRow(
+          label: state.weightKg < 0 ? 'WEIGHT (kg) — ASSISTED' : 'WEIGHT (kg)',
+          value:        formatWeight(state.weightKg),
+          editValue:    _weightEditStr(state.weightKg),
+          keyboardType: const TextInputType.numberWithOptions(
+              signed: true, decimal: true),
+          onDecrement: notifier.decrementWeight,
+          onIncrement: notifier.incrementWeight,
+          onTyped: (s) {
+            final v = double.tryParse(s);
+            if (v != null) notifier.setWeight(v);
+          },
+        ),
+        const Divider(height: 32),
+
+        // Reps
+        _StepperRow(
+          label:        'REPS',
+          value:        '${state.reps}',
+          editValue:    state.reps == 0 ? '' : '${state.reps}',
+          keyboardType: TextInputType.number,
+          onDecrement:  notifier.decrementReps,
+          onIncrement:  notifier.incrementReps,
+          onTyped: (s) {
+            final v = int.tryParse(s);
+            if (v != null) notifier.setReps(v);
+          },
+        ),
+        const Divider(height: 32),
+
+        // Time
+        _StepperRow(
+          label:        'TIME (tap to enter seconds)',
+          value:        state.timeSecs == 0 ? '0s' : formatTime(state.timeSecs),
+          editValue:    state.timeSecs == 0 ? '' : '${state.timeSecs}',
+          keyboardType: TextInputType.number,
+          onDecrement:  notifier.decrementTime,
+          onIncrement:  notifier.incrementTime,
+          onTyped: (s) {
+            final v = int.tryParse(s);
+            if (v != null) notifier.setTimeSecs(v);
+          },
+        ),
+        const Divider(height: 32),
+
+        // RPE
+        _RpeRow(
+          rpe:         state.rpe,
+          label:       _rpeLabel(state.rpe),
+          onDecrement: () => notifier.setRpe(state.rpe > 0 ? state.rpe - 1 : 0),
+          onIncrement: () => notifier.setRpe(state.rpe < 10 ? state.rpe + 1 : 10),
+        ),
+      ],
+    );
+  }
+}
+
+// ── RPE row ───────────────────────────────────────────────────────────────────
+
+class _RpeRow extends StatelessWidget {
+  final int rpe;
+  final String label;
+  final VoidCallback onDecrement;
+  final VoidCallback onIncrement;
+  const _RpeRow({
+    required this.rpe,
+    required this.label,
+    required this.onDecrement,
+    required this.onIncrement,
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('RPE (EFFORT)',
+              style: TextStyle(
+                  fontSize: 12,
+                  letterSpacing: 1.2,
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _StepBtn(label: '−', onTap: onDecrement),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      rpe == 0 ? '—' : '$rpe',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 32, fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      rpe == 0 ? 'not set' : label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.4)),
+                    ),
+                  ],
+                ),
+              ),
+              _StepBtn(label: '+', onTap: onIncrement),
+            ],
+          ),
+        ],
+      );
+}
+
+// ── Rest timer widget ─────────────────────────────────────────────────────────
+
+class _RestTimerWidget extends StatelessWidget {
+  final int remaining;
+  final int restSecs;
+  final List<int> restOptions;
+  final VoidCallback onCancel;
+  final void Function(int) onSetDuration;
+
+  const _RestTimerWidget({
+    required this.remaining,
+    required this.restSecs,
+    required this.restOptions,
+    required this.onCancel,
+    required this.onSetDuration,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final primary  = Theme.of(context).colorScheme.primary;
+    final progress = remaining / restSecs;
+    final done     = remaining == 0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(done ? Icons.check_circle : Icons.timer_outlined,
+                  size: 18,
+                  color: done ? primary : Colors.white70),
+              const SizedBox(width: 8),
+              Text(
+                done ? 'Rest complete' : 'Rest  ${_fmt(remaining)}',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: done ? primary : Colors.white),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: onCancel,
+                child: Icon(Icons.close,
+                    size: 18,
+                    color: Colors.white.withValues(alpha: 0.4)),
+              ),
+            ],
+          ),
+          if (!done) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: Colors.white12,
+                color: primary,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: restOptions.map((s) {
+              final selected = restSecs == s;
+              return GestureDetector(
+                onTap: () => onSetDuration(s),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? primary.withValues(alpha: 0.2)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected
+                          ? primary
+                          : Colors.white.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Text(_fmt(s),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: selected ? primary : Colors.white60)),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _fmt(int secs) {
+    final m = secs ~/ 60;
+    final s = secs % 60;
+    return m > 0 ? (s == 0 ? '${m}m' : '${m}m ${s}s') : '${s}s';
   }
 }
 
@@ -170,8 +517,8 @@ class TrackTab extends ConsumerWidget {
 
 class _StepperRow extends StatefulWidget {
   final String label;
-  final String value;       // formatted for display
-  final String editValue;   // pre-filled when the text field opens
+  final String value;
+  final String editValue;
   final TextInputType keyboardType;
   final VoidCallback onDecrement;
   final VoidCallback onIncrement;
@@ -276,7 +623,8 @@ class _StepperRowState extends State<_StepperRow> {
                           child: Text(widget.value,
                               textAlign: TextAlign.center,
                               style: const TextStyle(
-                                  fontSize: 32, fontWeight: FontWeight.w600)),
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w600)),
                         ),
                       ),
               ),

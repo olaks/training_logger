@@ -35,18 +35,42 @@ class PlanWorkouts extends Table {
 // ── Exercises / sets ──────────────────────────────────────────────────────────
 
 class ExerciseCategories extends Table {
-  IntColumn  get id        => integer().autoIncrement()();
-  TextColumn get name      => text()();
-  TextColumn get groupName => text().nullable()();   // e.g. "Fingers", "Back"
-  BlobColumn get imageData => blob().nullable()();
+  IntColumn  get id           => integer().autoIncrement()();
+  TextColumn get name         => text()();
+  TextColumn get groupName    => text().nullable()();
+  BlobColumn get imageData    => blob().nullable()();
+  // 0 = standard (weight/reps/time), 1 = climbing (grade)
+  IntColumn  get exerciseType => integer().withDefault(const Constant(0))();
 }
 
 class WorkoutSets extends Table {
   IntColumn  get id         => integer().autoIncrement()();
   IntColumn  get categoryId => integer().references(ExerciseCategories, #id)();
-  TextColumn get dateStr    => text()();           // "yyyy-MM-dd"
-  IntColumn  get timestamp  => integer()();         // epoch ms
+  TextColumn get dateStr    => text()();
+  IntColumn  get timestamp  => integer()();
   RealColumn get weightKg   => real().nullable()();
   IntColumn  get reps       => integer().nullable()();
   IntColumn  get timeSecs   => integer().nullable()();
+  IntColumn  get rpe        => integer().nullable()(); // 1–10, null = not recorded
+  TextColumn get grade      => text().nullable()();   // climbing grade string, null for standard sets
+}
+
+// ── Day notes (one free-text note per calendar day) ───────────────────────────
+
+class DayNotes extends Table {
+  TextColumn get dateStr => text()();
+  TextColumn get note    => text()();
+
+  @override
+  Set<Column> get primaryKey => {dateStr};
+}
+
+// ── Body weight log ───────────────────────────────────────────────────────────
+
+class BodyWeights extends Table {
+  TextColumn get dateStr => text()();
+  RealColumn get kg      => real()();
+
+  @override
+  Set<Column> get primaryKey => {dateStr};
 }

@@ -62,6 +62,21 @@ final plannedWorkoutsForDateProvider =
         (ref, dateStr) =>
             ref.watch(dbProvider).watchPlannedWorkoutsForDate(dateStr));
 
+// ── Day notes ─────────────────────────────────────────────────────────────
+
+final dayNoteProvider =
+    StreamProvider.family<DayNote?, String>((ref, dateStr) =>
+        ref.watch(dbProvider).watchDayNote(dateStr));
+
+// ── Body weight ────────────────────────────────────────────────────────────
+
+final bodyWeightsProvider = StreamProvider<List<BodyWeight>>((ref) =>
+    ref.watch(dbProvider).watchBodyWeights());
+
+final bodyWeightForDateProvider =
+    StreamProvider.family<BodyWeight?, String>((ref, dateStr) =>
+        ref.watch(dbProvider).watchBodyWeightForDate(dateStr));
+
 // ── Selected date (home screen) ────────────────────────────────────────────
 
 final selectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -72,13 +87,29 @@ class TrackState {
   final double weightKg;
   final int reps;
   final int timeSecs;
-  const TrackState({this.weightKg = 0, this.reps = 0, this.timeSecs = 0});
+  final int rpe;        // 0 = not set, 1–10
+  final int gradeIndex; // −1 = not set; index into grade scale list
+  const TrackState({
+    this.weightKg = 0,
+    this.reps = 0,
+    this.timeSecs = 0,
+    this.rpe = 0,
+    this.gradeIndex = -1,
+  });
 
-  TrackState copyWith({double? weightKg, int? reps, int? timeSecs}) => TrackState(
-        weightKg: weightKg ?? this.weightKg,
-        reps: reps ?? this.reps,
-        timeSecs: timeSecs ?? this.timeSecs,
-      );
+  TrackState copyWith({
+    double? weightKg,
+    int? reps,
+    int? timeSecs,
+    int? rpe,
+    int? gradeIndex,
+  }) => TrackState(
+    weightKg:   weightKg   ?? this.weightKg,
+    reps:       reps       ?? this.reps,
+    timeSecs:   timeSecs   ?? this.timeSecs,
+    rpe:        rpe        ?? this.rpe,
+    gradeIndex: gradeIndex ?? this.gradeIndex,
+  );
 }
 
 class TrackNotifier extends StateNotifier<TrackState> {
@@ -93,7 +124,14 @@ class TrackNotifier extends StateNotifier<TrackState> {
   void setWeight(double v) => state = state.copyWith(weightKg: v.clamp(-500.0, 999.0));
   void setReps(int v)      => state = state.copyWith(reps: v.clamp(0, 999));
   void setTimeSecs(int v)  => state = state.copyWith(timeSecs: v.clamp(0, 36000));
-  void clear()             => state = const TrackState();
+  void setRpe(int v)       => state = state.copyWith(rpe: v.clamp(0, 10));
+  // Grade: −1 = none, 0…n = index in scale list
+  void incrementGrade(int max) => state = state.copyWith(
+      gradeIndex: (state.gradeIndex + 1).clamp(0, max));
+  void decrementGrade() => state = state.copyWith(
+      gradeIndex: (state.gradeIndex - 1).clamp(-1, 999));
+  void setGradeIndex(int v) => state = state.copyWith(gradeIndex: v.clamp(-1, 999));
+  void clear()              => state = const TrackState();
 }
 
 // keyed by categoryId so each exercise gets its own stepper state
@@ -113,11 +151,23 @@ extension DbMutations on WidgetRef {
   Future<void> updateCategoryGroup(int id, String? group) => db.updateCategoryGroup(id, group);
   Future<void> removeCategory(int id)              => db.deleteCategory(id);
 
+  /// Pass [grade] for climbing exercises (only grade + rpe are stored).
   Future<void> saveSet({
     required int categoryId,
     required String dateStr,
     required TrackState state,
+    String? grade,
   }) {
+    final e = state.rpe > 0 ? state.rpe : null;
+    if (grade != null) {
+      return db.insertSet(WorkoutSetsCompanion.insert(
+        categoryId: categoryId,
+        dateStr:    dateStr,
+        timestamp:  DateTime.now().millisecondsSinceEpoch,
+        grade:      Value(grade),
+        rpe:        Value(e),
+      ));
+    }
     final w = state.weightKg != 0 ? state.weightKg : null;
     final r = state.reps > 0     ? state.reps     : null;
     final t = state.timeSecs > 0 ? state.timeSecs : null;
@@ -129,13 +179,24 @@ extension DbMutations on WidgetRef {
       weightKg:   Value(w),
       reps:       Value(r),
       timeSecs:   Value(t),
+      rpe:        Value(e),
     ));
   }
+
+  Future<void> saveDayNote(String dateStr, String note) =>
+      db.saveDayNote(dateStr, note);
+  Future<void> deleteDayNote(String dateStr) => db.deleteDayNote(dateStr);
+
+  Future<void> saveBodyWeight(String dateStr, double kg) =>
+      db.saveBodyWeight(dateStr, kg);
+  Future<void> deleteBodyWeight(String dateStr) => db.deleteBodyWeight(dateStr);
 
   Future<void> removeSet(int id) => db.deleteSet(id);
 
   Future<void> saveCategoryImage(int id, Uint8List? data) =>
       db.updateCategoryImage(id, data);
+
+  Future<void> setExerciseType(int id, int type) => db.setExerciseType(id, type);
 
   // Workouts
   Future<int>  insertWorkout(String name)                     => db.insertWorkout(name);

@@ -13,14 +13,46 @@ class ExerciseDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final catAsync = ref.watch(categoryByIdProvider(categoryId));
-    final name     = catAsync.value?.name ?? 'Exercise';
+    final catAsync   = ref.watch(categoryByIdProvider(categoryId));
+    final cat        = catAsync.value;
+    final name       = cat?.name ?? 'Exercise';
+    final isClimbing = cat?.exerciseType == 1;
 
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+          actions: [
+            if (cat != null)
+              PopupMenuButton<String>(
+                onSelected: (v) async {
+                  if (v == 'type') {
+                    await ref.setExerciseType(categoryId, isClimbing ? 0 : 1);
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'type',
+                    child: Row(
+                      children: [
+                        Icon(
+                          isClimbing
+                              ? Icons.fitness_center
+                              : Icons.terrain,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(isClimbing
+                            ? 'Switch to standard'
+                            : 'Set as climbing'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'TRACK'),
