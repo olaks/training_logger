@@ -36,27 +36,46 @@ class TrackTab extends ConsumerWidget {
           // Weight
           _StepperRow(
             label: state.weightKg < 0 ? 'WEIGHT (kg) — ASSISTED' : 'WEIGHT (kg)',
-            value:       formatWeight(state.weightKg),
+            value:     formatWeight(state.weightKg),
+            editValue: _weightEditStr(state.weightKg),
+            keyboardType: const TextInputType.numberWithOptions(
+                signed: true, decimal: true),
             onDecrement: notifier.decrementWeight,
             onIncrement: notifier.incrementWeight,
+            onTyped: (s) {
+              final v = double.tryParse(s);
+              if (v != null) notifier.setWeight(v);
+            },
           ),
           const Divider(height: 32),
 
           // Reps
           _StepperRow(
-            label:       'REPS',
-            value:       '${state.reps}',
+            label:     'REPS',
+            value:     '${state.reps}',
+            editValue: state.reps == 0 ? '' : '${state.reps}',
+            keyboardType: TextInputType.number,
             onDecrement: notifier.decrementReps,
             onIncrement: notifier.incrementReps,
+            onTyped: (s) {
+              final v = int.tryParse(s);
+              if (v != null) notifier.setReps(v);
+            },
           ),
           const Divider(height: 32),
 
           // Time
           _StepperRow(
-            label:       'TIME',
-            value:       state.timeSecs == 0 ? '0s' : formatTime(state.timeSecs),
+            label:     'TIME (tap to enter seconds)',
+            value:     state.timeSecs == 0 ? '0s' : formatTime(state.timeSecs),
+            editValue: state.timeSecs == 0 ? '' : '${state.timeSecs}',
+            keyboardType: TextInputType.number,
             onDecrement: notifier.decrementTime,
             onIncrement: notifier.incrementTime,
+            onTyped: (s) {
+              final v = int.tryParse(s);
+              if (v != null) notifier.setTimeSecs(v);
+            },
           ),
 
           const SizedBox(height: 28),
@@ -67,6 +86,7 @@ class TrackTab extends ConsumerWidget {
               Expanded(
                 child: FilledButton(
                   onPressed: () async {
+                    FocusScope.of(context).unfocus();
                     await ref.saveSet(
                         categoryId: categoryId,
                         dateStr: dateStr,
@@ -78,7 +98,10 @@ class TrackTab extends ConsumerWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton(
-                  onPressed: notifier.clear,
+                  onPressed: () {
+                    FocusScope.of(context).unfocus();
+                    notifier.clear();
+                  },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white70,
                     side: const BorderSide(color: Colors.white24),
@@ -100,7 +123,7 @@ class TrackTab extends ConsumerWidget {
                 style: TextStyle(
                     fontSize: 12,
                     letterSpacing: 1,
-                    color: Colors.white.withValues(alpha:0.4))),
+                    color: Colors.white.withValues(alpha: 0.4))),
             const SizedBox(height: 8),
             ...todaySets.asMap().entries.map(
               (e) => Padding(
@@ -109,7 +132,7 @@ class TrackTab extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Set ${e.key + 1}',
-                        style: TextStyle(color: Colors.white.withValues(alpha:0.4))),
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
                     Text(formatSet(
                         weightKg: e.value.weightKg,
                         reps:     e.value.reps,
@@ -123,22 +146,88 @@ class TrackTab extends ConsumerWidget {
       ),
     );
   }
+
+  static String _weightEditStr(double v) {
+    if (v == 0) return '';
+    return v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
+  }
 }
 
-class _StepperRow extends StatelessWidget {
-  final String label, value;
-  final VoidCallback onDecrement, onIncrement;
-  const _StepperRow(
-      {required this.label,
-      required this.value,
-      required this.onDecrement,
-      required this.onIncrement});
+// ── Stepper row with tap-to-type ──────────────────────────────────────────────
+
+class _StepperRow extends StatefulWidget {
+  final String label;
+  final String value;       // formatted for display
+  final String editValue;   // pre-filled when the text field opens
+  final TextInputType keyboardType;
+  final VoidCallback onDecrement;
+  final VoidCallback onIncrement;
+  final void Function(String) onTyped;
+
+  const _StepperRow({
+    required this.label,
+    required this.value,
+    required this.editValue,
+    required this.keyboardType,
+    required this.onDecrement,
+    required this.onIncrement,
+    required this.onTyped,
+  });
+
+  @override
+  State<_StepperRow> createState() => _StepperRowState();
+}
+
+class _StepperRowState extends State<_StepperRow> {
+  bool _editing = false;
+  late final TextEditingController _ctrl;
+  late final FocusNode _focus;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl  = TextEditingController();
+    _focus = FocusNode()..addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocusChange);
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus && _editing) _commit();
+  }
+
+  void _startEdit() {
+    _ctrl.text = widget.editValue;
+    _ctrl.selection =
+        TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+    setState(() => _editing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  void _commit() {
+    if (!_editing) return;
+    setState(() => _editing = false);
+    widget.onTyped(_ctrl.text);
+  }
+
+  void _stepAndCommit(VoidCallback step) {
+    if (_editing) _commit();
+    step();
+  }
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
+          Text(widget.label,
               style: TextStyle(
                   fontSize: 12,
                   letterSpacing: 1.2,
@@ -147,19 +236,47 @@ class _StepperRow extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              _StepBtn(label: '−', onTap: onDecrement),
+              _StepBtn(
+                  label: '−',
+                  onTap: () => _stepAndCommit(widget.onDecrement)),
               Expanded(
-                child: Text(value,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        fontSize: 32, fontWeight: FontWeight.w600)),
+                child: _editing
+                    ? TextField(
+                        controller: _ctrl,
+                        focusNode: _focus,
+                        keyboardType: widget.keyboardType,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 32, fontWeight: FontWeight.w600),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                          isDense: true,
+                        ),
+                        onSubmitted: (_) => _commit(),
+                      )
+                    : GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _startEdit,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(widget.value,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  fontSize: 32, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
               ),
-              _StepBtn(label: '+', onTap: onIncrement),
+              _StepBtn(
+                  label: '+',
+                  onTap: () => _stepAndCommit(widget.onIncrement)),
             ],
           ),
         ],
       );
 }
+
+// ── Step button ───────────────────────────────────────────────────────────────
 
 class _StepBtn extends StatelessWidget {
   final String label;
@@ -178,7 +295,8 @@ class _StepBtn extends StatelessWidget {
             height: 52,
             child: Center(
               child: Text(label,
-                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w300)),
+                  style: const TextStyle(
+                      fontSize: 26, fontWeight: FontWeight.w300)),
             ),
           ),
         ),

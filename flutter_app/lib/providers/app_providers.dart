@@ -53,13 +53,16 @@ class TrackState {
 class TrackNotifier extends StateNotifier<TrackState> {
   TrackNotifier() : super(const TrackState());
 
-  void incrementWeight() => state = state.copyWith(weightKg: (state.weightKg + 1).clamp(-500, 999));
-  void decrementWeight() => state = state.copyWith(weightKg: (state.weightKg - 1).clamp(-500, 999));
+  void incrementWeight() => state = state.copyWith(weightKg: (state.weightKg + 1).clamp(-500, 999).toDouble());
+  void decrementWeight() => state = state.copyWith(weightKg: (state.weightKg - 1).clamp(-500, 999).toDouble());
   void incrementReps()   => state = state.copyWith(reps: (state.reps + 1).clamp(0, 999));
   void decrementReps()   => state = state.copyWith(reps: (state.reps - 1).clamp(0, 999));
   void incrementTime()   => state = state.copyWith(timeSecs: (state.timeSecs + 5).clamp(0, 36000));
   void decrementTime()   => state = state.copyWith(timeSecs: (state.timeSecs - 5).clamp(0, 36000));
-  void clear()           => state = const TrackState();
+  void setWeight(double v) => state = state.copyWith(weightKg: v.clamp(-500.0, 999.0));
+  void setReps(int v)      => state = state.copyWith(reps: v.clamp(0, 999));
+  void setTimeSecs(int v)  => state = state.copyWith(timeSecs: v.clamp(0, 36000));
+  void clear()             => state = const TrackState();
 }
 
 // keyed by categoryId so each exercise gets its own stepper state
