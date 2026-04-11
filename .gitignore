@@ -4,9 +4,8 @@ build/
 .gradle/
 local.properties
 
-# Samples — exclude screenshots, keep CSV
-samples/*.png
-samples/*.jpg
+# Samples — reference files, not for the repo
+samples/
 
 # Flutter build artifacts (flutter_app has its own .gitignore)
 flutter_app/build/
