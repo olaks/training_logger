@@ -108,7 +108,7 @@ extension DbMutations on WidgetRef {
   AppDatabase get db => read(dbProvider);
 
   Future<void> addCategory(String name, {String? groupName}) =>
-      db.insertCategory(name, groupName: groupName);
+      db.insertOrGetCategory(name, groupName: groupName);
   Future<void> renameCategory(int id, String name) => db.renameCategory(id, name);
   Future<void> updateCategoryGroup(int id, String? group) => db.updateCategoryGroup(id, group);
   Future<void> removeCategory(int id)              => db.deleteCategory(id);

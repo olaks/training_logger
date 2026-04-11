@@ -377,8 +377,18 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
 
   void _add(BuildContext context, String name, String group) {
     if (name.trim().isEmpty) return;
+    final trimmed = name.trim();
+    final all = ref.read(categoriesProvider).value ?? [];
+    final exists = all.any(
+        (c) => c.name.toLowerCase() == trimmed.toLowerCase());
+    if (exists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"$trimmed" already exists')));
+      Navigator.pop(context);
+      return;
+    }
     final g = group.trim().isEmpty ? null : group.trim();
-    ref.addCategory(name.trim(), groupName: g);
+    ref.addCategory(trimmed, groupName: g);
     Navigator.pop(context);
   }
 

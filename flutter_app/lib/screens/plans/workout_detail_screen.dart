@@ -240,7 +240,7 @@ class _AddExercisesSheet extends ConsumerWidget {
       Future<void> doCreate(BuildContext dialogCtx) async {
         final name = ctrl.text.trim();
         if (name.isEmpty) return;
-        final catId = await db.insertCategory(name);
+        final catId = await db.insertOrGetCategory(name);
         await db.addExerciseToWorkout(workoutId, catId);
         if (dialogCtx.mounted) Navigator.pop(dialogCtx);
       }

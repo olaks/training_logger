@@ -97,6 +97,19 @@ class AppDatabase extends _$AppDatabase {
         groupName: Value(groupName),
       ));
 
+  /// Returns existing category id if name matches (case-insensitive),
+  /// otherwise inserts a new one.
+  Future<int> insertOrGetCategory(String name, {String? groupName}) async {
+    final existing = await (select(exerciseCategories)
+          ..where((t) => t.name.like(name)))
+        .get();
+    final match = existing
+        .where((c) => c.name.toLowerCase() == name.toLowerCase())
+        .firstOrNull;
+    if (match != null) return match.id;
+    return insertCategory(name, groupName: groupName);
+  }
+
   Future<int> renameCategory(int id, String name) =>
       (update(exerciseCategories)..where((t) => t.id.equals(id)))
           .write(ExerciseCategoriesCompanion(name: Value(name)));
