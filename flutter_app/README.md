@@ -5,6 +5,19 @@ Works on **Android**, **iOS**, and **Web** (desktop browser) from a single codeb
 
 ---
 
+## Quick install (no Flutter SDK needed)
+
+| Platform | How |
+|----------|-----|
+| **Android** | Go to [Actions](../../actions) → latest green run → download `training-logger-apk` → open the `.apk` on your phone |
+| **Web / Desktop** | Open **https://olaks.github.io/training_logger/** in any browser |
+
+> First-time Android install: you may need to allow *Install from unknown sources* in Settings → Security.
+>
+> First web load makes one automatic reload to activate the service worker — that's normal.
+
+---
+
 ## Prerequisites
 
 Install the Flutter SDK if you haven't already:
