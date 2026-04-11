@@ -5,9 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:   # allow manual trigger from GitHub UI
 
-# Required for GitHub Pages deployment
+# Required for GitHub Pages deployment and creating releases
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -31,7 +31,7 @@ jobs:
         working-directory: flutter_app
         run: flutter build apk --release
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: training-logger-apk
@@ -70,7 +70,7 @@ jobs:
           cd flutter_app/build/linux/x64/release
           zip -r training-logger-linux.zip bundle/
 
-      - name: Upload Linux bundle
+      - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: training-logger-linux
@@ -108,3 +108,42 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
+
+  # ── GitHub Release ─────────────────────────────────────────────────────────
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-apk, build-linux]
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: training-logger-apk
+          path: dist/
+
+      - name: Download Linux bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: training-logger-linux
+          path: dist/
+
+      - name: Delete existing 'latest' release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest --yes --repo "$GH_REPO" 2>/dev/null || true
+          git -c advice.detachedHead=false clone --depth 1 "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" _repo
+          cd _repo && git tag -d latest 2>/dev/null || true
+          gh api -X DELETE /repos/"$GH_REPO"/git/refs/tags/latest 2>/dev/null || true
+
+      - name: Create 'latest' release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create latest \
+            --repo "${{ github.repository }}" \
+            --title "Latest build" \
+            --notes "Built from \`main\` — commit ${{ github.sha }}" \
+            --prerelease \
+            dist/app-release.apk#training-logger.apk \
+            dist/training-logger-linux.zip#training-logger-linux.zip
