@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -43,6 +43,9 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(workoutExercises);
         await m.createTable(plans);
         await m.createTable(planWorkouts);
+      }
+      if (from < 6) {
+        await m.addColumn(workoutExercises, workoutExercises.targetReps);
       }
     },
   );
@@ -326,16 +329,26 @@ class AppDatabase extends _$AppDatabase {
     await (delete(workouts)..where((t) => t.id.equals(id))).go();
   }
 
-  Stream<List<ExerciseCategory>> watchExercisesForWorkout(int workoutId) {
+  Stream<List<(ExerciseCategory, int?)>> watchExercisesForWorkout(int workoutId) {
     final q = select(workoutExercises).join([
       innerJoin(exerciseCategories,
           exerciseCategories.id.equalsExp(workoutExercises.categoryId)),
     ])
       ..where(workoutExercises.workoutId.equals(workoutId))
       ..orderBy([OrderingTerm.asc(exerciseCategories.name)]);
-    return q.watch().map((rows) =>
-        rows.map((r) => r.readTable(exerciseCategories)).toList());
+    return q.watch().map((rows) => rows
+        .map((r) => (
+              r.readTable(exerciseCategories),
+              r.readTable(workoutExercises).targetReps,
+            ))
+        .toList());
   }
+
+  Future<int> updateTargetReps(int workoutId, int categoryId, int? targetReps) =>
+      (update(workoutExercises)
+            ..where((t) =>
+                t.workoutId.equals(workoutId) & t.categoryId.equals(categoryId)))
+          .write(WorkoutExercisesCompanion(targetReps: Value(targetReps)));
 
   Stream<List<Workout>> watchWorkoutsForExercise(int categoryId) {
     final q = select(workoutExercises).join([

@@ -45,21 +45,48 @@ class WorkoutDetailScreen extends ConsumerWidget {
                       color: Colors.white.withValues(alpha: 0.4))),
             )
           else
-            ...exercises.map((cat) => ListTile(
-                  title: Text(cat.name),
-                  subtitle: cat.groupName != null
-                      ? Text(cat.groupName!,
+            ...exercises.map((entry) {
+              final (cat, targetReps) = entry;
+              return ListTile(
+                title: Text(cat.name),
+                subtitle: cat.groupName != null
+                    ? Text(cat.groupName!,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.45)))
+                    : null,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _showEditRepsDialog(
+                          context, ref, cat.id, targetReps),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        child: Text(
+                          targetReps != null
+                              ? '× $targetReps reps'
+                              : 'set reps',
                           style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.45)))
-                      : null,
-                  trailing: IconButton(
-                    icon: const Icon(Icons.remove_circle_outline, size: 20),
-                    color: Colors.white54,
-                    onPressed: () =>
-                        ref.removeExerciseFromWorkout(workoutId, cat.id),
-                  ),
-                )),
+                            fontSize: 13,
+                            color: targetReps != null
+                                ? Theme.of(context).colorScheme.primary
+                                : Colors.white.withValues(alpha: 0.35),
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, size: 20),
+                      color: Colors.white54,
+                      onPressed: () =>
+                          ref.removeExerciseFromWorkout(workoutId, cat.id),
+                    ),
+                  ],
+                ),
+              );
+            }),
           const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -78,8 +105,45 @@ class WorkoutDetailScreen extends ConsumerWidget {
     );
   }
 
+  void _showEditRepsDialog(
+      BuildContext context, WidgetRef ref, int catId, int? current) {
+    final ctrl = TextEditingController(text: current?.toString() ?? '');
+    showDialog(
+      context: context,
+      useRootNavigator: false,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Target reps'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+              labelText: 'Reps', hintText: 'Leave empty to clear'),
+          onSubmitted: (_) => _saveReps(dialogCtx, ref, catId, ctrl.text),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => _saveReps(dialogCtx, ref, catId, ctrl.text),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+  }
+
+  void _saveReps(
+      BuildContext context, WidgetRef ref, int catId, String text) {
+    final reps =
+        text.trim().isEmpty ? null : int.tryParse(text.trim());
+    ref.updateWorkoutTargetReps(workoutId, catId, reps);
+    Navigator.pop(context);
+  }
+
   void _showAddExercisesSheet(BuildContext context, WidgetRef ref,
-      List<ExerciseCategory> current) {
+      List<(ExerciseCategory, int?)> exercises) {
+    final current = exercises.map((e) => e.$1).toList();
     showModalBottomSheet(
       context: context,
       useRootNavigator: false,

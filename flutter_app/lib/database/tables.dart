@@ -11,6 +11,7 @@ class WorkoutExercises extends Table {
   IntColumn get id         => integer().autoIncrement()();
   IntColumn get workoutId  => integer().references(Workouts, #id)();
   IntColumn get categoryId => integer().references(ExerciseCategories, #id)();
+  IntColumn get targetReps => integer().nullable()();
 
   @override
   List<Set<Column>> get uniqueKeys => [{workoutId, categoryId}];
