@@ -38,13 +38,17 @@ class AppDatabase extends _$AppDatabase {
         await customStatement('DROP TABLE IF EXISTS plan_exercises');
         await customStatement('DROP TABLE IF EXISTS scheduled_plans');
         await customStatement('DROP TABLE IF EXISTS plans');
-        // Create v5 tables
+        // Create v5 tables — uses current schema, which already includes
+        // target_reps, so the from<6 addColumn below must be skipped.
         await m.createTable(workouts);
         await m.createTable(workoutExercises);
         await m.createTable(plans);
         await m.createTable(planWorkouts);
       }
-      if (from < 6) {
+      if (from >= 5 && from < 6) {
+        // Only needed when upgrading from exactly v5; v5→current created the
+        // table without target_reps, so we add it here.  When from<5 we
+        // already created the table with the full current schema above.
         await m.addColumn(workoutExercises, workoutExercises.targetReps);
       }
     },
