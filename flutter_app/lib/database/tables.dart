@@ -1,26 +1,34 @@
 import 'package:drift/drift.dart';
 
-// ── Workout plans ─────────────────────────────────────────────────────────────
+// ── Workouts (reusable named sets of exercises) ───────────────────────────────
+
+class Workouts extends Table {
+  IntColumn  get id   => integer().autoIncrement()();
+  TextColumn get name => text()();
+}
+
+class WorkoutExercises extends Table {
+  IntColumn get id         => integer().autoIncrement()();
+  IntColumn get workoutId  => integer().references(Workouts, #id)();
+  IntColumn get categoryId => integer().references(ExerciseCategories, #id)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [{workoutId, categoryId}];
+}
+
+// ── Plans (schedules that assign Workouts to days) ────────────────────────────
 
 class Plans extends Table {
   IntColumn  get id   => integer().autoIncrement()();
   TextColumn get name => text()();
 }
 
-class PlanExercises extends Table {
-  IntColumn get id         => integer().autoIncrement()();
-  IntColumn get planId     => integer().references(Plans, #id)();
-  IntColumn get categoryId => integer().references(ExerciseCategories, #id)();
-
-  @override
-  List<Set<Column>> get uniqueKeys => [{planId, categoryId}];
-}
-
-class ScheduledPlans extends Table {
-  IntColumn  get id      => integer().autoIncrement()();
-  IntColumn  get planId  => integer().references(Plans, #id)();
-  TextColumn get dateStr => text().nullable()();    // "yyyy-MM-dd" one-off
-  IntColumn  get weekday => integer().nullable()(); // 1=Mon…7=Sun recurring
+class PlanWorkouts extends Table {
+  IntColumn  get id        => integer().autoIncrement()();
+  IntColumn  get planId    => integer().references(Plans, #id)();
+  IntColumn  get workoutId => integer().references(Workouts, #id)();
+  TextColumn get dateStr   => text().nullable()();    // "yyyy-MM-dd" one-off
+  IntColumn  get weekday   => integer().nullable()(); // 1=Mon…7=Sun recurring
 }
 
 // ── Exercises / sets ──────────────────────────────────────────────────────────

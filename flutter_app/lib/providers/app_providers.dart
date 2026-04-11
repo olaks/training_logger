@@ -31,22 +31,27 @@ final categoryByIdProvider =
     FutureProvider.family<ExerciseCategory?, int>((ref, id) =>
         ref.watch(dbProvider).getCategoryById(id));
 
+// ── Workouts ───────────────────────────────────────────────────────────────
+
+final allWorkoutsProvider = StreamProvider<List<Workout>>((ref) =>
+    ref.watch(dbProvider).watchAllWorkouts());
+
+final workoutExercisesProvider =
+    StreamProvider.family<List<ExerciseCategory>, int>((ref, workoutId) =>
+        ref.watch(dbProvider).watchExercisesForWorkout(workoutId));
+
+final workoutsForExerciseProvider =
+    StreamProvider.family<List<Workout>, int>((ref, categoryId) =>
+        ref.watch(dbProvider).watchWorkoutsForExercise(categoryId));
+
 // ── Plans ──────────────────────────────────────────────────────────────────
 
 final allPlansProvider = StreamProvider<List<Plan>>((ref) =>
     ref.watch(dbProvider).watchAllPlans());
 
-final planExercisesProvider =
-    StreamProvider.family<List<ExerciseCategory>, int>((ref, planId) =>
-        ref.watch(dbProvider).watchExercisesForPlan(planId));
-
-final plansForExerciseProvider =
-    StreamProvider.family<List<Plan>, int>((ref, categoryId) =>
-        ref.watch(dbProvider).watchPlansForExercise(categoryId));
-
-final schedulesForPlanProvider =
-    StreamProvider.family<List<ScheduledPlan>, int>((ref, planId) =>
-        ref.watch(dbProvider).watchSchedulesForPlan(planId));
+final planWorkoutsProvider =
+    StreamProvider.family<List<PlanWorkout>, int>((ref, planId) =>
+        ref.watch(dbProvider).watchPlanWorkouts(planId));
 
 final plannedCategoryIdsProvider =
     StreamProvider.family<Set<int>, String>((ref, dateStr) =>
@@ -127,17 +132,18 @@ extension DbMutations on WidgetRef {
   Future<void> saveCategoryImage(int id, Uint8List? data) =>
       db.updateCategoryImage(id, data);
 
+  // Workouts
+  Future<int>  insertWorkout(String name)                     => db.insertWorkout(name);
+  Future<int>  renameWorkout(int id, String name)             => db.renameWorkout(id, name);
+  Future<void> deleteWorkout(int id)                          => db.deleteWorkout(id);
+  Future<void> addExerciseToWorkout(int workoutId, int catId) => db.addExerciseToWorkout(workoutId, catId);
+  Future<int>  removeExerciseFromWorkout(int wId, int catId)  => db.removeExerciseFromWorkout(wId, catId);
+
   // Plans
   Future<int>  insertPlan(String name)              => db.insertPlan(name);
   Future<int>  renamePlan(int id, String name)      => db.renamePlan(id, name);
   Future<void> deletePlan(int id)                   => db.deletePlan(id);
-  Future<void> addExerciseToPlan(int planId, int categoryId) =>
-      db.addExerciseToPlan(planId, categoryId);
-  Future<int>  removeExerciseFromPlan(int planId, int categoryId) =>
-      db.removeExerciseFromPlan(planId, categoryId);
-  Future<int>  schedulePlanOnDate(int planId, String dateStr) =>
-      db.schedulePlanOnDate(planId, dateStr);
-  Future<int>  schedulePlanOnWeekday(int planId, int weekday) =>
-      db.schedulePlanOnWeekday(planId, weekday);
-  Future<int>  deleteSchedule(int id)               => db.deleteSchedule(id);
+  Future<int>  assignWorkoutToPlan(int planId, int workoutId, {int? weekday, String? dateStr}) =>
+      db.assignWorkoutToPlan(planId, workoutId, weekday: weekday, dateStr: dateStr);
+  Future<int>  removeWorkoutFromPlan(int assignmentId) => db.removeWorkoutFromPlan(assignmentId);
 }

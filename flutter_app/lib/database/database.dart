@@ -6,7 +6,7 @@ import '../utils/format_utils.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Plans, PlanExercises, ScheduledPlans, ExerciseCategories, WorkoutSets])
+@DriftDatabase(tables: [Workouts, WorkoutExercises, Plans, PlanWorkouts, ExerciseCategories, WorkoutSets])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(
     name: 'training_logger',
@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -32,10 +32,17 @@ class AppDatabase extends _$AppDatabase {
       if (from < 3) {
         await m.addColumn(exerciseCategories, exerciseCategories.groupName);
       }
-      if (from < 4) {
+      // from < 4: old v4 tables are superseded — handled in from < 5 below
+      if (from < 5) {
+        // Drop old v4 tables if present (users who tested the old feature branch)
+        await customStatement('DROP TABLE IF EXISTS plan_exercises');
+        await customStatement('DROP TABLE IF EXISTS scheduled_plans');
+        await customStatement('DROP TABLE IF EXISTS plans');
+        // Create v5 tables
+        await m.createTable(workouts);
+        await m.createTable(workoutExercises);
         await m.createTable(plans);
-        await m.createTable(planExercises);
-        await m.createTable(scheduledPlans);
+        await m.createTable(planWorkouts);
       }
     },
   );
@@ -165,7 +172,6 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  /// Returns number of sets inserted (skips duplicates by timestamp).
   Future<int> importFromJson(String jsonStr) async {
     final data      = jsonDecode(jsonStr) as Map<String, dynamic>;
     final exercises = (data['exercises'] as List).cast<Map<String, dynamic>>();
@@ -177,7 +183,6 @@ class AppDatabase extends _$AppDatabase {
         final group    = ex['group'] as String?;
         final imageB64 = ex['image'] as String?;
 
-        // Get or create exercise
         int catId;
         final existing = await (select(exerciseCategories)
               ..where((t) => t.name.equals(name)))
@@ -190,7 +195,6 @@ class AppDatabase extends _$AppDatabase {
           }
         } else {
           catId = existing.id;
-          // Fill in missing group / image
           final patch = ExerciseCategoriesCompanion(
             groupName: existing.groupName == null && group != null
                 ? Value(group)
@@ -208,7 +212,6 @@ class AppDatabase extends _$AppDatabase {
 
         for (final s in (ex['sets'] as List).cast<Map<String, dynamic>>()) {
           final ts = s['timestamp'] as int;
-          // Skip duplicates
           final dup = await (select(workoutSets)
                 ..where((t) =>
                     t.categoryId.equals(catId) & t.timestamp.equals(ts)))
@@ -232,12 +235,9 @@ class AppDatabase extends _$AppDatabase {
 
   // ── Import FitNotes CSV ───────────────────────────────────────────────────
 
-  /// Parses and inserts FitNotes CSV rows in a single transaction.
-  /// Returns the number of sets inserted.
   Future<int> importFitNotes(List<Map<String, String>> rows) async {
     int inserted = 0;
     await transaction(() async {
-      // Cache exercise name → id to avoid repeated lookups
       final cache = <String, int>{};
 
       for (var i = 0; i < rows.length; i++) {
@@ -249,7 +249,6 @@ class AppDatabase extends _$AppDatabase {
         final dateStr   = row['Date'] ?? '';
         if (dateStr.isEmpty) continue;
 
-        // Weight: convert lbs → kg if needed
         double? weightKg;
         final wStr  = row['Weight'] ?? '';
         final wUnit = (row['Weight Unit'] ?? '').toLowerCase();
@@ -260,7 +259,6 @@ class AppDatabase extends _$AppDatabase {
           }
         }
 
-        // Reps
         int? reps;
         final rStr = row['Reps'] ?? '';
         if (rStr.isNotEmpty) {
@@ -268,7 +266,6 @@ class AppDatabase extends _$AppDatabase {
           if (r != null && r > 0) reps = r;
         }
 
-        // Time: FitNotes format is H:MM:SS
         int? timeSecs;
         final tStr = row['Time'] ?? '';
         if (tStr.isNotEmpty) {
@@ -277,14 +274,12 @@ class AppDatabase extends _$AppDatabase {
 
         if (weightKg == null && reps == null && timeSecs == null) continue;
 
-        // Get or create exercise
         if (!cache.containsKey(exerciseName)) {
           final existing = await (select(exerciseCategories)
                 ..where((t) => t.name.equals(exerciseName)))
               .getSingleOrNull();
           if (existing != null) {
             cache[exerciseName] = existing.id;
-            // Fill in groupName if not set yet
             if (existing.groupName == null && groupName != null) {
               await (update(exerciseCategories)
                     ..where((t) => t.id.equals(existing.id)))
@@ -297,7 +292,6 @@ class AppDatabase extends _$AppDatabase {
           }
         }
 
-        // Use date epoch + row index as timestamp to preserve order
         final ts = DateTime.parse(dateStr).millisecondsSinceEpoch + i;
 
         await into(workoutSets).insert(WorkoutSetsCompanion.insert(
@@ -314,6 +308,57 @@ class AppDatabase extends _$AppDatabase {
     return inserted;
   }
 
+  // ── Workouts ──────────────────────────────────────────────────────────────
+
+  Stream<List<Workout>> watchAllWorkouts() =>
+      (select(workouts)..orderBy([(t) => OrderingTerm.asc(t.name)])).watch();
+
+  Future<int> insertWorkout(String name) =>
+      into(workouts).insert(WorkoutsCompanion.insert(name: name));
+
+  Future<int> renameWorkout(int id, String name) =>
+      (update(workouts)..where((t) => t.id.equals(id)))
+          .write(WorkoutsCompanion(name: Value(name)));
+
+  Future<void> deleteWorkout(int id) async {
+    await (delete(planWorkouts)..where((t) => t.workoutId.equals(id))).go();
+    await (delete(workoutExercises)..where((t) => t.workoutId.equals(id))).go();
+    await (delete(workouts)..where((t) => t.id.equals(id))).go();
+  }
+
+  Stream<List<ExerciseCategory>> watchExercisesForWorkout(int workoutId) {
+    final q = select(workoutExercises).join([
+      innerJoin(exerciseCategories,
+          exerciseCategories.id.equalsExp(workoutExercises.categoryId)),
+    ])
+      ..where(workoutExercises.workoutId.equals(workoutId))
+      ..orderBy([OrderingTerm.asc(exerciseCategories.name)]);
+    return q.watch().map((rows) =>
+        rows.map((r) => r.readTable(exerciseCategories)).toList());
+  }
+
+  Stream<List<Workout>> watchWorkoutsForExercise(int categoryId) {
+    final q = select(workoutExercises).join([
+      innerJoin(workouts, workouts.id.equalsExp(workoutExercises.workoutId)),
+    ])
+      ..where(workoutExercises.categoryId.equals(categoryId));
+    return q.watch().map((rows) =>
+        rows.map((r) => r.readTable(workouts)).toList());
+  }
+
+  Future<void> addExerciseToWorkout(int workoutId, int categoryId) =>
+      into(workoutExercises).insertOnConflictUpdate(
+        WorkoutExercisesCompanion.insert(
+            workoutId: workoutId, categoryId: categoryId),
+      );
+
+  Future<int> removeExerciseFromWorkout(int workoutId, int categoryId) =>
+      (delete(workoutExercises)
+            ..where((t) =>
+                t.workoutId.equals(workoutId) &
+                t.categoryId.equals(categoryId)))
+          .go();
+
   // ── Plans ─────────────────────────────────────────────────────────────────
 
   Stream<List<Plan>> watchAllPlans() =>
@@ -327,67 +372,37 @@ class AppDatabase extends _$AppDatabase {
           .write(PlansCompanion(name: Value(name)));
 
   Future<void> deletePlan(int id) async {
-    await (delete(scheduledPlans)..where((t) => t.planId.equals(id))).go();
-    await (delete(planExercises)..where((t) => t.planId.equals(id))).go();
+    await (delete(planWorkouts)..where((t) => t.planId.equals(id))).go();
     await (delete(plans)..where((t) => t.id.equals(id))).go();
   }
 
-  // ── Plan exercises ────────────────────────────────────────────────────────
+  // ── Plan ↔ Workout assignments ────────────────────────────────────────────
 
-  Stream<List<ExerciseCategory>> watchExercisesForPlan(int planId) {
-    final q = select(planExercises).join([
-      innerJoin(exerciseCategories,
-          exerciseCategories.id.equalsExp(planExercises.categoryId)),
-    ])
-      ..where(planExercises.planId.equals(planId))
-      ..orderBy([OrderingTerm.asc(exerciseCategories.name)]);
-    return q.watch().map((rows) =>
-        rows.map((r) => r.readTable(exerciseCategories)).toList());
-  }
+  Stream<List<PlanWorkout>> watchPlanWorkouts(int planId) =>
+      (select(planWorkouts)..where((t) => t.planId.equals(planId))).watch();
 
-  Stream<List<Plan>> watchPlansForExercise(int categoryId) {
-    final q = select(planExercises).join([
-      innerJoin(plans, plans.id.equalsExp(planExercises.planId)),
-    ])
-      ..where(planExercises.categoryId.equals(categoryId));
-    return q.watch().map((rows) => rows.map((r) => r.readTable(plans)).toList());
-  }
+  Future<int> assignWorkoutToPlan(int planId, int workoutId,
+          {int? weekday, String? dateStr}) =>
+      into(planWorkouts).insert(PlanWorkoutsCompanion.insert(
+        planId:    planId,
+        workoutId: workoutId,
+        weekday:   Value(weekday),
+        dateStr:   Value(dateStr),
+      ));
 
-  Future<void> addExerciseToPlan(int planId, int categoryId) =>
-      into(planExercises).insertOnConflictUpdate(
-        PlanExercisesCompanion.insert(planId: planId, categoryId: categoryId),
-      );
+  Future<int> removeWorkoutFromPlan(int assignmentId) =>
+      (delete(planWorkouts)..where((t) => t.id.equals(assignmentId))).go();
 
-  Future<int> removeExerciseFromPlan(int planId, int categoryId) =>
-      (delete(planExercises)
-            ..where((t) =>
-                t.planId.equals(planId) & t.categoryId.equals(categoryId)))
-          .go();
-
-  // ── Scheduled plans ───────────────────────────────────────────────────────
-
-  Stream<List<ScheduledPlan>> watchSchedulesForPlan(int planId) =>
-      (select(scheduledPlans)..where((t) => t.planId.equals(planId))).watch();
-
-  Future<int> schedulePlanOnDate(int planId, String dateStr) =>
-      into(scheduledPlans).insert(
-          ScheduledPlansCompanion.insert(planId: planId, dateStr: Value(dateStr)));
-
-  Future<int> schedulePlanOnWeekday(int planId, int weekday) =>
-      into(scheduledPlans).insert(
-          ScheduledPlansCompanion.insert(planId: planId, weekday: Value(weekday)));
-
-  Future<int> deleteSchedule(int id) =>
-      (delete(scheduledPlans)..where((t) => t.id.equals(id))).go();
+  // ── Home screen: planned exercises for a date ─────────────────────────────
 
   Stream<Set<int>> watchPlannedCategoryIdsForDate(String dateStr) {
     final weekday = dateFromStr(dateStr).weekday;
     return customSelect(
-      'SELECT DISTINCT pe.category_id FROM plan_exercises pe '
-      'INNER JOIN scheduled_plans sp ON pe.plan_id = sp.plan_id '
-      'WHERE sp.date_str = ? OR sp.weekday = ?',
+      'SELECT DISTINCT we.category_id FROM workout_exercises we '
+      'INNER JOIN plan_workouts pw ON we.workout_id = pw.workout_id '
+      'WHERE pw.date_str = ? OR pw.weekday = ?',
       variables: [Variable.withString(dateStr), Variable.withInt(weekday)],
-      readsFrom: {planExercises, scheduledPlans},
+      readsFrom: {workoutExercises, planWorkouts},
     ).watch().map((rows) =>
         rows.map((r) => r.read<int>('category_id')).toSet());
   }
