@@ -20,6 +20,10 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) async {
+      await m.createAll();
+      await _seedDefaults();
+    },
     onUpgrade: (m, from, to) async {
       if (from < 2) {
         await m.addColumn(exerciseCategories, exerciseCategories.imageData);
@@ -29,6 +33,33 @@ class AppDatabase extends _$AppDatabase {
       }
     },
   );
+
+  Future<void> _seedDefaults() async {
+    const defaults = [
+      ('Deadlift',                          'Back'),
+      ('Lat Pulldown',                      'Back'),
+      ('Pull Up',                           'Back'),
+      ('T-Bar Row',                         'Back'),
+      ('Dumbbell Curl',                     'Biceps'),
+      ('One Arm Pullup',                    'Biceps'),
+      ('Incline Dumbbell Fly',              'Chest'),
+      ('Dumbell Finger Curl',               'Fingers'),
+      ('Nature Climbing 15 mm High Angle',  'Fingers'),
+      ('Nature Climbing 20mm HC',           'Fingers'),
+      ('Tension Block 15 mm',               'Fingers'),
+      ('Heel Hook Isometrics',              'Hamstring'),
+      ('Overhead Press',                    'Shoulders'),
+      ('Rotator Cuff Sitting',              'Shoulders'),
+    ];
+    await batch((b) {
+      for (final (name, group) in defaults) {
+        b.insert(exerciseCategories, ExerciseCategoriesCompanion.insert(
+          name:      name,
+          groupName: Value(group),
+        ));
+      }
+    });
+  }
 
   // ── Categories ────────────────────────────────────────────────────────────
 
