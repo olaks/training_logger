@@ -1,17 +1,19 @@
 # Training Logger
 
-A climbing and strength training logger for Android, iOS, and Web.
+A climbing and strength training logger for Android, iOS, and Linux.
 
 ## Install
 
 | Platform | How |
 |----------|-----|
 | **Android** | [Actions](../../actions) → latest green run → download `training-logger-apk` → open the `.apk` on your phone |
+| **Linux desktop** | [Actions](../../actions) → latest green run → download `training-logger-linux` → extract → run `bundle/training_logger` |
 | **iPhone / iPad** | Open **https://olaks.github.io/training_logger/** in **Safari** → Share → **Add to Home Screen** |
-| **Web / Desktop** | Open **https://olaks.github.io/training_logger/** in any browser |
+| **Web browser** | Open **https://olaks.github.io/training_logger/** in any browser |
 
 > **Android first install:** allow *Install from unknown sources* in Settings → Security if prompted.  
-> **iOS:** must use Safari — Chrome/Firefox on iOS cannot install PWAs.
+> **iOS:** must use Safari — Chrome/Firefox on iOS cannot install PWAs.  
+> **Linux:** requires GTK3 (`libgtk-3-0`), which is installed by default on most desktop distros.
 
 ## App source
 
