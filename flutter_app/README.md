@@ -9,12 +9,16 @@ Works on **Android**, **iOS**, and **Web** (desktop browser) from a single codeb
 
 | Platform | How |
 |----------|-----|
-| **Android** | Go to [Actions](../../actions) → latest green run → download `training-logger-apk` → open the `.apk` on your phone |
+| **Android** | [Actions](../../actions) → latest green run → download `training-logger-apk` → open the `.apk` on your phone |
+| **iPhone / iPad** | Open **https://olaks.github.io/training_logger/** in **Safari** → Share → **Add to Home Screen** |
 | **Web / Desktop** | Open **https://olaks.github.io/training_logger/** in any browser |
 
-> First-time Android install: you may need to allow *Install from unknown sources* in Settings → Security.
+> **Android first install:** you may need to allow *Install from unknown sources* in Settings → Security.
 >
-> First web load makes one automatic reload to activate the service worker — that's normal.
+> **iOS note:** must use Safari (Chrome/Firefox on iOS can't install PWAs). The app runs as a full-screen
+> standalone app once added to the home screen. Data is stored locally in the browser's storage.
+>
+> **First web load** makes one automatic page reload to activate the service worker — that's normal.
 
 ---
 
