@@ -1,0 +1,15 @@
+# Old Android project (kept for reference, not built)
+app/build/
+build/
+.gradle/
+local.properties
+
+# Samples — exclude screenshots, keep CSV
+samples/*.png
+samples/*.jpg
+
+# Flutter build artifacts (flutter_app has its own .gitignore)
+flutter_app/build/
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
