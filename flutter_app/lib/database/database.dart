@@ -58,47 +58,55 @@ class AppDatabase extends _$AppDatabase {
   );
 
   Future<void> _seedDefaults() async {
+    // (name, group, exerciseType)  0=standard  1=climbing
     const defaults = [
+      // Bouldering — grade-based, exerciseType=1
+      ('Max Boulder',              'Bouldering',       1),
+      ('Flash',                    'Bouldering',       1),
+      ('Onsight',                  'Bouldering',       1),
+      ('Moonboard',                'Bouldering',       1),
+      ('Kilter Board',             'Bouldering',       1),
       // Finger Strength
-      ('Dead Hang',                         'Finger Strength'),
-      ('One-Arm Hang',                      'Finger Strength'),
-      ('Tension Block 15 mm',               'Finger Strength'),
-      ('Tension Block 20 mm',               'Finger Strength'),
-      ('Nature Board 15 mm',                'Finger Strength'),
-      ('Nature Board 20 mm',                'Finger Strength'),
+      ('Dead Hang',                'Finger Strength',  0),
+      ('One-Arm Hang',             'Finger Strength',  0),
+      ('Tension Block 15 mm',      'Finger Strength',  0),
+      ('Tension Block 20 mm',      'Finger Strength',  0),
+      ('Nature Board 15 mm',       'Finger Strength',  0),
+      ('Nature Board 20 mm',       'Finger Strength',  0),
       // Power
-      ('Campus Rungs',                      'Power'),
-      ('Double Dynos',                      'Power'),
-      ('Explosive Pull Up',                 'Power'),
+      ('Campus Rungs',             'Power',            0),
+      ('Double Dynos',             'Power',            0),
+      ('Explosive Pull Up',        'Power',            0),
       // Power Endurance
-      ('4×4 Bouldering',                   'Power Endurance'),
-      ('Linked Boulder Circuit',            'Power Endurance'),
+      ('4×4 Bouldering',          'Power Endurance',  0),
+      ('Linked Boulder Circuit',   'Power Endurance',  0),
       // Endurance
-      ('ARC Traversing',                    'Endurance'),
-      ('Continuous Climbing',               'Endurance'),
+      ('ARC Traversing',           'Endurance',        0),
+      ('Continuous Climbing',      'Endurance',        0),
       // Movement
-      ('Footwork Drills',                   'Movement'),
-      ('Slab Technique',                    'Movement'),
+      ('Footwork Drills',          'Movement',         0),
+      ('Slab Technique',           'Movement',         0),
       // Antagonist
-      ('Wrist Extension',                   'Antagonist'),
-      ('Rotator Cuff',                      'Antagonist'),
-      ('Push Up',                           'Antagonist'),
-      ('Reverse Curl',                      'Antagonist'),
+      ('Wrist Extension',          'Antagonist',       0),
+      ('Rotator Cuff',             'Antagonist',       0),
+      ('Push Up',                  'Antagonist',       0),
+      ('Reverse Curl',             'Antagonist',       0),
       // General Strength
-      ('Pull Up',                           'General Strength'),
-      ('Lat Pulldown',                      'General Strength'),
-      ('One-Arm Pull Up',                   'General Strength'),
-      ('Deadlift',                          'General Strength'),
+      ('Pull Up',                  'General Strength', 0),
+      ('Lat Pulldown',             'General Strength', 0),
+      ('One-Arm Pull Up',          'General Strength', 0),
+      ('Deadlift',                 'General Strength', 0),
       // Core
-      ('Front Lever',                       'Core'),
-      ('Hollow Body Hold',                  'Core'),
-      ('Hanging Leg Raise',                 'Core'),
+      ('Front Lever',              'Core',             0),
+      ('Hollow Body Hold',         'Core',             0),
+      ('Hanging Leg Raise',        'Core',             0),
     ];
     await batch((b) {
-      for (final (name, group) in defaults) {
+      for (final (name, group, type) in defaults) {
         b.insert(exerciseCategories, ExerciseCategoriesCompanion.insert(
-          name:      name,
-          groupName: Value(group),
+          name:         name,
+          groupName:    Value(group),
+          exerciseType: Value(type),
         ));
       }
     });
