@@ -327,28 +327,82 @@ class AppDatabase extends _$AppDatabase {
     for (final s in allSets) {
       setsByCategory.putIfAbsent(s.categoryId, () => []).add(s);
     }
+    final catNameById = {for (final c in cats) c.id: c.name};
 
-    final exercises = cats.map((cat) {
-      final sets = (setsByCategory[cat.id] ?? []).map((s) => {
+    // ── Exercises + sets ────────────────────────────────────────────────
+    final exercisesJson = cats.map((cat) {
+      final sets = (setsByCategory[cat.id] ?? []).map((s) => <String, dynamic>{
         'date':      s.dateStr,
         'timestamp': s.timestamp,
-        if (s.weightKg != null) 'weightKg':  s.weightKg,
-        if (s.reps     != null) 'reps':      s.reps,
-        if (s.timeSecs != null) 'timeSecs':  s.timeSecs,
+        if (s.weightKg != null) 'weightKg': s.weightKg,
+        if (s.reps     != null) 'reps':     s.reps,
+        if (s.timeSecs != null) 'timeSecs': s.timeSecs,
+        if (s.rpe      != null) 'rpe':      s.rpe,
+        if (s.grade    != null) 'grade':    s.grade,
       }).toList();
 
       return <String, dynamic>{
         'name': cat.name,
-        if (cat.groupName  != null) 'group': cat.groupName,
-        if (cat.imageData  != null) 'image': base64.encode(cat.imageData!),
+        if (cat.groupName  != null) 'group':        cat.groupName,
+        if (cat.imageData  != null) 'image':        base64.encode(cat.imageData!),
+        if (cat.exerciseType != 0)  'exerciseType': cat.exerciseType,
         'sets': sets,
       };
     }).toList();
 
+    // ── Workouts ────────────────────────────────────────────────────────
+    final allWorkouts = await select(workouts).get();
+    final allWe       = await select(workoutExercises).get();
+    final weByWorkout = <int, List<WorkoutExercise>>{};
+    for (final we in allWe) {
+      weByWorkout.putIfAbsent(we.workoutId, () => []).add(we);
+    }
+    final workoutsJson = allWorkouts.map((w) {
+      final exList = (weByWorkout[w.id] ?? [])
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      return <String, dynamic>{
+        'name': w.name,
+        if (w.notes.isNotEmpty) 'notes': w.notes,
+        'exercises': exList.map((we) => <String, dynamic>{
+          'name': catNameById[we.categoryId] ?? '',
+          if (we.targetSets != null) 'targetSets': we.targetSets,
+          if (we.targetReps != null) 'targetReps': we.targetReps,
+          'sortOrder': we.sortOrder,
+        }).toList(),
+      };
+    }).toList();
+
+    // ── Plans ───────────────────────────────────────────────────────────
+    final allPlans = await select(plans).get();
+    final allPw    = await select(planWorkouts).get();
+    final pwByPlan = <int, List<PlanWorkout>>{};
+    for (final pw in allPw) {
+      pwByPlan.putIfAbsent(pw.planId, () => []).add(pw);
+    }
+    final workoutNameById = {for (final w in allWorkouts) w.id: w.name};
+    final plansJson = allPlans.map((p) {
+      return <String, dynamic>{
+        'name': p.name,
+        'assignments': (pwByPlan[p.id] ?? []).map((pw) => <String, dynamic>{
+          'workout': workoutNameById[pw.workoutId] ?? '',
+          if (pw.weekday != null) 'weekday': pw.weekday,
+          if (pw.dateStr != null) 'date':    pw.dateStr,
+        }).toList(),
+      };
+    }).toList();
+
+    // ── Day notes + body weights ────────────────────────────────────────
+    final notes   = await select(dayNotes).get();
+    final weights = await select(bodyWeights).get();
+
     return const JsonEncoder.withIndent('  ').convert({
-      'version':    1,
-      'exportedAt': DateTime.now().toIso8601String(),
-      'exercises':  exercises,
+      'version':     2,
+      'exportedAt':  DateTime.now().toIso8601String(),
+      'exercises':   exercisesJson,
+      'workouts':    workoutsJson,
+      'plans':       plansJson,
+      'dayNotes':    notes.map((n) => {'date': n.dateStr, 'note': n.note}).toList(),
+      'bodyWeights': weights.map((b) => {'date': b.dateStr, 'kg': b.kg}).toList(),
     });
   }
 
@@ -357,11 +411,16 @@ class AppDatabase extends _$AppDatabase {
     final exercises = (data['exercises'] as List).cast<Map<String, dynamic>>();
     int inserted    = 0;
 
+    // Map of exercise name → catId (populated during exercise import)
+    final catIdByName = <String, int>{};
+
     await transaction(() async {
+      // ── Exercises + sets ──────────────────────────────────────────────
       for (final ex in exercises) {
         final name     = ex['name']  as String;
         final group    = ex['group'] as String?;
         final imageB64 = ex['image'] as String?;
+        final exType   = (ex['exerciseType'] as int?) ?? 0;
 
         int catId;
         final existing = await (select(exerciseCategories)
@@ -372,6 +431,9 @@ class AppDatabase extends _$AppDatabase {
           catId = await insertCategory(name, groupName: group);
           if (imageB64 != null) {
             await updateCategoryImage(catId, base64.decode(imageB64));
+          }
+          if (exType != 0) {
+            await setExerciseType(catId, exType);
           }
         } else {
           catId = existing.id;
@@ -389,6 +451,7 @@ class AppDatabase extends _$AppDatabase {
                 .write(patch);
           }
         }
+        catIdByName[name] = catId;
 
         for (final s in (ex['sets'] as List).cast<Map<String, dynamic>>()) {
           final ts = s['timestamp'] as int;
@@ -405,9 +468,120 @@ class AppDatabase extends _$AppDatabase {
             weightKg:   Value((s['weightKg'] as num?)?.toDouble()),
             reps:       Value((s['reps']     as num?)?.toInt()),
             timeSecs:   Value((s['timeSecs'] as num?)?.toInt()),
+            rpe:        Value((s['rpe']      as num?)?.toInt()),
+            grade:      Value(s['grade']     as String?),
           ));
           inserted++;
         }
+      }
+
+      // ── Workouts ──────────────────────────────────────────────────────
+      final workoutsData = (data['workouts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final workoutIdByName = <String, int>{};
+      for (final w in workoutsData) {
+        final name  = w['name'] as String;
+        final notes = (w['notes'] as String?) ?? '';
+
+        // Skip if workout with this name already exists
+        final existing = await (select(workouts)
+              ..where((t) => t.name.equals(name)))
+            .getSingleOrNull();
+        int wId;
+        if (existing != null) {
+          wId = existing.id;
+        } else {
+          wId = await into(workouts).insert(
+              WorkoutsCompanion.insert(name: name, notes: Value(notes)));
+        }
+        workoutIdByName[name] = wId;
+
+        final exList = (w['exercises'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        for (final we in exList) {
+          final exName = we['name'] as String;
+          final catId  = catIdByName[exName];
+          if (catId == null) continue;
+
+          final existingWe = await (select(workoutExercises)
+                ..where((t) =>
+                    t.workoutId.equals(wId) & t.categoryId.equals(catId)))
+              .getSingleOrNull();
+          if (existingWe != null) continue;
+
+          await into(workoutExercises).insert(
+            WorkoutExercisesCompanion.insert(
+              workoutId:  wId,
+              categoryId: catId,
+              targetSets: Value((we['targetSets'] as num?)?.toInt()),
+              targetReps: Value((we['targetReps'] as num?)?.toInt()),
+              sortOrder:  Value((we['sortOrder']  as num?)?.toInt() ?? 0),
+            ),
+          );
+        }
+      }
+
+      // ── Plans ─────────────────────────────────────────────────────────
+      final plansData = (data['plans'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      for (final p in plansData) {
+        final name = p['name'] as String;
+
+        final existing = await (select(plans)
+              ..where((t) => t.name.equals(name)))
+            .getSingleOrNull();
+        int planId;
+        if (existing != null) {
+          planId = existing.id;
+        } else {
+          planId = await into(plans).insert(PlansCompanion.insert(name: name));
+        }
+
+        final assignments = (p['assignments'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        for (final a in assignments) {
+          final woName = a['workout'] as String;
+          final woId   = workoutIdByName[woName];
+          if (woId == null) continue;
+
+          final weekday = (a['weekday'] as num?)?.toInt();
+          final dateStr = a['date'] as String?;
+
+          // Check for duplicate assignment
+          final dup = await (select(planWorkouts)
+                ..where((t) =>
+                    t.planId.equals(planId) & t.workoutId.equals(woId)))
+              .getSingleOrNull();
+          if (dup != null) continue;
+
+          await into(planWorkouts).insert(PlanWorkoutsCompanion.insert(
+            planId:    planId,
+            workoutId: woId,
+            weekday:   Value(weekday),
+            dateStr:   Value(dateStr),
+          ));
+        }
+      }
+
+      // ── Day notes ─────────────────────────────────────────────────────
+      final notesData = (data['dayNotes'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      for (final n in notesData) {
+        final dateStr = n['date'] as String;
+        final note    = n['note'] as String;
+        if (note.isEmpty) continue;
+        final existing = await (select(dayNotes)
+              ..where((t) => t.dateStr.equals(dateStr)))
+            .getSingleOrNull();
+        if (existing != null) continue;
+        await saveDayNote(dateStr, note);
+      }
+
+      // ── Body weights ──────────────────────────────────────────────────
+      final weightsData = (data['bodyWeights'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      for (final b in weightsData) {
+        final dateStr = b['date'] as String;
+        final kg      = (b['kg'] as num).toDouble();
+        final existing = await (select(bodyWeights)
+              ..where((t) => t.dateStr.equals(dateStr)))
+            .getSingleOrNull();
+        if (existing != null) continue;
+        await saveBodyWeight(dateStr, kg);
       }
     });
     return inserted;
