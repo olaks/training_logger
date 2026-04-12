@@ -20,6 +20,17 @@ class HomeScreen extends ConsumerWidget {
     final plannedWorkouts =
         ref.watch(plannedWorkoutsForDateProvider(dateStr)).value ?? [];
 
+    // Unstarted planned exercises for the FAB quick-pick
+    final loggedCatIds = (setsAsync.value ?? []).map((s) => s.categoryId).toSet();
+    final unstartedExercises = <(String, ExerciseCategory)>[];
+    for (final (workout, exercises) in plannedWorkouts) {
+      for (final cat in exercises) {
+        if (!loggedCatIds.contains(cat.id)) {
+          unstartedExercises.add((workout.name, cat));
+        }
+      }
+    }
+
     return Scaffold(
       body: Column(
         children: [
@@ -115,8 +126,71 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.go('/exercises'),
+        onPressed: () {
+          if (unstartedExercises.isEmpty) {
+            context.go('/exercises');
+          } else {
+            _showQuickPick(context, dateStr, unstartedExercises);
+          }
+        },
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  void _showQuickPick(
+    BuildContext context,
+    String dateStr,
+    List<(String, ExerciseCategory)> exercises,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: false,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Text('Log exercise',
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      context.go('/exercises');
+                    },
+                    child: const Text('All exercises'),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ...exercises.map((e) => ListTile(
+                  leading: const Icon(Icons.fitness_center, size: 20),
+                  title: Text(e.$2.name),
+                  subtitle: Text(e.$1,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.4))),
+                  dense: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.push('/exercise/${e.$2.id}/$dateStr');
+                  },
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

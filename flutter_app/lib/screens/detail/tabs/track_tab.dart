@@ -36,6 +36,23 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         _           => 'Max',
       };
 
+  static String _targetLabel(int? sets, int? reps, int done) {
+    final parts = <String>[];
+    if (sets != null && reps != null) {
+      parts.add('Target: $sets \u00d7 $reps reps');
+    } else if (sets != null) {
+      parts.add('Target: $sets sets');
+    } else if (reps != null) {
+      parts.add('Target: $reps reps');
+    }
+    if (sets != null && done > 0) {
+      parts.add(done >= sets
+          ? '\u2014 complete'
+          : '\u2014 $done of $sets done');
+    }
+    return parts.join(' ');
+  }
+
   /// Fill the form from a [WorkoutSet], using the given grade scale.
   void _fillFrom(WorkoutSet s, TrackNotifier notifier, List<String> grades, bool isClimbing) {
     if (isClimbing && s.grade != null) {
@@ -97,6 +114,12 @@ class _TrackTabState extends ConsumerState<TrackTab> {
     // Rest timer (global provider)
     final timerState   = ref.watch(restTimerProvider);
     final timerNotifier = ref.read(restTimerProvider.notifier);
+
+    // Workout target for this exercise on this date
+    final target = ref.watch(exerciseTargetProvider(
+        (categoryId: widget.categoryId, dateStr: widget.dateStr))).value;
+    final targetSets = target?.$1;
+    final targetReps = target?.$2;
 
     // ── Pre-fill from last set ────────────────────────────────────────────
     if (!_prefilled && (todaySets.isNotEmpty || allSets.isNotEmpty)) {
@@ -191,16 +214,30 @@ class _TrackTabState extends ConsumerState<TrackTab> {
             ),
           ],
 
-          // Sets logged today
-          if (todaySets.isNotEmpty) ...[
+          // Target + logged sets
+          if (targetSets != null || targetReps != null || todaySets.isNotEmpty) ...[
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 8),
-            Text('Logged today',
-                style: TextStyle(
-                    fontSize: 12,
-                    letterSpacing: 1,
-                    color: Colors.white.withValues(alpha: 0.4))),
+            if (targetSets != null || targetReps != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _targetLabel(targetSets, targetReps, todaySets.length),
+                  style: TextStyle(
+                      fontSize: 12,
+                      letterSpacing: 0.5,
+                      color: todaySets.length >= (targetSets ?? 0) && todaySets.isNotEmpty
+                          ? primary
+                          : Colors.white.withValues(alpha: 0.5)),
+                ),
+              ),
+            if (todaySets.isNotEmpty)
+              Text('Logged today',
+                  style: TextStyle(
+                      fontSize: 12,
+                      letterSpacing: 1,
+                      color: Colors.white.withValues(alpha: 0.4))),
             const SizedBox(height: 8),
             ...todaySets.asMap().entries.map(
               (e) => _LoggedSetRow(

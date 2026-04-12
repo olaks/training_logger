@@ -63,6 +63,12 @@ final plannedWorkoutsForDateProvider =
         (ref, dateStr) =>
             ref.watch(dbProvider).watchPlannedWorkoutsForDate(dateStr));
 
+// ── Exercise target for a date ────────────────────────────────────────────
+
+final exerciseTargetProvider =
+    StreamProvider.family<(int?, int?)?, ({int categoryId, String dateStr})>(
+        (ref, p) => ref.watch(dbProvider).watchExerciseTarget(p.categoryId, p.dateStr));
+
 // ── Day notes ─────────────────────────────────────────────────────────────
 
 final dayNoteProvider =

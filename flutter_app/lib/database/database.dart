@@ -639,6 +639,29 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// Returns (targetSets, targetReps) for an exercise on a given date via its
+  /// planned workout, or null if the exercise is not planned.
+  Stream<(int?, int?)?> watchExerciseTarget(int categoryId, String dateStr) {
+    final weekday = dateFromStr(dateStr).weekday;
+    return customSelect(
+      'SELECT we.target_sets, we.target_reps '
+      'FROM workout_exercises we '
+      'JOIN plan_workouts pw ON we.workout_id = pw.workout_id '
+      'WHERE we.category_id = ? AND (pw.date_str = ? OR pw.weekday = ?) '
+      'LIMIT 1',
+      variables: [
+        Variable.withInt(categoryId),
+        Variable.withString(dateStr),
+        Variable.withInt(weekday),
+      ],
+      readsFrom: {workoutExercises, planWorkouts},
+    ).watch().map((rows) {
+      if (rows.isEmpty) return null;
+      final r = rows.first;
+      return (r.readNullable<int>('target_sets'), r.readNullable<int>('target_reps'));
+    });
+  }
+
   static String? _nullIfEmpty(String? s) =>
       (s == null || s.trim().isEmpty) ? null : s.trim();
 
