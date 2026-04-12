@@ -7,6 +7,9 @@ local.properties
 # Samples — reference files, not for the repo
 samples/
 
+# Local scratch files
+tmp/
+
 # Signing keys (never commit)
 flutter_app/android/key.properties
 flutter_app/android/app/release-keystore.jks
