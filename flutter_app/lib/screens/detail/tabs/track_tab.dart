@@ -1,7 +1,7 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../database/database.dart';
 import '../../../providers/app_providers.dart';
 import '../../../utils/format_utils.dart';
 import '../../../utils/grades.dart';
@@ -16,42 +16,9 @@ class TrackTab extends ConsumerStatefulWidget {
 }
 
 class _TrackTabState extends ConsumerState<TrackTab> {
-  // ── Rest timer ────────────────────────────────────────────────────────────
   static const _restOptions = [60, 120, 180, 300]; // 1 2 3 5 min
-  int  _restSecs    = 180; // default 3 min
-  int  _remaining   = 0;
-  bool _timerActive = false;
-  Timer? _timer;
 
-  void _startTimer() {
-    _timer?.cancel();
-    setState(() {
-      _remaining   = _restSecs;
-      _timerActive = true;
-    });
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() {
-        if (_remaining > 0) {
-          _remaining--;
-        } else {
-          _timerActive = false;
-          _timer?.cancel();
-        }
-      });
-    });
-  }
-
-  void _cancelTimer() {
-    _timer?.cancel();
-    setState(() => _timerActive = false);
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
+  bool _prefilled = false;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -68,6 +35,40 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         8 || 9      => 'Very Hard',
         _           => 'Max',
       };
+
+  /// Fill the form from a [WorkoutSet], using the given grade scale.
+  void _fillFrom(WorkoutSet s, TrackNotifier notifier, List<String> grades, bool isClimbing) {
+    if (isClimbing && s.grade != null) {
+      notifier.setGradeIndex(gradeToIndex(s.grade!, grades));
+    } else {
+      notifier.setWeight(s.weightKg ?? 0);
+      notifier.setReps(s.reps ?? 0);
+      notifier.setTimeSecs(s.timeSecs ?? 0);
+    }
+    notifier.setRpe(s.rpe ?? 0);
+  }
+
+  void _confirmDelete(BuildContext context, WidgetRef ref, int id) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        content: const Text('Delete this set?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              ref.removeSet(id);
+              Navigator.pop(context);
+            },
+            child: Text('Delete',
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+  }
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -87,10 +88,24 @@ class _TrackTabState extends ConsumerState<TrackTab> {
     final primary = Theme.of(context).colorScheme.primary;
 
     // Detect grade scale from any already-logged grades (or default Font)
-    final loggedGrades = todaySets
+    final allSets = ref.watch(setsForCategoryProvider(widget.categoryId)).value ?? [];
+    final loggedGrades = allSets
         .where((s) => s.grade != null)
         .map((s) => s.grade!);
     final grades = detectGradeScale(loggedGrades);
+
+    // Rest timer (global provider)
+    final timerState   = ref.watch(restTimerProvider);
+    final timerNotifier = ref.read(restTimerProvider.notifier);
+
+    // ── Pre-fill from last set ────────────────────────────────────────────
+    if (!_prefilled && (todaySets.isNotEmpty || allSets.isNotEmpty)) {
+      _prefilled = true;
+      final source = todaySets.isNotEmpty ? todaySets.last : allSets.first;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _fillFrom(source, notifier, grades, isClimbing);
+      });
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
@@ -138,7 +153,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                         state:      state,
                       );
                     }
-                    _startTimer();
+                    timerNotifier.start();
                   },
                   child: const Text('SAVE'),
                 ),
@@ -149,7 +164,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                   onPressed: () {
                     FocusScope.of(context).unfocus();
                     notifier.clear();
-                    _cancelTimer();
+                    timerNotifier.cancel();
                   },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white70,
@@ -165,17 +180,14 @@ class _TrackTabState extends ConsumerState<TrackTab> {
           ),
 
           // ── Rest timer ──────────────────────────────────────────────────
-          if (_timerActive) ...[
+          if (timerState.active) ...[
             const SizedBox(height: 20),
             _RestTimerWidget(
-              remaining:    _remaining,
-              restSecs:     _restSecs,
+              remaining:    timerState.remaining,
+              restSecs:     timerState.restSecs,
               restOptions:  _restOptions,
-              onCancel:     _cancelTimer,
-              onSetDuration: (s) {
-                setState(() => _restSecs = s);
-                _startTimer();
-              },
+              onCancel:     timerNotifier.cancel,
+              onSetDuration: timerNotifier.setDurationAndRestart,
             ),
           ],
 
@@ -191,41 +203,12 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                     color: Colors.white.withValues(alpha: 0.4))),
             const SizedBox(height: 8),
             ...todaySets.asMap().entries.map(
-              (e) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Set ${e.key + 1}',
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.4))),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(e.value.grade != null
-                            ? e.value.grade!
-                            : formatSet(
-                                weightKg: e.value.weightKg,
-                                reps:     e.value.reps,
-                                timeSecs: e.value.timeSecs)),
-                        if (e.value.rpe != null) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: primary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text('RPE ${e.value.rpe}',
-                                style: TextStyle(
-                                    fontSize: 11, color: primary)),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
+              (e) => _LoggedSetRow(
+                set: e.value,
+                index: e.key,
+                primary: primary,
+                onTap: () => _fillFrom(e.value, notifier, grades, isClimbing),
+                onDelete: () => _confirmDelete(context, ref, e.value.id),
               ),
             ),
           ],
@@ -351,6 +334,70 @@ class _TrackTabState extends ConsumerState<TrackTab> {
       ],
     );
   }
+}
+
+// ── Logged set row (tappable + deletable) ────────────────────────────────────
+
+class _LoggedSetRow extends StatelessWidget {
+  final WorkoutSet set;
+  final int index;
+  final Color primary;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+  const _LoggedSetRow({
+    required this.set,
+    required this.index,
+    required this.primary,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            child: Row(
+              children: [
+                Text('Set ${index + 1}',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4))),
+                const Spacer(),
+                Text(set.grade != null
+                    ? set.grade!
+                    : formatSet(
+                        weightKg: set.weightKg,
+                        reps:     set.reps,
+                        timeSecs: set.timeSecs)),
+                if (set.rpe != null) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text('RPE ${set.rpe}',
+                        style: TextStyle(
+                            fontSize: 11, color: primary)),
+                  ),
+                ],
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: onDelete,
+                  child: Icon(Icons.close,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.25)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }
 
 // ── RPE row ───────────────────────────────────────────────────────────────────

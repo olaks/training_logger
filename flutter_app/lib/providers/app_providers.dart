@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -139,6 +140,57 @@ final trackProvider = StateNotifierProvider.autoDispose
     .family<TrackNotifier, TrackState, int>(
   (ref, _) => TrackNotifier(),
 );
+
+// ── Rest timer (global, survives navigation) ─────────────────────────────
+
+class RestTimerState {
+  final bool active;
+  final int remaining;
+  final int restSecs; // chosen duration preset
+  const RestTimerState({this.active = false, this.remaining = 0, this.restSecs = 180});
+}
+
+class RestTimerNotifier extends StateNotifier<RestTimerState> {
+  Timer? _timer;
+  RestTimerNotifier() : super(const RestTimerState());
+
+  void start() {
+    _timer?.cancel();
+    state = RestTimerState(active: true, remaining: state.restSecs, restSecs: state.restSecs);
+    _tick();
+  }
+
+  void setDurationAndRestart(int secs) {
+    _timer?.cancel();
+    state = RestTimerState(active: true, remaining: secs, restSecs: secs);
+    _tick();
+  }
+
+  void cancel() {
+    _timer?.cancel();
+    state = RestTimerState(active: false, remaining: 0, restSecs: state.restSecs);
+  }
+
+  void _tick() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (state.remaining > 0) {
+        state = RestTimerState(active: true, remaining: state.remaining - 1, restSecs: state.restSecs);
+      } else {
+        _timer?.cancel();
+        state = RestTimerState(active: false, remaining: 0, restSecs: state.restSecs);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+}
+
+final restTimerProvider = StateNotifierProvider<RestTimerNotifier, RestTimerState>(
+    (ref) => RestTimerNotifier());
 
 // ── Database mutation helpers ──────────────────────────────────────────────
 
