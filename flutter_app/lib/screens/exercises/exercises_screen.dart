@@ -118,6 +118,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
               if (action == _DataAction.importBackup)   _importBackup(context);
               if (action == _DataAction.importFitNotes) context.push('/import');
               if (action == _DataAction.appearance)     _showAppearanceSheet(context);
+              if (action == _DataAction.help)           _showHelpSheet(context);
             },
             itemBuilder: (_) => const [
               PopupMenuItem(
@@ -140,6 +141,12 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                   child: ListTile(
                       leading: Icon(Icons.palette_outlined),
                       title: Text('Appearance'))),
+              PopupMenuDivider(),
+              PopupMenuItem(
+                  value: _DataAction.help,
+                  child: ListTile(
+                      leading: Icon(Icons.help_outline),
+                      title: Text('Help'))),
             ],
           ),
         ],
@@ -330,6 +337,18 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     if (xFile == null) return;
     final bytes = await xFile.readAsBytes();
     await ref.saveCategoryImage(categoryId, bytes);
+  }
+
+  void _showHelpSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: false,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => const _HelpSheet(),
+    );
   }
 
   void _showAppearanceSheet(BuildContext context) {
@@ -647,6 +666,146 @@ class _AddToWorkoutSheet extends ConsumerWidget {
   }
 }
 
+// ── Help sheet ────────────────────────────────────────────────────────────────
+
+class _HelpSheet extends StatelessWidget {
+  const _HelpSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      builder: (_, scrollCtrl) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 4),
+            child: Row(
+              children: [
+                const Text('Help',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 18)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView(
+              controller: scrollCtrl,
+              padding: const EdgeInsets.only(bottom: 32),
+              children: const [
+                _HelpSection(
+                  title: 'Logging a set',
+                  steps: [
+                    'Tap an exercise on the Home screen, or go to Exercises and tap any exercise.',
+                    'Adjust weight, reps, and/or time with the +/− buttons. Tap the number to type directly.',
+                    'Optionally set RPE — your effort for that set (1 = very easy, 10 = absolute max).',
+                    'Tap SAVE. A rest timer starts automatically; use the chips to change its duration.',
+                    'Repeat for each set. All sets logged today are shown at the bottom of the screen.',
+                  ],
+                ),
+                _HelpSection(
+                  title: 'Logging a climbing grade',
+                  steps: [
+                    'Open a Bouldering exercise — or open any exercise, tap ⋮ in the top-right, and choose Set as climbing.',
+                    'Use +/− to step through the grade list (Font scale by default; V-scale detected automatically if you log V-grades).',
+                    'Set RPE and tap SAVE.',
+                    'The History tab shows a ⭐ on your best-ever grade. The Graph tab shows your grade trend over time.',
+                  ],
+                ),
+                _HelpSection(
+                  title: 'Planning workouts',
+                  steps: [
+                    'Go to the Plans tab → tap + New workout and give it a name (e.g. "Warm-up", "Strength").',
+                    'Open the workout → tap + Add exercises to select exercises from your library.',
+                    'Back on Plans → tap + New plan and give it a name (e.g. "Weekly training").',
+                    'Open the plan → assign your workouts to weekdays or specific dates.',
+                    'The Home screen now shows those exercises automatically on scheduled days.',
+                  ],
+                ),
+                _HelpSection(
+                  title: 'Viewing progress',
+                  steps: [
+                    'Open any exercise → GRAPH tab for a line chart of your progress.',
+                    'Use the chips to switch between Max Weight, Est. 1RM, Total Volume, Total Reps, and Total Time.',
+                    'Climbing exercises show a Best Grade chart with grade labels on the axis.',
+                    'Open the HISTORY tab to see all your sets grouped by date. A ⭐ marks an all-time personal record.',
+                  ],
+                ),
+                _HelpSection(
+                  title: 'Tracking your day',
+                  steps: [
+                    'Use the ← / → arrows on the Home screen to navigate between days, or tap the date to open the calendar.',
+                    'Tap Log weight (top of the day view) to record your body weight for that day.',
+                    'Tap Add note to write a free-text session note for the day.',
+                  ],
+                ),
+                _HelpSection(
+                  title: 'Backing up and restoring data',
+                  steps: [
+                    'Exercises → ⋮ → Export backup — saves a .json file with all your history.',
+                    'On another device: Exercises → ⋮ → Import backup — duplicates are skipped automatically.',
+                    'To import from FitNotes: Exercises → ⋮ → Import FitNotes CSV.',
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HelpSection extends StatelessWidget {
+  final String title;
+  final List<String> steps;
+  const _HelpSection({required this.title, required this.steps});
+
+  @override
+  Widget build(BuildContext context) => ExpansionTile(
+        title: Text(title,
+            style: const TextStyle(
+                fontWeight: FontWeight.w600, fontSize: 14)),
+        childrenPadding:
+            const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          ...steps.asMap().entries.map((e) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      child: Text(
+                        '${e.key + 1}.',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(e.value,
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.white.withValues(alpha: 0.75),
+                              height: 1.4)),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      );
+}
+
 // ── Appearance picker ─────────────────────────────────────────────────────────
 
 class _AppearanceSheet extends StatefulWidget {
@@ -724,7 +883,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
       );
 }
 
-enum _DataAction { exportBackup, importBackup, importFitNotes, appearance }
+enum _DataAction { exportBackup, importBackup, importFitNotes, appearance, help }
 
 enum _ExAction { rename, changeCategory, addToWorkout, delete }
 
