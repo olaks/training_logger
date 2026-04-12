@@ -374,13 +374,25 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
   }
 
   void _showCreateDialog() {
-    final db   = ref.read(dbProvider);
-    final ctrl = TextEditingController();
+    final db        = ref.read(dbProvider);
+    final nameCtrl  = TextEditingController();
+    final groupCtrl = TextEditingController(text: _query.isNotEmpty
+        ? (_groupFromQuery() ?? '')
+        : '');
+
+    // Existing group names for autocomplete
+    final groups = (ref.read(categoriesProvider).value ?? [])
+        .map((c) => c.groupName)
+        .whereType<String>()
+        .toSet()
+        .toList()
+      ..sort();
 
     Future<void> doCreate(BuildContext dialogCtx) async {
-      final name = ctrl.text.trim();
+      final name  = nameCtrl.text.trim();
       if (name.isEmpty) return;
-      final catId = await db.insertOrGetCategory(name);
+      final group = groupCtrl.text.trim().isEmpty ? null : groupCtrl.text.trim();
+      final catId = await db.insertOrGetCategory(name, groupName: group);
       await db.addExerciseToWorkout(widget.workoutId, catId);
       if (dialogCtx.mounted) Navigator.pop(dialogCtx);
     }
@@ -390,12 +402,37 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
       useRootNavigator: false,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('New Exercise'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Exercise name'),
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (_) => doCreate(dialogCtx),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Exercise name'),
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (_) => doCreate(dialogCtx),
+            ),
+            const SizedBox(height: 12),
+            Autocomplete<String>(
+              initialValue: TextEditingValue(text: groupCtrl.text),
+              optionsBuilder: (v) => groups.where(
+                  (g) => g.toLowerCase().contains(v.text.toLowerCase())),
+              onSelected: (g) => groupCtrl.text = g,
+              fieldViewBuilder: (_, autoCtrl, focus, __) {
+                autoCtrl.addListener(() => groupCtrl.text = autoCtrl.text);
+                return TextField(
+                  controller: autoCtrl,
+                  focusNode: focus,
+                  decoration: const InputDecoration(
+                    labelText: 'Category (optional)',
+                    hintText: 'e.g. Bouldering, Core…',
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                  onChanged: (v) => groupCtrl.text = v,
+                );
+              },
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -407,6 +444,18 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
         ],
       ),
     );
+  }
+
+  /// If the current search query exactly matches a known group name, return it
+  /// so the new-exercise dialog can pre-fill the category field.
+  String? _groupFromQuery() {
+    final groups = (ref.read(categoriesProvider).value ?? [])
+        .map((c) => c.groupName)
+        .whereType<String>();
+    return groups.firstWhere(
+      (g) => g.toLowerCase() == _query.toLowerCase(),
+      orElse: () => '',
+    ).isEmpty ? null : _query;
   }
 }
 
