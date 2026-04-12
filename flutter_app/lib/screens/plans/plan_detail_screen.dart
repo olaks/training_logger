@@ -301,17 +301,44 @@ class _DayRow extends StatelessWidget {
 
 // ── Pick workout sheet ────────────────────────────────────────────────────────
 
-class _PickWorkoutSheet extends ConsumerWidget {
+class _PickWorkoutSheet extends ConsumerStatefulWidget {
   final Future<void> Function(int workoutId) onPick;
   const _PickWorkoutSheet({required this.onPick});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final workouts = ref.watch(allWorkoutsProvider).value ?? [];
+  ConsumerState<_PickWorkoutSheet> createState() => _PickWorkoutSheetState();
+}
+
+class _PickWorkoutSheetState extends ConsumerState<_PickWorkoutSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final workouts  = ref.watch(allWorkoutsProvider).value ?? [];
+    final exercises = ref.watch(categoriesProvider).value ?? [];
+    final primary   = Theme.of(context).colorScheme.primary;
+
+    final q = _query.toLowerCase();
+    final filteredWorkouts = q.isEmpty
+        ? workouts
+        : workouts.where((w) => w.name.toLowerCase().contains(q)).toList();
+    final filteredExercises = q.isEmpty
+        ? exercises
+        : exercises.where((c) =>
+            c.name.toLowerCase().contains(q) ||
+            (c.groupName?.toLowerCase().contains(q) ?? false)).toList();
+
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.45,
-      maxChildSize: 0.85,
+      initialChildSize: 0.55,
+      maxChildSize: 0.9,
       builder: (_, ctrl) => Column(
         children: [
           const SizedBox(height: 12),
@@ -323,33 +350,74 @@ class _PickWorkoutSheet extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 12),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Select workout',
-                  style:
-                      TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _query = v),
+              decoration: const InputDecoration(
+                hintText: 'Search workouts or exercises',
+                prefixIcon: Icon(Icons.search, size: 20),
+                isDense: true,
+              ),
             ),
           ),
           const SizedBox(height: 8),
-          if (workouts.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                  'No workouts yet. Create one in the Plans tab first.'),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                controller: ctrl,
-                itemCount: workouts.length,
-                itemBuilder: (_, i) => ListTile(
-                  title: Text(workouts[i].name),
-                  onTap: () => onPick(workouts[i].id),
-                ),
-              ),
+          Expanded(
+            child: ListView(
+              controller: ctrl,
+              children: [
+                // ── Workouts section ────────────────────────────────────
+                if (filteredWorkouts.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text('WORKOUTS',
+                        style: TextStyle(
+                            fontSize: 11,
+                            letterSpacing: 1.3,
+                            fontWeight: FontWeight.w700,
+                            color: primary)),
+                  ),
+                  ...filteredWorkouts.map((w) => ListTile(
+                        leading: const Icon(Icons.list_alt, size: 20),
+                        title: Text(w.name),
+                        dense: true,
+                        onTap: () => widget.onPick(w.id),
+                      )),
+                ],
+
+                // ── Exercises section ───────────────────────────────────
+                if (filteredExercises.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text('SINGLE EXERCISE',
+                        style: TextStyle(
+                            fontSize: 11,
+                            letterSpacing: 1.3,
+                            fontWeight: FontWeight.w700,
+                            color: primary)),
+                  ),
+                  ...filteredExercises.map((cat) => ListTile(
+                        leading: const Icon(Icons.fitness_center, size: 20),
+                        title: Text(cat.name),
+                        subtitle: cat.groupName != null
+                            ? Text(cat.groupName!,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white.withValues(alpha: 0.4)))
+                            : null,
+                        dense: true,
+                        onTap: () async {
+                          final db = ref.read(dbProvider);
+                          final wId = await db.getOrCreateWorkoutForExercise(
+                              cat.id, cat.name);
+                          await widget.onPick(wId);
+                        },
+                      )),
+                ],
+              ],
             ),
+          ),
         ],
       ),
     );

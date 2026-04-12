@@ -688,6 +688,25 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// Returns a workout containing exactly [categoryId]. If one exists it is
+  /// reused, otherwise a new workout named [exerciseName] is created.
+  Future<int> getOrCreateWorkoutForExercise(int categoryId, String exerciseName) async {
+    // Find workouts that contain this exercise and have exactly one exercise
+    final rows = await customSelect(
+      'SELECT we.workout_id FROM workout_exercises we '
+      'WHERE we.category_id = ? '
+      'AND (SELECT COUNT(*) FROM workout_exercises we2 WHERE we2.workout_id = we.workout_id) = 1',
+      variables: [Variable.withInt(categoryId)],
+      readsFrom: {workoutExercises},
+    ).get();
+    if (rows.isNotEmpty) return rows.first.read<int>('workout_id');
+
+    final wId = await into(workouts).insert(
+        WorkoutsCompanion.insert(name: exerciseName));
+    await addExerciseToWorkout(wId, categoryId);
+    return wId;
+  }
+
   Future<void> deleteWorkout(int id) async {
     await (delete(planWorkouts)..where((t) => t.workoutId.equals(id))).go();
     await (delete(workoutExercises)..where((t) => t.workoutId.equals(id))).go();
