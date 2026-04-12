@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -79,6 +79,9 @@ class AppDatabase extends _$AppDatabase {
             );
           }
         }
+      }
+      if (from < 10) {
+        await m.addColumn(workoutExercises, workoutExercises.targetSets);
       }
     },
   );
@@ -284,6 +287,7 @@ class AppDatabase extends _$AppDatabase {
           return <String, dynamic>{
             'name': ec.name,
             if (ec.groupName  != null) 'group':      ec.groupName,
+            if (we.targetSets != null) 'targetSets': we.targetSets,
             if (we.targetReps != null) 'targetReps': we.targetReps,
           };
         }).toList(),
@@ -496,7 +500,8 @@ class AppDatabase extends _$AppDatabase {
     await (delete(workouts)..where((t) => t.id.equals(id))).go();
   }
 
-  Stream<List<(ExerciseCategory, int?)>> watchExercisesForWorkout(int workoutId) {
+  // Returns (category, targetSets, targetReps) per exercise in the workout.
+  Stream<List<(ExerciseCategory, int?, int?)>> watchExercisesForWorkout(int workoutId) {
     final q = select(workoutExercises).join([
       innerJoin(exerciseCategories,
           exerciseCategories.id.equalsExp(workoutExercises.categoryId)),
@@ -504,18 +509,26 @@ class AppDatabase extends _$AppDatabase {
       ..where(workoutExercises.workoutId.equals(workoutId))
       ..orderBy([OrderingTerm.asc(exerciseCategories.name)]);
     return q.watch().map((rows) => rows
-        .map((r) => (
-              r.readTable(exerciseCategories),
-              r.readTable(workoutExercises).targetReps,
-            ))
+        .map((r) {
+          final we = r.readTable(workoutExercises);
+          return (
+            r.readTable(exerciseCategories),
+            we.targetSets,
+            we.targetReps,
+          );
+        })
         .toList());
   }
 
-  Future<int> updateTargetReps(int workoutId, int categoryId, int? targetReps) =>
+  Future<int> updateWorkoutTarget(
+          int workoutId, int categoryId, int? targetSets, int? targetReps) =>
       (update(workoutExercises)
             ..where((t) =>
                 t.workoutId.equals(workoutId) & t.categoryId.equals(categoryId)))
-          .write(WorkoutExercisesCompanion(targetReps: Value(targetReps)));
+          .write(WorkoutExercisesCompanion(
+            targetSets: Value(targetSets),
+            targetReps: Value(targetReps),
+          ));
 
   Stream<List<Workout>> watchWorkoutsForExercise(int categoryId) {
     final q = select(workoutExercises).join([

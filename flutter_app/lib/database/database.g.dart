@@ -517,6 +517,12 @@ class $WorkoutExercisesTable extends WorkoutExercises
       requiredDuringInsert: true,
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'REFERENCES exercise_categories (id)'));
+  static const VerificationMeta _targetSetsMeta =
+      const VerificationMeta('targetSets');
+  @override
+  late final GeneratedColumn<int> targetSets = GeneratedColumn<int>(
+      'target_sets', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   static const VerificationMeta _targetRepsMeta =
       const VerificationMeta('targetReps');
   @override
@@ -524,7 +530,8 @@ class $WorkoutExercisesTable extends WorkoutExercises
       'target_reps', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
   @override
-  List<GeneratedColumn> get $columns => [id, workoutId, categoryId, targetReps];
+  List<GeneratedColumn> get $columns =>
+      [id, workoutId, categoryId, targetSets, targetReps];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -552,6 +559,12 @@ class $WorkoutExercisesTable extends WorkoutExercises
     } else if (isInserting) {
       context.missing(_categoryIdMeta);
     }
+    if (data.containsKey('target_sets')) {
+      context.handle(
+          _targetSetsMeta,
+          targetSets.isAcceptableOrUnknown(
+              data['target_sets']!, _targetSetsMeta));
+    }
     if (data.containsKey('target_reps')) {
       context.handle(
           _targetRepsMeta,
@@ -577,6 +590,8 @@ class $WorkoutExercisesTable extends WorkoutExercises
           .read(DriftSqlType.int, data['${effectivePrefix}workout_id'])!,
       categoryId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}category_id'])!,
+      targetSets: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}target_sets']),
       targetReps: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}target_reps']),
     );
@@ -592,11 +607,13 @@ class WorkoutExercise extends DataClass implements Insertable<WorkoutExercise> {
   final int id;
   final int workoutId;
   final int categoryId;
+  final int? targetSets;
   final int? targetReps;
   const WorkoutExercise(
       {required this.id,
       required this.workoutId,
       required this.categoryId,
+      this.targetSets,
       this.targetReps});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -604,6 +621,9 @@ class WorkoutExercise extends DataClass implements Insertable<WorkoutExercise> {
     map['id'] = Variable<int>(id);
     map['workout_id'] = Variable<int>(workoutId);
     map['category_id'] = Variable<int>(categoryId);
+    if (!nullToAbsent || targetSets != null) {
+      map['target_sets'] = Variable<int>(targetSets);
+    }
     if (!nullToAbsent || targetReps != null) {
       map['target_reps'] = Variable<int>(targetReps);
     }
@@ -615,6 +635,9 @@ class WorkoutExercise extends DataClass implements Insertable<WorkoutExercise> {
       id: Value(id),
       workoutId: Value(workoutId),
       categoryId: Value(categoryId),
+      targetSets: targetSets == null && nullToAbsent
+          ? const Value.absent()
+          : Value(targetSets),
       targetReps: targetReps == null && nullToAbsent
           ? const Value.absent()
           : Value(targetReps),
@@ -628,6 +651,7 @@ class WorkoutExercise extends DataClass implements Insertable<WorkoutExercise> {
       id: serializer.fromJson<int>(json['id']),
       workoutId: serializer.fromJson<int>(json['workoutId']),
       categoryId: serializer.fromJson<int>(json['categoryId']),
+      targetSets: serializer.fromJson<int?>(json['targetSets']),
       targetReps: serializer.fromJson<int?>(json['targetReps']),
     );
   }
@@ -638,6 +662,7 @@ class WorkoutExercise extends DataClass implements Insertable<WorkoutExercise> {
       'id': serializer.toJson<int>(id),
       'workoutId': serializer.toJson<int>(workoutId),
       'categoryId': serializer.toJson<int>(categoryId),
+      'targetSets': serializer.toJson<int?>(targetSets),
       'targetReps': serializer.toJson<int?>(targetReps),
     };
   }
@@ -646,11 +671,13 @@ class WorkoutExercise extends DataClass implements Insertable<WorkoutExercise> {
           {int? id,
           int? workoutId,
           int? categoryId,
+          Value<int?> targetSets = const Value.absent(),
           Value<int?> targetReps = const Value.absent()}) =>
       WorkoutExercise(
         id: id ?? this.id,
         workoutId: workoutId ?? this.workoutId,
         categoryId: categoryId ?? this.categoryId,
+        targetSets: targetSets.present ? targetSets.value : this.targetSets,
         targetReps: targetReps.present ? targetReps.value : this.targetReps,
       );
   WorkoutExercise copyWithCompanion(WorkoutExercisesCompanion data) {
@@ -659,6 +686,8 @@ class WorkoutExercise extends DataClass implements Insertable<WorkoutExercise> {
       workoutId: data.workoutId.present ? data.workoutId.value : this.workoutId,
       categoryId:
           data.categoryId.present ? data.categoryId.value : this.categoryId,
+      targetSets:
+          data.targetSets.present ? data.targetSets.value : this.targetSets,
       targetReps:
           data.targetReps.present ? data.targetReps.value : this.targetReps,
     );
@@ -670,13 +699,15 @@ class WorkoutExercise extends DataClass implements Insertable<WorkoutExercise> {
           ..write('id: $id, ')
           ..write('workoutId: $workoutId, ')
           ..write('categoryId: $categoryId, ')
+          ..write('targetSets: $targetSets, ')
           ..write('targetReps: $targetReps')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, workoutId, categoryId, targetReps);
+  int get hashCode =>
+      Object.hash(id, workoutId, categoryId, targetSets, targetReps);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -684,6 +715,7 @@ class WorkoutExercise extends DataClass implements Insertable<WorkoutExercise> {
           other.id == this.id &&
           other.workoutId == this.workoutId &&
           other.categoryId == this.categoryId &&
+          other.targetSets == this.targetSets &&
           other.targetReps == this.targetReps);
 }
 
@@ -691,17 +723,20 @@ class WorkoutExercisesCompanion extends UpdateCompanion<WorkoutExercise> {
   final Value<int> id;
   final Value<int> workoutId;
   final Value<int> categoryId;
+  final Value<int?> targetSets;
   final Value<int?> targetReps;
   const WorkoutExercisesCompanion({
     this.id = const Value.absent(),
     this.workoutId = const Value.absent(),
     this.categoryId = const Value.absent(),
+    this.targetSets = const Value.absent(),
     this.targetReps = const Value.absent(),
   });
   WorkoutExercisesCompanion.insert({
     this.id = const Value.absent(),
     required int workoutId,
     required int categoryId,
+    this.targetSets = const Value.absent(),
     this.targetReps = const Value.absent(),
   })  : workoutId = Value(workoutId),
         categoryId = Value(categoryId);
@@ -709,12 +744,14 @@ class WorkoutExercisesCompanion extends UpdateCompanion<WorkoutExercise> {
     Expression<int>? id,
     Expression<int>? workoutId,
     Expression<int>? categoryId,
+    Expression<int>? targetSets,
     Expression<int>? targetReps,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (workoutId != null) 'workout_id': workoutId,
       if (categoryId != null) 'category_id': categoryId,
+      if (targetSets != null) 'target_sets': targetSets,
       if (targetReps != null) 'target_reps': targetReps,
     });
   }
@@ -723,11 +760,13 @@ class WorkoutExercisesCompanion extends UpdateCompanion<WorkoutExercise> {
       {Value<int>? id,
       Value<int>? workoutId,
       Value<int>? categoryId,
+      Value<int?>? targetSets,
       Value<int?>? targetReps}) {
     return WorkoutExercisesCompanion(
       id: id ?? this.id,
       workoutId: workoutId ?? this.workoutId,
       categoryId: categoryId ?? this.categoryId,
+      targetSets: targetSets ?? this.targetSets,
       targetReps: targetReps ?? this.targetReps,
     );
   }
@@ -744,6 +783,9 @@ class WorkoutExercisesCompanion extends UpdateCompanion<WorkoutExercise> {
     if (categoryId.present) {
       map['category_id'] = Variable<int>(categoryId.value);
     }
+    if (targetSets.present) {
+      map['target_sets'] = Variable<int>(targetSets.value);
+    }
     if (targetReps.present) {
       map['target_reps'] = Variable<int>(targetReps.value);
     }
@@ -756,6 +798,7 @@ class WorkoutExercisesCompanion extends UpdateCompanion<WorkoutExercise> {
           ..write('id: $id, ')
           ..write('workoutId: $workoutId, ')
           ..write('categoryId: $categoryId, ')
+          ..write('targetSets: $targetSets, ')
           ..write('targetReps: $targetReps')
           ..write(')'))
         .toString();
@@ -2724,6 +2767,7 @@ typedef $$WorkoutExercisesTableCreateCompanionBuilder
   Value<int> id,
   required int workoutId,
   required int categoryId,
+  Value<int?> targetSets,
   Value<int?> targetReps,
 });
 typedef $$WorkoutExercisesTableUpdateCompanionBuilder
@@ -2731,6 +2775,7 @@ typedef $$WorkoutExercisesTableUpdateCompanionBuilder
   Value<int> id,
   Value<int> workoutId,
   Value<int> categoryId,
+  Value<int?> targetSets,
   Value<int?> targetReps,
 });
 
@@ -2782,6 +2827,9 @@ class $$WorkoutExercisesTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get targetSets => $composableBuilder(
+      column: $table.targetSets, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get targetReps => $composableBuilder(
       column: $table.targetReps, builder: (column) => ColumnFilters(column));
@@ -2839,6 +2887,9 @@ class $$WorkoutExercisesTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get targetSets => $composableBuilder(
+      column: $table.targetSets, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get targetReps => $composableBuilder(
       column: $table.targetReps, builder: (column) => ColumnOrderings(column));
 
@@ -2894,6 +2945,9 @@ class $$WorkoutExercisesTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get targetSets => $composableBuilder(
+      column: $table.targetSets, builder: (column) => column);
 
   GeneratedColumn<int> get targetReps => $composableBuilder(
       column: $table.targetReps, builder: (column) => column);
@@ -2967,24 +3021,28 @@ class $$WorkoutExercisesTableTableManager extends RootTableManager<
             Value<int> id = const Value.absent(),
             Value<int> workoutId = const Value.absent(),
             Value<int> categoryId = const Value.absent(),
+            Value<int?> targetSets = const Value.absent(),
             Value<int?> targetReps = const Value.absent(),
           }) =>
               WorkoutExercisesCompanion(
             id: id,
             workoutId: workoutId,
             categoryId: categoryId,
+            targetSets: targetSets,
             targetReps: targetReps,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             required int workoutId,
             required int categoryId,
+            Value<int?> targetSets = const Value.absent(),
             Value<int?> targetReps = const Value.absent(),
           }) =>
               WorkoutExercisesCompanion.insert(
             id: id,
             workoutId: workoutId,
             categoryId: categoryId,
+            targetSets: targetSets,
             targetReps: targetReps,
           ),
           withReferenceMapper: (p0) => p0

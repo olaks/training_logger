@@ -46,7 +46,9 @@ class WorkoutDetailScreen extends ConsumerWidget {
             )
           else
             ...exercises.map((entry) {
-              final (cat, targetReps) = entry;
+              final (cat, targetSets, targetReps) = entry;
+              final targetLabel = _formatTarget(targetSets, targetReps);
+              final hasTarget   = targetSets != null || targetReps != null;
               return ListTile(
                 title: Text(cat.name),
                 subtitle: cat.groupName != null
@@ -59,18 +61,16 @@ class WorkoutDetailScreen extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     GestureDetector(
-                      onTap: () => _showEditRepsDialog(
-                          context, ref, cat.id, targetReps),
+                      onTap: () => _showEditTargetDialog(
+                          context, ref, cat.id, targetSets, targetReps),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         child: Text(
-                          targetReps != null
-                              ? '× $targetReps reps'
-                              : 'set reps',
+                          targetLabel,
                           style: TextStyle(
                             fontSize: 13,
-                            color: targetReps != null
+                            color: hasTarget
                                 ? Theme.of(context).colorScheme.primary
                                 : Colors.white.withValues(alpha: 0.35),
                           ),
@@ -105,44 +105,84 @@ class WorkoutDetailScreen extends ConsumerWidget {
     );
   }
 
-  void _showEditRepsDialog(
-      BuildContext context, WidgetRef ref, int catId, int? current) {
-    final ctrl = TextEditingController(text: current?.toString() ?? '');
+  static String _formatTarget(int? sets, int? reps) {
+    if (sets != null && reps != null) return '$sets×$reps';
+    if (sets != null) return '$sets sets';
+    if (reps != null) return '×$reps';
+    return 'set target';
+  }
+
+  void _showEditTargetDialog(BuildContext context, WidgetRef ref, int catId,
+      int? currentSets, int? currentReps) {
+    final setsCtrl = TextEditingController(
+        text: currentSets?.toString() ?? '');
+    final repsCtrl = TextEditingController(
+        text: currentReps?.toString() ?? '');
+
+    void save(BuildContext dialogCtx) {
+      final sets = setsCtrl.text.trim().isEmpty
+          ? null
+          : int.tryParse(setsCtrl.text.trim());
+      final reps = repsCtrl.text.trim().isEmpty
+          ? null
+          : int.tryParse(repsCtrl.text.trim());
+      ref.updateWorkoutTarget(workoutId, catId, sets, reps);
+      Navigator.pop(dialogCtx);
+    }
+
     showDialog(
       context: context,
       useRootNavigator: false,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Target reps'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-              labelText: 'Reps', hintText: 'Leave empty to clear'),
-          onSubmitted: (_) => _saveReps(dialogCtx, ref, catId, ctrl.text),
+        title: const Text('Set target'),
+        content: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: setsCtrl,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                decoration: const InputDecoration(
+                  labelText: 'Sets',
+                  hintText: '—',
+                ),
+                onSubmitted: (_) => save(dialogCtx),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Text('×',
+                  style: TextStyle(fontSize: 20, color: Colors.white54)),
+            ),
+            Expanded(
+              child: TextField(
+                controller: repsCtrl,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                decoration: const InputDecoration(
+                  labelText: 'Reps',
+                  hintText: '—',
+                ),
+                onSubmitted: (_) => save(dialogCtx),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogCtx),
               child: const Text('Cancel')),
           TextButton(
-              onPressed: () => _saveReps(dialogCtx, ref, catId, ctrl.text),
+              onPressed: () => save(dialogCtx),
               child: const Text('Save')),
         ],
       ),
     );
   }
 
-  void _saveReps(
-      BuildContext context, WidgetRef ref, int catId, String text) {
-    final reps =
-        text.trim().isEmpty ? null : int.tryParse(text.trim());
-    ref.updateWorkoutTargetReps(workoutId, catId, reps);
-    Navigator.pop(context);
-  }
-
   void _showAddExercisesSheet(BuildContext context, WidgetRef ref,
-      List<(ExerciseCategory, int?)> exercises) {
+      List<(ExerciseCategory, int?, int?)> exercises) {
     final current = exercises.map((e) => e.$1).toList();
     showModalBottomSheet(
       context: context,
