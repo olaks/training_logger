@@ -222,59 +222,66 @@ class WorkoutDetailScreen extends ConsumerWidget {
 
 // ── Add exercises bottom sheet ─────────────────────────────────────────────────
 
-class _AddExercisesSheet extends ConsumerWidget {
+class _AddExercisesSheet extends ConsumerStatefulWidget {
   final int workoutId;
   final List<ExerciseCategory> current;
   const _AddExercisesSheet(
       {required this.workoutId, required this.current});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final all = ref.watch(categoriesProvider).value ?? [];
-    final currentIds = current.map((c) => c.id).toSet();
+  ConsumerState<_AddExercisesSheet> createState() => _AddExercisesSheetState();
+}
 
-    void showCreateDialog() {
-      final db   = ref.read(dbProvider);
-      final ctrl = TextEditingController();
+class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
 
-      Future<void> doCreate(BuildContext dialogCtx) async {
-        final name = ctrl.text.trim();
-        if (name.isEmpty) return;
-        final catId = await db.insertOrGetCategory(name);
-        await db.addExerciseToWorkout(workoutId, catId);
-        if (dialogCtx.mounted) Navigator.pop(dialogCtx);
-      }
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
-      showDialog(
-        context: context,
-        useRootNavigator: false,
-        builder: (dialogCtx) => AlertDialog(
-          title: const Text('New Exercise'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Exercise name'),
-            textCapitalization: TextCapitalization.words,
-            onSubmitted: (_) => doCreate(dialogCtx),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(dialogCtx),
-                child: const Text('Cancel')),
-            TextButton(
-                onPressed: () => doCreate(dialogCtx),
-                child: const Text('Add')),
-          ],
-        ),
-      );
+  @override
+  Widget build(BuildContext context) {
+    final all        = ref.watch(categoriesProvider).value ?? [];
+    final currentIds = widget.current.map((c) => c.id).toSet();
+
+    // Filter by query (name or group)
+    final visible = _query.isEmpty
+        ? all
+        : all.where((c) {
+            final q = _query.toLowerCase();
+            return c.name.toLowerCase().contains(q) ||
+                (c.groupName?.toLowerCase().contains(q) ?? false);
+          }).toList();
+
+    // Group and sort (null group → 'Other' at end)
+    final grouped = <String?, List<ExerciseCategory>>{};
+    for (final cat in visible) {
+      grouped.putIfAbsent(cat.groupName, () => []).add(cat);
+    }
+    final sortedGroups = grouped.keys.toList()
+      ..sort((a, b) {
+        if (a == null) return 1;
+        if (b == null) return -1;
+        return a.compareTo(b);
+      });
+
+    // Flatten into mixed list: String = header, ExerciseCategory = row
+    final items = <Object>[];
+    for (final group in sortedGroups) {
+      items.add(group ?? 'Other');
+      items.addAll(grouped[group]!);
     }
 
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.6,
-      maxChildSize: 0.9,
-      builder: (_, ctrl) => Column(
+      initialChildSize: 0.7,
+      maxChildSize: 0.92,
+      builder: (_, scrollCtrl) => Column(
         children: [
+          // Drag handle
           const SizedBox(height: 12),
           Container(
             width: 36,
@@ -284,51 +291,119 @@ class _AddExercisesSheet extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 12),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Add exercises to workout',
-                  style:
-                      TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+
+          // Title + search
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Add exercises',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _searchCtrl,
+                  onChanged: (v) => setState(() => _query = v),
+                  decoration: const InputDecoration(
+                    hintText: 'Search exercises',
+                    prefixIcon: Icon(Icons.search, size: 20),
+                    isDense: true,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
+
+          const Divider(height: 1),
+
+          // Grouped list
           Expanded(
             child: ListView.builder(
-              controller: ctrl,
-              itemCount: all.length + 1,
+              controller: scrollCtrl,
+              itemCount: items.length + 1, // +1 for "New exercise" footer
               itemBuilder: (_, i) {
-                if (i == all.length) {
+                if (i == items.length) {
                   return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                     child: TextButton.icon(
-                      onPressed: showCreateDialog,
+                      onPressed: _showCreateDialog,
                       icon: const Icon(Icons.add),
                       label: const Text('New exercise…'),
                     ),
                   );
                 }
-                final cat = all[i];
+
+                final item = items[i];
+
+                if (item is String) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                    child: Text(
+                      item.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        letterSpacing: 1.3,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  );
+                }
+
+                final cat      = item as ExerciseCategory;
                 final inWorkout = currentIds.contains(cat.id);
                 return CheckboxListTile(
+                  dense: true,
                   value: inWorkout,
                   title: Text(cat.name),
-                  subtitle: cat.groupName != null
-                      ? Text(cat.groupName!,
-                          style: const TextStyle(fontSize: 12))
-                      : null,
                   onChanged: (_) {
                     if (inWorkout) {
-                      ref.removeExerciseFromWorkout(workoutId, cat.id);
+                      ref.removeExerciseFromWorkout(widget.workoutId, cat.id);
                     } else {
-                      ref.addExerciseToWorkout(workoutId, cat.id);
+                      ref.addExerciseToWorkout(widget.workoutId, cat.id);
                     }
                   },
                 );
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateDialog() {
+    final db   = ref.read(dbProvider);
+    final ctrl = TextEditingController();
+
+    Future<void> doCreate(BuildContext dialogCtx) async {
+      final name = ctrl.text.trim();
+      if (name.isEmpty) return;
+      final catId = await db.insertOrGetCategory(name);
+      await db.addExerciseToWorkout(widget.workoutId, catId);
+      if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+    }
+
+    showDialog(
+      context: context,
+      useRootNavigator: false,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('New Exercise'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Exercise name'),
+          textCapitalization: TextCapitalization.words,
+          onSubmitted: (_) => doCreate(dialogCtx),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => doCreate(dialogCtx),
+              child: const Text('Add')),
         ],
       ),
     );
