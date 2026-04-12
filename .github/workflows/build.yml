@@ -27,15 +27,10 @@ jobs:
         if: env.KEYSTORE_BASE64 != ''
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > flutter_app/android/app/release-keystore.jks
-          cat > flutter_app/android/key.properties <<-EOK
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=release
-          storeFile=release-keystore.jks
-          EOK
-          sed -i 's/^[[:space:]]*//' flutter_app/android/key.properties
+          echo "$KEYSTORE_BASE64" | tr -d '\n\r ' | base64 -d > flutter_app/android/app/release-keystore.jks
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=release\nstoreFile=release-keystore.jks\n' "$KEYSTORE_PASSWORD" "$KEYSTORE_PASSWORD" > flutter_app/android/key.properties
 
       - name: Get dependencies
         working-directory: flutter_app
