@@ -3,8 +3,9 @@ import 'package:drift/drift.dart';
 // ── Workouts (reusable named sets of exercises) ───────────────────────────────
 
 class Workouts extends Table {
-  IntColumn  get id   => integer().autoIncrement()();
-  TextColumn get name => text()();
+  IntColumn  get id    => integer().autoIncrement()();
+  TextColumn get name  => text()();
+  TextColumn get notes => text().withDefault(const Constant(''))();
 }
 
 class WorkoutExercises extends Table {
@@ -13,6 +14,7 @@ class WorkoutExercises extends Table {
   IntColumn get categoryId => integer().references(ExerciseCategories, #id)();
   IntColumn get targetSets => integer().nullable()();
   IntColumn get targetReps => integer().nullable()();
+  IntColumn get sortOrder  => integer().withDefault(const Constant(0))();
 
   @override
   List<Set<Column>> get uniqueKeys => [{workoutId, categoryId}];

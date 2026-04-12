@@ -7,6 +7,10 @@ local.properties
 # Samples — reference files, not for the repo
 samples/
 
+# Signing keys (never commit)
+flutter_app/android/key.properties
+flutter_app/android/app/release-keystore.jks
+
 # Flutter build artifacts (flutter_app has its own .gitignore)
 flutter_app/build/
 flutter_app/.dart_tool/

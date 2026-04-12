@@ -4,16 +4,44 @@ import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
 
-class WorkoutDetailScreen extends ConsumerWidget {
+class WorkoutDetailScreen extends ConsumerStatefulWidget {
   final int workoutId;
   const WorkoutDetailScreen({super.key, required this.workoutId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WorkoutDetailScreen> createState() =>
+      _WorkoutDetailScreenState();
+}
+
+class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
+  late final TextEditingController _notesCtrl;
+  bool _notesInited = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _notesCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final workout = ref.watch(allWorkoutsProvider).value
-        ?.firstWhere((w) => w.id == workoutId,
-            orElse: () => Workout(id: workoutId, name: ''));
-    final exercises = ref.watch(workoutExercisesProvider(workoutId)).value ?? [];
+        ?.firstWhere((w) => w.id == widget.workoutId,
+            orElse: () => Workout(id: widget.workoutId, name: '', notes: ''));
+    final exercises =
+        ref.watch(workoutExercisesProvider(widget.workoutId)).value ?? [];
+
+    // Sync notes controller once when data first arrives
+    if (!_notesInited && workout != null) {
+      _notesInited = true;
+      _notesCtrl.text = workout.notes;
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -24,8 +52,8 @@ class WorkoutDetailScreen extends ConsumerWidget {
             PopupMenuButton<_Action>(
               icon: const Icon(Icons.more_vert),
               onSelected: (a) => a == _Action.rename
-                  ? _showRenameDialog(context, ref, workout.id, workout.name)
-                  : _showDeleteDialog(context, ref, workout.id, workout.name),
+                  ? _showRenameDialog(context, workout.id, workout.name)
+                  : _showDeleteDialog(context, workout.id, workout.name),
               itemBuilder: (_) => const [
                 PopupMenuItem(value: _Action.rename, child: Text('Rename')),
                 PopupMenuItem(
@@ -34,64 +62,122 @@ class WorkoutDetailScreen extends ConsumerWidget {
             ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(0, 8, 0, 80),
+      body: Column(
         children: [
-          if (exercises.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Text('No exercises yet.',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4))),
-            )
-          else
-            ...exercises.map((entry) {
-              final (cat, targetSets, targetReps) = entry;
-              final targetLabel = _formatTarget(targetSets, targetReps);
-              final hasTarget   = targetSets != null || targetReps != null;
-              return ListTile(
-                title: Text(cat.name),
-                subtitle: cat.groupName != null
-                    ? Text(cat.groupName!,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withValues(alpha: 0.45)))
-                    : null,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    GestureDetector(
-                      onTap: () => _showEditTargetDialog(
-                          context, ref, cat.id, targetSets, targetReps),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        child: Text(
-                          targetLabel,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: hasTarget
-                                ? Theme.of(context).colorScheme.primary
-                                : Colors.white.withValues(alpha: 0.35),
-                          ),
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.remove_circle_outline, size: 20),
-                      color: Colors.white54,
-                      onPressed: () =>
-                          ref.removeExerciseFromWorkout(workoutId, cat.id),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          const SizedBox(height: 16),
+          // ── Notes field ───────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: TextField(
+              controller: _notesCtrl,
+              maxLines: null,
+              minLines: 1,
+              style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white.withValues(alpha: 0.8)),
+              decoration: InputDecoration(
+                hintText: 'Add workout notes...',
+                hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.3)),
+                border: InputBorder.none,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              ),
+              onChanged: (v) =>
+                  ref.updateWorkoutNotes(widget.workoutId, v),
+            ),
+          ),
+          const Divider(height: 1, thickness: 0.5),
+
+          // ── Exercise list (reorderable) ───────────────────────────────
+          Expanded(
+            child: exercises.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Text('No exercises yet.',
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.4))),
+                    ),
+                  )
+                : ReorderableListView.builder(
+                    padding: const EdgeInsets.fromLTRB(0, 8, 0, 80),
+                    itemCount: exercises.length,
+                    onReorder: (oldIndex, newIndex) {
+                      if (newIndex > oldIndex) newIndex--;
+                      final ids =
+                          exercises.map((e) => e.$1.id).toList();
+                      final moved = ids.removeAt(oldIndex);
+                      ids.insert(newIndex, moved);
+                      ref.reorderWorkoutExercises(
+                          widget.workoutId, ids);
+                    },
+                    itemBuilder: (_, i) {
+                      final (cat, targetSets, targetReps) = exercises[i];
+                      final targetLabel =
+                          _formatTarget(targetSets, targetReps);
+                      final hasTarget =
+                          targetSets != null || targetReps != null;
+                      return ListTile(
+                        key: ValueKey(cat.id),
+                        leading: ReorderableDragStartListener(
+                          index: i,
+                          child: const Icon(Icons.drag_handle,
+                              color: Colors.white38),
+                        ),
+                        title: Text(cat.name),
+                        subtitle: cat.groupName != null
+                            ? Text(cat.groupName!,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white
+                                        .withValues(alpha: 0.45)))
+                            : null,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _showEditTargetDialog(
+                                  context, cat.id, targetSets, targetReps),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                child: Text(
+                                  targetLabel,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: hasTarget
+                                        ? Theme.of(context)
+                                            .colorScheme
+                                            .primary
+                                        : Colors.white
+                                            .withValues(alpha: 0.35),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                  Icons.remove_circle_outline,
+                                  size: 20),
+                              color: Colors.white54,
+                              onPressed: () => ref
+                                  .removeExerciseFromWorkout(
+                                      widget.workoutId, cat.id),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+
+          // ── Add exercises button ──────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: OutlinedButton.icon(
-              onPressed: () => _showAddExercisesSheet(context, ref, exercises),
+              onPressed: () =>
+                  _showAddExercisesSheet(context, exercises),
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Add exercises'),
               style: OutlinedButton.styleFrom(
@@ -106,13 +192,13 @@ class WorkoutDetailScreen extends ConsumerWidget {
   }
 
   static String _formatTarget(int? sets, int? reps) {
-    if (sets != null && reps != null) return '$sets×$reps';
+    if (sets != null && reps != null) return '$sets\u00d7$reps';
     if (sets != null) return '$sets sets';
-    if (reps != null) return '×$reps';
+    if (reps != null) return '\u00d7$reps';
     return 'set target';
   }
 
-  void _showEditTargetDialog(BuildContext context, WidgetRef ref, int catId,
+  void _showEditTargetDialog(BuildContext context, int catId,
       int? currentSets, int? currentReps) {
     final setsCtrl = TextEditingController(
         text: currentSets?.toString() ?? '');
@@ -126,7 +212,7 @@ class WorkoutDetailScreen extends ConsumerWidget {
       final reps = repsCtrl.text.trim().isEmpty
           ? null
           : int.tryParse(repsCtrl.text.trim());
-      ref.updateWorkoutTarget(workoutId, catId, sets, reps);
+      ref.updateWorkoutTarget(widget.workoutId, catId, sets, reps);
       Navigator.pop(dialogCtx);
     }
 
@@ -145,14 +231,14 @@ class WorkoutDetailScreen extends ConsumerWidget {
                 textAlign: TextAlign.center,
                 decoration: const InputDecoration(
                   labelText: 'Sets',
-                  hintText: '—',
+                  hintText: '\u2014',
                 ),
                 onSubmitted: (_) => save(dialogCtx),
               ),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text('×',
+              child: Text('\u00d7',
                   style: TextStyle(fontSize: 20, color: Colors.white54)),
             ),
             Expanded(
@@ -162,7 +248,7 @@ class WorkoutDetailScreen extends ConsumerWidget {
                 textAlign: TextAlign.center,
                 decoration: const InputDecoration(
                   labelText: 'Reps',
-                  hintText: '—',
+                  hintText: '\u2014',
                 ),
                 onSubmitted: (_) => save(dialogCtx),
               ),
@@ -181,7 +267,7 @@ class WorkoutDetailScreen extends ConsumerWidget {
     );
   }
 
-  void _showAddExercisesSheet(BuildContext context, WidgetRef ref,
+  void _showAddExercisesSheet(BuildContext context,
       List<(ExerciseCategory, int?, int?)> exercises) {
     final current = exercises.map((e) => e.$1).toList();
     showModalBottomSheet(
@@ -192,14 +278,14 @@ class WorkoutDetailScreen extends ConsumerWidget {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => _AddExercisesSheet(
-        workoutId: workoutId,
+        workoutId: widget.workoutId,
         current: current,
       ),
     );
   }
 
   void _showRenameDialog(
-      BuildContext context, WidgetRef ref, int id, String current) {
+      BuildContext context, int id, String current) {
     final ctrl = TextEditingController(text: current);
     showDialog(
       context: context,
@@ -211,28 +297,28 @@ class WorkoutDetailScreen extends ConsumerWidget {
           autofocus: true,
           decoration: const InputDecoration(labelText: 'Workout name'),
           textCapitalization: TextCapitalization.words,
-          onSubmitted: (_) => _rename(context, ref, id, ctrl.text),
+          onSubmitted: (_) => _rename(context, id, ctrl.text),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel')),
           TextButton(
-              onPressed: () => _rename(context, ref, id, ctrl.text),
+              onPressed: () => _rename(context, id, ctrl.text),
               child: const Text('Save')),
         ],
       ),
     );
   }
 
-  void _rename(BuildContext context, WidgetRef ref, int id, String name) {
+  void _rename(BuildContext context, int id, String name) {
     if (name.trim().isEmpty) return;
     ref.renameWorkout(id, name.trim());
     Navigator.pop(context);
   }
 
   void _showDeleteDialog(
-      BuildContext context, WidgetRef ref, int id, String name) {
+      BuildContext context, int id, String name) {
     showDialog(
       context: context,
       useRootNavigator: false,
@@ -369,7 +455,7 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
                     child: TextButton.icon(
                       onPressed: _showCreateDialog,
                       icon: const Icon(Icons.add),
-                      label: const Text('New exercise…'),
+                      label: const Text('New exercise\u2026'),
                     ),
                   );
                 }
@@ -465,7 +551,7 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
                   focusNode: focus,
                   decoration: const InputDecoration(
                     labelText: 'Category (optional)',
-                    hintText: 'e.g. Bouldering, Core…',
+                    hintText: 'e.g. Bouldering, Core\u2026',
                   ),
                   textCapitalization: TextCapitalization.words,
                   onChanged: (v) => groupCtrl.text = v,

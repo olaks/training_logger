@@ -259,6 +259,8 @@ extension DbMutations on WidgetRef {
   // Workouts
   Future<int>  insertWorkout(String name)                     => db.insertWorkout(name);
   Future<int>  renameWorkout(int id, String name)             => db.renameWorkout(id, name);
+  Future<int>  updateWorkoutNotes(int id, String notes)      => db.updateWorkoutNotes(id, notes);
+  Future<void> reorderWorkoutExercises(int wId, List<int> catIds) => db.reorderWorkoutExercises(wId, catIds);
   Future<void> deleteWorkout(int id)                          => db.deleteWorkout(id);
   Future<void> addExerciseToWorkout(int workoutId, int catId) => db.addExerciseToWorkout(workoutId, catId);
   Future<int>  removeExerciseFromWorkout(int wId, int catId)  => db.removeExerciseFromWorkout(wId, catId);

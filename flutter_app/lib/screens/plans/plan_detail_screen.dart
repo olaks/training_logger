@@ -31,7 +31,7 @@ class PlanDetailScreen extends ConsumerWidget {
     }
 
     Workout workoutById(int id) => allWorkouts
-        .firstWhere((w) => w.id == id, orElse: () => Workout(id: id, name: '?'));
+        .firstWhere((w) => w.id == id, orElse: () => Workout(id: id, name: '?', notes: ''));
 
     final sortedDates = byDate.keys.toList()..sort();
 

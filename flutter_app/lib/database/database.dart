@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -82,6 +82,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 10) {
         await m.addColumn(workoutExercises, workoutExercises.targetSets);
+      }
+      if (from < 11) {
+        await m.addColumn(workouts, workouts.notes);
+        await m.addColumn(workoutExercises, workoutExercises.sortOrder);
       }
     },
   );
@@ -281,6 +285,7 @@ class AppDatabase extends _$AppDatabase {
 
       workoutsJson.add({
         'name': workout.name,
+        if (workout.notes.isNotEmpty) 'notes': workout.notes,
         'exercises': rows.map((row) {
           final we = row.readTable(workoutExercises);
           final ec = row.readTable(exerciseCategories);
@@ -289,6 +294,7 @@ class AppDatabase extends _$AppDatabase {
             if (ec.groupName  != null) 'group':      ec.groupName,
             if (we.targetSets != null) 'targetSets': we.targetSets,
             if (we.targetReps != null) 'targetReps': we.targetReps,
+            'sortOrder': we.sortOrder,
           };
         }).toList(),
       });
@@ -494,6 +500,20 @@ class AppDatabase extends _$AppDatabase {
       (update(workouts)..where((t) => t.id.equals(id)))
           .write(WorkoutsCompanion(name: Value(name)));
 
+  Future<int> updateWorkoutNotes(int id, String notes) =>
+      (update(workouts)..where((t) => t.id.equals(id)))
+          .write(WorkoutsCompanion(notes: Value(notes)));
+
+  Future<void> reorderWorkoutExercises(int workoutId, List<int> categoryIds) async {
+    for (var i = 0; i < categoryIds.length; i++) {
+      await (update(workoutExercises)
+            ..where((t) =>
+                t.workoutId.equals(workoutId) &
+                t.categoryId.equals(categoryIds[i])))
+          .write(WorkoutExercisesCompanion(sortOrder: Value(i)));
+    }
+  }
+
   Future<void> deleteWorkout(int id) async {
     await (delete(planWorkouts)..where((t) => t.workoutId.equals(id))).go();
     await (delete(workoutExercises)..where((t) => t.workoutId.equals(id))).go();
@@ -507,7 +527,10 @@ class AppDatabase extends _$AppDatabase {
           exerciseCategories.id.equalsExp(workoutExercises.categoryId)),
     ])
       ..where(workoutExercises.workoutId.equals(workoutId))
-      ..orderBy([OrderingTerm.asc(exerciseCategories.name)]);
+      ..orderBy([
+        OrderingTerm.asc(workoutExercises.sortOrder),
+        OrderingTerm.asc(exerciseCategories.name),
+      ]);
     return q.watch().map((rows) => rows
         .map((r) {
           final we = r.readTable(workoutExercises);
@@ -634,7 +657,7 @@ class AppDatabase extends _$AppDatabase {
         exMap[wId]!.add(ExerciseCategory(id: cId, name: cName, groupName: cGroup, exerciseType: 0));
       }
       return order
-          .map((wId) => (Workout(id: wId, name: names[wId]!), exMap[wId]!))
+          .map((wId) => (Workout(id: wId, name: names[wId]!, notes: ''), exMap[wId]!))
           .toList();
     });
   }
