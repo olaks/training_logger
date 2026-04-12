@@ -736,11 +736,18 @@ class AppDatabase extends _$AppDatabase {
         rows.map((r) => r.readTable(workouts)).toList());
   }
 
-  Future<void> addExerciseToWorkout(int workoutId, int categoryId) =>
-      into(workoutExercises).insertOnConflictUpdate(
-        WorkoutExercisesCompanion.insert(
-            workoutId: workoutId, categoryId: categoryId),
-      );
+  Future<void> addExerciseToWorkout(int workoutId, int categoryId) async {
+    // Assign next sort order so new exercises appear at the end
+    final maxRow = await customSelect(
+      'SELECT MAX(sort_order) AS m FROM workout_exercises WHERE workout_id = ?',
+      variables: [Variable.withInt(workoutId)],
+    ).getSingleOrNull();
+    final next = (maxRow?.readNullable<int>('m') ?? -1) + 1;
+    await into(workoutExercises).insertOnConflictUpdate(
+      WorkoutExercisesCompanion.insert(
+          workoutId: workoutId, categoryId: categoryId, sortOrder: Value(next)),
+    );
+  }
 
   Future<int> removeExerciseFromWorkout(int workoutId, int categoryId) =>
       (delete(workoutExercises)

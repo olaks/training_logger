@@ -101,6 +101,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                     ),
                   )
                 : ReorderableListView.builder(
+                    buildDefaultDragHandles: false,
                     padding: const EdgeInsets.fromLTRB(0, 8, 0, 80),
                     itemCount: exercises.length,
                     onReorder: (oldIndex, newIndex) {
@@ -269,7 +270,6 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
 
   void _showAddExercisesSheet(BuildContext context,
       List<(ExerciseCategory, int?, int?)> exercises) {
-    final current = exercises.map((e) => e.$1).toList();
     showModalBottomSheet(
       context: context,
       useRootNavigator: false,
@@ -279,7 +279,6 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => _AddExercisesSheet(
         workoutId: widget.workoutId,
-        current: current,
       ),
     );
   }
@@ -350,9 +349,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
 
 class _AddExercisesSheet extends ConsumerStatefulWidget {
   final int workoutId;
-  final List<ExerciseCategory> current;
-  const _AddExercisesSheet(
-      {required this.workoutId, required this.current});
+  const _AddExercisesSheet({required this.workoutId});
 
   @override
   ConsumerState<_AddExercisesSheet> createState() => _AddExercisesSheetState();
@@ -371,7 +368,8 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
   @override
   Widget build(BuildContext context) {
     final all        = ref.watch(categoriesProvider).value ?? [];
-    final currentIds = widget.current.map((c) => c.id).toSet();
+    final currentExercises = ref.watch(workoutExercisesProvider(widget.workoutId)).value ?? [];
+    final currentIds = currentExercises.map((e) => e.$1.id).toSet();
 
     // Filter by query (name or group)
     final visible = _query.isEmpty
