@@ -29,8 +29,8 @@ final setsForCategoryProvider =
         ref.watch(dbProvider).watchSetsForCategory(categoryId));
 
 final categoryByIdProvider =
-    FutureProvider.family<ExerciseCategory?, int>((ref, id) =>
-        ref.watch(dbProvider).getCategoryById(id));
+    StreamProvider.family<ExerciseCategory?, int>((ref, id) =>
+        ref.watch(dbProvider).watchCategoryById(id));
 
 // ── Workouts ───────────────────────────────────────────────────────────────
 

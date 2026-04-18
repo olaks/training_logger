@@ -182,6 +182,10 @@ class AppDatabase extends _$AppDatabase {
       (select(exerciseCategories)..where((t) => t.id.equals(id)))
           .getSingleOrNull();
 
+  Stream<ExerciseCategory?> watchCategoryById(int id) =>
+      (select(exerciseCategories)..where((t) => t.id.equals(id)))
+          .watchSingleOrNull();
+
   Future<int> insertCategory(String name, {String? groupName}) =>
       into(exerciseCategories).insert(ExerciseCategoriesCompanion.insert(
         name: name,
