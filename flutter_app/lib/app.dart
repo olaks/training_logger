@@ -8,6 +8,7 @@ import 'screens/import/import_screen.dart';
 import 'screens/plans/plans_screen.dart';
 import 'screens/plans/plan_detail_screen.dart';
 import 'screens/plans/workout_detail_screen.dart';
+import 'screens/hangboard/hangboard_screen.dart';
 import 'theme/app_theme.dart';
 import 'providers/theme_provider.dart';
 
@@ -19,6 +20,7 @@ final router = GoRouter(
         GoRoute(path: '/',          builder: (_, __) => const HomeScreen()),
         GoRoute(path: '/exercises', builder: (_, __) => const ExercisesScreen()),
         GoRoute(path: '/plans',     builder: (_, __) => const PlansScreen()),
+        GoRoute(path: '/hangboard', builder: (_, __) => const HangboardScreen()),
       ],
     ),
     GoRoute(
@@ -73,7 +75,9 @@ class _AppShell extends StatelessWidget {
         ? 1
         : loc.startsWith('/plans')
             ? 2
-            : 0;
+            : loc.startsWith('/hangboard')
+                ? 3
+                : 0;
     return Scaffold(
       body: child,
       bottomNavigationBar: NavigationBar(
@@ -82,11 +86,13 @@ class _AppShell extends StatelessWidget {
           if (i == 0) context.go('/');
           if (i == 1) context.go('/exercises');
           if (i == 2) context.go('/plans');
+          if (i == 3) context.go('/hangboard');
         },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.calendar_month), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.fitness_center), label: 'Exercises'),
           NavigationDestination(icon: Icon(Icons.list_alt), label: 'Plans'),
+          NavigationDestination(icon: Icon(Icons.timer), label: 'Timer'),
         ],
       ),
     );
