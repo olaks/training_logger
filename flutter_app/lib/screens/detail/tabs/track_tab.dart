@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../database/database.dart';
 import '../../../providers/app_providers.dart';
@@ -91,9 +94,15 @@ class _TrackTabState extends ConsumerState<TrackTab> {
 
   @override
   Widget build(BuildContext context) {
-    final cat       = ref.watch(categoryByIdProvider(widget.categoryId)).value;
+    final cat        = ref.watch(categoryByIdProvider(widget.categoryId)).value;
     final isClimbing = cat?.exerciseType == 1;
+    final isHangboard = cat?.exerciseType == 2;
     final imageData  = cat?.imageData;
+
+    // For hangboard exercises, show a simplified view with timer launch
+    if (isHangboard) {
+      return _buildHangboardTrack(context, ref, cat!, imageData);
+    }
 
     final state    = ref.watch(trackProvider(widget.categoryId));
     final notifier = ref.read(trackProvider(widget.categoryId).notifier);
@@ -369,6 +378,74 @@ class _TrackTabState extends ConsumerState<TrackTab> {
           onIncrement: () => notifier.setRpe(state.rpe < 10 ? state.rpe + 1 : 10),
         ),
       ],
+    );
+  }
+
+  // ── Hangboard track view ─────────────────────────────────────────────────
+
+  Widget _buildHangboardTrack(
+      BuildContext context, WidgetRef ref,
+      ExerciseCategory cat, Uint8List? imageData) {
+    final todaySets = ref.watch(setsForDayProvider(widget.dateStr)).value
+            ?.where((s) => s.categoryId == widget.categoryId).toList() ??
+        [];
+    final displayDate =
+        DateFormat('MMM d').format(dateFromStr(widget.dateStr));
+    final primary = Theme.of(context).colorScheme.primary;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (imageData != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(imageData,
+                  width: double.infinity, height: 180, fit: BoxFit.cover),
+            ),
+            const SizedBox(height: 20),
+          ],
+          Text(displayDate,
+              style: TextStyle(fontSize: 12, color: primary, letterSpacing: 1)),
+          const SizedBox(height: 24),
+
+          // Launch timer button
+          FilledButton.icon(
+            onPressed: () => context.push(
+                '/hangboard-session/${widget.categoryId}'),
+            icon: const Icon(Icons.timer, size: 22),
+            label: const Text('START HANGBOARD TIMER'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(56),
+              textStyle:
+                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+
+          // Logged sets
+          if (todaySets.isNotEmpty) ...[
+            const SizedBox(height: 28),
+            const Divider(),
+            const SizedBox(height: 8),
+            Text('Logged today',
+                style: TextStyle(
+                    fontSize: 12,
+                    letterSpacing: 1,
+                    color: Colors.white.withValues(alpha: 0.4))),
+            const SizedBox(height: 8),
+            ...todaySets.asMap().entries.map(
+              (e) => _LoggedSetRow(
+                set: e.value,
+                index: e.key,
+                primary: primary,
+                onTap: () {},
+                onDelete: () => _confirmDelete(context, ref, e.value.id),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

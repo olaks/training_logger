@@ -19,7 +19,8 @@ enum _Phase { idle, getReady, work, rest, switchRest, setRest, done }
 // ── Screen ───────────────────────────────────────────────────────────────────
 
 class HangboardScreen extends ConsumerStatefulWidget {
-  const HangboardScreen({super.key});
+  final int? categoryId;
+  const HangboardScreen({super.key, this.categoryId});
 
   @override
   ConsumerState<HangboardScreen> createState() => _HangboardScreenState();
@@ -45,6 +46,9 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   bool _isLeftHand = false;
   bool _paused = false;
   Timer? _timer;
+
+  // ── Exercise to log against (standalone mode) ────────────────────────────
+  int? _selectedCategoryId;
 
   // ── Weight per set ───────────────────────────────────────────────────────
   final Map<int, double> _setWeights = {};
@@ -217,7 +221,8 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
 
   Future<void> _save() async {
     final db = ref.read(dbProvider);
-    final catId =
+    final catId = widget.categoryId ??
+        _selectedCategoryId ??
         await db.insertOrGetCategory('Hangboard', groupName: 'Hangboard');
     final dateStr = dateStrFrom(DateTime.now());
     final baseTs = DateTime.now().millisecondsSinceEpoch;
@@ -237,9 +242,13 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(
-                'Saved ${_setWeights.length} sets to Hangboard log')),
+                'Saved ${_setWeights.length} sets')),
       );
-      setState(() => _phase = _Phase.idle);
+      if (widget.categoryId != null) {
+        Navigator.pop(context);
+      } else {
+        setState(() => _phase = _Phase.idle);
+      }
     }
   }
 
@@ -248,12 +257,16 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final catName = widget.categoryId != null
+        ? ref.watch(categoryByIdProvider(widget.categoryId!)).value?.name
+        : null;
+    final title = catName ?? 'Hangboard Timer';
 
     return Scaffold(
       appBar: _phase == _Phase.idle || _phase == _Phase.done
           ? AppBar(
-              title: const Text('Hangboard Timer',
-                  style: TextStyle(fontWeight: FontWeight.bold)))
+              title: Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.bold)))
           : null,
       body: SafeArea(
         child: _phase == _Phase.idle
@@ -296,6 +309,15 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
           _stepper(
               'Switch rest', _switchRestSecs, 1, 60, (v) => _switchRestSecs = v,
               suffix: 's'),
+
+        // ── Exercise picker (standalone mode only) ──────────────────────
+        if (widget.categoryId == null) ...[
+          const SizedBox(height: 16),
+          _ExercisePicker(
+            selectedId: _selectedCategoryId,
+            onChanged: (id) => setState(() => _selectedCategoryId = id),
+          ),
+        ],
 
         const SizedBox(height: 16),
         Row(
@@ -622,6 +644,52 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
             minimumSize: const Size.fromHeight(48),
           ),
           child: const Text('DISCARD'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Exercise picker for standalone mode ──────────────────────────────────────
+
+class _ExercisePicker extends ConsumerWidget {
+  final int? selectedId;
+  final void Function(int?) onChanged;
+  const _ExercisePicker({required this.selectedId, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final categories = ref.watch(categoriesProvider).value ?? [];
+    // Show hangboard exercises (type 2) first, then all others
+    final hangboard = categories.where((c) => c.exerciseType == 2).toList();
+    final others = categories.where((c) => c.exerciseType != 2).toList();
+    final items = [...hangboard, ...others];
+
+    return Row(
+      children: [
+        Text('Exercise',
+            style: TextStyle(
+                fontSize: 16,
+                color: Colors.white.withValues(alpha: 0.8))),
+        const SizedBox(width: 16),
+        Expanded(
+          child: DropdownButtonFormField<int?>(
+            initialValue: selectedId,
+            isExpanded: true,
+            decoration: const InputDecoration(isDense: true),
+            hint: const Text('Hangboard (default)'),
+            items: [
+              const DropdownMenuItem<int?>(
+                value: null,
+                child: Text('Hangboard (default)'),
+              ),
+              ...items.map((c) => DropdownMenuItem<int?>(
+                    value: c.id,
+                    child: Text(c.name, overflow: TextOverflow.ellipsis),
+                  )),
+            ],
+            onChanged: onChanged,
+          ),
         ),
       ],
     );

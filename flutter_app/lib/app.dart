@@ -43,6 +43,12 @@ final router = GoRouter(
       ),
     ),
     GoRoute(
+      path: '/hangboard-session/:exerciseId',
+      builder: (_, state) => HangboardScreen(
+        categoryId: int.parse(state.pathParameters['exerciseId']!),
+      ),
+    ),
+    GoRoute(
       path: '/import',
       builder: (_, __) => const ImportScreen(),
     ),

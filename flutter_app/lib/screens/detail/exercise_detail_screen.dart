@@ -16,7 +16,7 @@ class ExerciseDetailScreen extends ConsumerWidget {
     final catAsync   = ref.watch(categoryByIdProvider(categoryId));
     final cat        = catAsync.value;
     final name       = cat?.name ?? 'Exercise';
-    final isClimbing = cat?.exerciseType == 1;
+    final exType = cat?.exerciseType ?? 0;
 
     return DefaultTabController(
       length: 3,
@@ -25,31 +25,39 @@ class ExerciseDetailScreen extends ConsumerWidget {
           title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
           actions: [
             if (cat != null)
-              PopupMenuButton<String>(
-                onSelected: (v) async {
-                  if (v == 'type') {
-                    await ref.setExerciseType(categoryId, isClimbing ? 0 : 1);
-                  }
-                },
+              PopupMenuButton<int>(
+                onSelected: (type) => ref.setExerciseType(categoryId, type),
                 itemBuilder: (_) => [
-                  PopupMenuItem(
-                    value: 'type',
-                    child: Row(
-                      children: [
-                        Icon(
-                          isClimbing
-                              ? Icons.fitness_center
-                              : Icons.terrain,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
+                  if (exType != 0)
+                    PopupMenuItem(
+                      value: 0,
+                      child: Row(children: [
+                        Icon(Icons.fitness_center, size: 18,
+                            color: Theme.of(context).colorScheme.primary),
                         const SizedBox(width: 10),
-                        Text(isClimbing
-                            ? 'Switch to standard'
-                            : 'Set as climbing'),
-                      ],
+                        const Text('Standard'),
+                      ]),
                     ),
-                  ),
+                  if (exType != 1)
+                    PopupMenuItem(
+                      value: 1,
+                      child: Row(children: [
+                        Icon(Icons.terrain, size: 18,
+                            color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 10),
+                        const Text('Climbing'),
+                      ]),
+                    ),
+                  if (exType != 2)
+                    PopupMenuItem(
+                      value: 2,
+                      child: Row(children: [
+                        Icon(Icons.timer, size: 18,
+                            color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 10),
+                        const Text('Hangboard'),
+                      ]),
+                    ),
                 ],
               ),
           ],
