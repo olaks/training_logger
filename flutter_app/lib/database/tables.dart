@@ -15,9 +15,6 @@ class WorkoutExercises extends Table {
   IntColumn get targetSets => integer().nullable()();
   IntColumn get targetReps => integer().nullable()();
   IntColumn get sortOrder  => integer().withDefault(const Constant(0))();
-
-  @override
-  List<Set<Column>> get uniqueKeys => [{workoutId, categoryId}];
 }
 
 // ── Plans (schedules that assign Workouts to days) ────────────────────────────

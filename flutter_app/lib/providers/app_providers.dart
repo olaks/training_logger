@@ -38,7 +38,7 @@ final allWorkoutsProvider = StreamProvider<List<Workout>>((ref) =>
     ref.watch(dbProvider).watchAllWorkouts());
 
 final workoutExercisesProvider =
-    StreamProvider.family<List<(ExerciseCategory, int?, int?)>, int>((ref, workoutId) =>
+    StreamProvider.family<List<(int, ExerciseCategory, int?, int?)>, int>((ref, workoutId) =>
         ref.watch(dbProvider).watchExercisesForWorkout(workoutId));
 
 final workoutsForExerciseProvider =
@@ -260,12 +260,13 @@ extension DbMutations on WidgetRef {
   Future<int>  insertWorkout(String name)                     => db.insertWorkout(name);
   Future<int>  renameWorkout(int id, String name)             => db.renameWorkout(id, name);
   Future<int>  updateWorkoutNotes(int id, String notes)      => db.updateWorkoutNotes(id, notes);
-  Future<void> reorderWorkoutExercises(int wId, List<int> catIds) => db.reorderWorkoutExercises(wId, catIds);
+  Future<void> reorderWorkoutExercises(int wId, List<int> weIds) => db.reorderWorkoutExercises(wId, weIds);
   Future<void> deleteWorkout(int id)                          => db.deleteWorkout(id);
   Future<void> addExerciseToWorkout(int workoutId, int catId) => db.addExerciseToWorkout(workoutId, catId);
-  Future<int>  removeExerciseFromWorkout(int wId, int catId)  => db.removeExerciseFromWorkout(wId, catId);
-  Future<int>  updateWorkoutTarget(int wId, int catId, int? sets, int? reps) =>
-      db.updateWorkoutTarget(wId, catId, sets, reps);
+  Future<int>  removeExerciseFromWorkout(int weId)            => db.removeExerciseFromWorkout(weId);
+  Future<int>  removeAllOfExerciseFromWorkout(int wId, int catId) => db.removeAllOfExerciseFromWorkout(wId, catId);
+  Future<int>  updateWorkoutTarget(int weId, int? sets, int? reps) =>
+      db.updateWorkoutTarget(weId, sets, reps);
 
   // Plans
   Future<int>  insertPlan(String name)              => db.insertPlan(name);

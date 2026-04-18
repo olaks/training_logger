@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -86,6 +86,29 @@ class AppDatabase extends _$AppDatabase {
       if (from < 11) {
         await m.addColumn(workouts, workouts.notes);
         await m.addColumn(workoutExercises, workoutExercises.sortOrder);
+      }
+      if (from < 12) {
+        // Recreate workout_exercises without unique(workout_id, category_id)
+        // so the same exercise can appear multiple times in a workout.
+        await customStatement('''
+          CREATE TABLE workout_exercises_new (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            workout_id INTEGER NOT NULL REFERENCES workouts (id),
+            category_id INTEGER NOT NULL REFERENCES exercise_categories (id),
+            target_sets INTEGER,
+            target_reps INTEGER,
+            sort_order INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+        await customStatement('''
+          INSERT INTO workout_exercises_new
+            (id, workout_id, category_id, target_sets, target_reps, sort_order)
+          SELECT id, workout_id, category_id, target_sets, target_reps, sort_order
+          FROM workout_exercises
+        ''');
+        await customStatement('DROP TABLE workout_exercises');
+        await customStatement(
+            'ALTER TABLE workout_exercises_new RENAME TO workout_exercises');
       }
     },
   );
@@ -501,11 +524,14 @@ class AppDatabase extends _$AppDatabase {
           final catId  = catIdByName[exName];
           if (catId == null) continue;
 
+          final sortOrder = (we['sortOrder'] as num?)?.toInt() ?? 0;
           final existingWe = await (select(workoutExercises)
                 ..where((t) =>
-                    t.workoutId.equals(wId) & t.categoryId.equals(catId)))
-              .getSingleOrNull();
-          if (existingWe != null) continue;
+                    t.workoutId.equals(wId) &
+                    t.categoryId.equals(catId) &
+                    t.sortOrder.equals(sortOrder)))
+              .get();
+          if (existingWe.isNotEmpty) continue;
 
           await into(workoutExercises).insert(
             WorkoutExercisesCompanion.insert(
@@ -678,12 +704,10 @@ class AppDatabase extends _$AppDatabase {
       (update(workouts)..where((t) => t.id.equals(id)))
           .write(WorkoutsCompanion(notes: Value(notes)));
 
-  Future<void> reorderWorkoutExercises(int workoutId, List<int> categoryIds) async {
-    for (var i = 0; i < categoryIds.length; i++) {
+  Future<void> reorderWorkoutExercises(int workoutId, List<int> weIds) async {
+    for (var i = 0; i < weIds.length; i++) {
       await (update(workoutExercises)
-            ..where((t) =>
-                t.workoutId.equals(workoutId) &
-                t.categoryId.equals(categoryIds[i])))
+            ..where((t) => t.id.equals(weIds[i])))
           .write(WorkoutExercisesCompanion(sortOrder: Value(i)));
     }
   }
@@ -713,8 +737,8 @@ class AppDatabase extends _$AppDatabase {
     await (delete(workouts)..where((t) => t.id.equals(id))).go();
   }
 
-  // Returns (category, targetSets, targetReps) per exercise in the workout.
-  Stream<List<(ExerciseCategory, int?, int?)>> watchExercisesForWorkout(int workoutId) {
+  // Returns (weId, category, targetSets, targetReps) per exercise in the workout.
+  Stream<List<(int, ExerciseCategory, int?, int?)>> watchExercisesForWorkout(int workoutId) {
     final q = select(workoutExercises).join([
       innerJoin(exerciseCategories,
           exerciseCategories.id.equalsExp(workoutExercises.categoryId)),
@@ -728,6 +752,7 @@ class AppDatabase extends _$AppDatabase {
         .map((r) {
           final we = r.readTable(workoutExercises);
           return (
+            we.id,
             r.readTable(exerciseCategories),
             we.targetSets,
             we.targetReps,
@@ -737,10 +762,9 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<int> updateWorkoutTarget(
-          int workoutId, int categoryId, int? targetSets, int? targetReps) =>
+          int weId, int? targetSets, int? targetReps) =>
       (update(workoutExercises)
-            ..where((t) =>
-                t.workoutId.equals(workoutId) & t.categoryId.equals(categoryId)))
+            ..where((t) => t.id.equals(weId)))
           .write(WorkoutExercisesCompanion(
             targetSets: Value(targetSets),
             targetReps: Value(targetReps),
@@ -762,13 +786,16 @@ class AppDatabase extends _$AppDatabase {
       variables: [Variable.withInt(workoutId)],
     ).getSingleOrNull();
     final next = (maxRow?.readNullable<int>('m') ?? -1) + 1;
-    await into(workoutExercises).insertOnConflictUpdate(
+    await into(workoutExercises).insert(
       WorkoutExercisesCompanion.insert(
           workoutId: workoutId, categoryId: categoryId, sortOrder: Value(next)),
     );
   }
 
-  Future<int> removeExerciseFromWorkout(int workoutId, int categoryId) =>
+  Future<int> removeExerciseFromWorkout(int weId) =>
+      (delete(workoutExercises)..where((t) => t.id.equals(weId))).go();
+
+  Future<int> removeAllOfExerciseFromWorkout(int workoutId, int categoryId) =>
       (delete(workoutExercises)
             ..where((t) =>
                 t.workoutId.equals(workoutId) &

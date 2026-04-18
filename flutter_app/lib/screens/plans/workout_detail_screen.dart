@@ -107,20 +107,20 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                     onReorder: (oldIndex, newIndex) {
                       if (newIndex > oldIndex) newIndex--;
                       final ids =
-                          exercises.map((e) => e.$1.id).toList();
+                          exercises.map((e) => e.$1).toList();
                       final moved = ids.removeAt(oldIndex);
                       ids.insert(newIndex, moved);
                       ref.reorderWorkoutExercises(
                           widget.workoutId, ids);
                     },
                     itemBuilder: (_, i) {
-                      final (cat, targetSets, targetReps) = exercises[i];
+                      final (weId, cat, targetSets, targetReps) = exercises[i];
                       final targetLabel =
                           _formatTarget(targetSets, targetReps);
                       final hasTarget =
                           targetSets != null || targetReps != null;
                       return ListTile(
-                        key: ValueKey(cat.id),
+                        key: ValueKey(weId),
                         leading: ReorderableDragStartListener(
                           index: i,
                           child: const Icon(Icons.drag_handle,
@@ -139,7 +139,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                           children: [
                             GestureDetector(
                               onTap: () => _showEditTargetDialog(
-                                  context, cat.id, targetSets, targetReps),
+                                  context, weId, targetSets, targetReps),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8, vertical: 4),
@@ -163,8 +163,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                                   size: 20),
                               color: Colors.white54,
                               onPressed: () => ref
-                                  .removeExerciseFromWorkout(
-                                      widget.workoutId, cat.id),
+                                  .removeExerciseFromWorkout(weId),
                             ),
                           ],
                         ),
@@ -199,7 +198,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
     return 'set target';
   }
 
-  void _showEditTargetDialog(BuildContext context, int catId,
+  void _showEditTargetDialog(BuildContext context, int weId,
       int? currentSets, int? currentReps) {
     final setsCtrl = TextEditingController(
         text: currentSets?.toString() ?? '');
@@ -213,7 +212,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
       final reps = repsCtrl.text.trim().isEmpty
           ? null
           : int.tryParse(repsCtrl.text.trim());
-      ref.updateWorkoutTarget(widget.workoutId, catId, sets, reps);
+      ref.updateWorkoutTarget(weId, sets, reps);
       Navigator.pop(dialogCtx);
     }
 
@@ -269,7 +268,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
   }
 
   void _showAddExercisesSheet(BuildContext context,
-      List<(ExerciseCategory, int?, int?)> exercises) {
+      List<(int, ExerciseCategory, int?, int?)> exercises) {
     showModalBottomSheet(
       context: context,
       useRootNavigator: false,
@@ -369,7 +368,10 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
   Widget build(BuildContext context) {
     final all        = ref.watch(categoriesProvider).value ?? [];
     final currentExercises = ref.watch(workoutExercisesProvider(widget.workoutId)).value ?? [];
-    final currentIds = currentExercises.map((e) => e.$1.id).toSet();
+    final countById = <int, int>{};
+    for (final e in currentExercises) {
+      countById[e.$2.id] = (countById[e.$2.id] ?? 0) + 1;
+    }
 
     // Filter by query (name or group)
     final visible = _query.isEmpty
@@ -475,18 +477,33 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
                   );
                 }
 
-                final cat      = item as ExerciseCategory;
-                final inWorkout = currentIds.contains(cat.id);
-                return CheckboxListTile(
+                final cat   = item as ExerciseCategory;
+                final count = countById[cat.id] ?? 0;
+                return ListTile(
                   dense: true,
-                  value: inWorkout,
                   title: Text(cat.name),
-                  onChanged: (_) {
-                    if (inWorkout) {
-                      ref.removeExerciseFromWorkout(widget.workoutId, cat.id);
-                    } else {
-                      ref.addExerciseToWorkout(widget.workoutId, cat.id);
-                    }
+                  trailing: count > 0
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '\u00d7$count',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        )
+                      : null,
+                  onTap: () {
+                    ref.addExerciseToWorkout(widget.workoutId, cat.id);
                   },
                 );
               },

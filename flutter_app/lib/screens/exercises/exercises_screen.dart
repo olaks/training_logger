@@ -613,7 +613,7 @@ class _AddToWorkoutSheet extends ConsumerWidget {
                 title: Text(workout.name),
                 onChanged: (_) {
                   if (inWorkout) {
-                    ref.removeExerciseFromWorkout(workout.id, categoryId);
+                    ref.removeAllOfExerciseFromWorkout(workout.id, categoryId);
                   } else {
                     ref.addExerciseToWorkout(workout.id, categoryId);
                   }
