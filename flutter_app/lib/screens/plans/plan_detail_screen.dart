@@ -6,11 +6,11 @@ import '../../providers/app_providers.dart';
 import '../../utils/format_utils.dart';
 import '../../utils/share_file.dart';
 
+const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
 class PlanDetailScreen extends ConsumerWidget {
   final int planId;
   const PlanDetailScreen({super.key, required this.planId});
-
-  static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -149,9 +149,15 @@ class PlanDetailScreen extends ConsumerWidget {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => _PickWorkoutSheet(
-        onPick: (workoutId) async {
-          await ref.assignWorkoutToPlan(planId, workoutId,
-              weekday: weekday, dateStr: dateStr);
+        initialWeekday: weekday,
+        onPick: (workoutId, selectedWeekdays) async {
+          if (selectedWeekdays.isNotEmpty) {
+            for (final wd in selectedWeekdays) {
+              await ref.assignWorkoutToPlan(planId, workoutId, weekday: wd);
+            }
+          } else if (dateStr != null) {
+            await ref.assignWorkoutToPlan(planId, workoutId, dateStr: dateStr);
+          }
           if (context.mounted) Navigator.pop(context);
         },
       ),
@@ -245,9 +251,9 @@ class PlanDetailScreen extends ConsumerWidget {
   }
 }
 
-// ── Day row ───────────────────────────────────────────────────────────────────
+// ── Day row (collapsible) ─────────────────────────────────────────────────────
 
-class _DayRow extends StatelessWidget {
+class _DayRow extends StatefulWidget {
   final String label;
   final List<({int id, Workout workout})> assignments;
   final VoidCallback onAdd;
@@ -263,47 +269,118 @@ class _DayRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 36,
-              child: Text(label,
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.6))),
-            ),
-            Expanded(
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  ...assignments.map((a) => InputChip(
-                        label: Text(a.workout.name),
-                        onDeleted: () => onRemove(a.id),
-                        onPressed: () => onTap(a.workout.id),
-                      )),
-                  ActionChip(
-                    avatar: const Icon(Icons.add, size: 14),
-                    label: const Text('Add'),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: onAdd,
+  State<_DayRow> createState() => _DayRowState();
+}
+
+class _DayRowState extends State<_DayRow> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasItems = widget.assignments.isNotEmpty;
+    final primary = Theme.of(context).colorScheme.primary;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Header row ───────────────────────────────────────────────
+        InkWell(
+          onTap: hasItems ? () => setState(() => _expanded = !_expanded) : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 40,
+                  child: Text(widget.label,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.6))),
+                ),
+                Expanded(
+                  child: hasItems
+                      ? Text(
+                          _expanded
+                              ? '${widget.assignments.length} workouts'
+                              : widget.assignments
+                                  .map((a) => a.workout.name)
+                                  .join(', '),
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: _expanded
+                                  ? Colors.white.withValues(alpha: 0.4)
+                                  : Colors.white.withValues(alpha: 0.7)),
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : Text('Rest',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.white.withValues(alpha: 0.2))),
+                ),
+                if (hasItems)
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: Colors.white.withValues(alpha: 0.3),
                   ),
-                ],
-              ),
+                SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: IconButton(
+                    icon: const Icon(Icons.add, size: 18),
+                    padding: EdgeInsets.zero,
+                    color: primary,
+                    onPressed: widget.onAdd,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-      );
+
+        // ── Expanded workout list ────────────────────────────────────
+        if (_expanded && hasItems)
+          Padding(
+            padding: const EdgeInsets.only(left: 40, bottom: 4),
+            child: Column(
+              children: widget.assignments.map((a) => SizedBox(
+                height: 36,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => widget.onTap(a.workout.id),
+                        child: Text(a.workout.name,
+                            style: const TextStyle(fontSize: 14)),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: IconButton(
+                        icon: const Icon(Icons.close, size: 14),
+                        padding: EdgeInsets.zero,
+                        color: Colors.white.withValues(alpha: 0.3),
+                        onPressed: () => widget.onRemove(a.id),
+                      ),
+                    ),
+                  ],
+                ),
+              )).toList(),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 // ── Pick workout sheet ────────────────────────────────────────────────────────
 
 class _PickWorkoutSheet extends ConsumerStatefulWidget {
-  final Future<void> Function(int workoutId) onPick;
-  const _PickWorkoutSheet({required this.onPick});
+  final Future<void> Function(int workoutId, List<int> weekdays) onPick;
+  final int? initialWeekday;
+  const _PickWorkoutSheet({required this.onPick, this.initialWeekday});
 
   @override
   ConsumerState<_PickWorkoutSheet> createState() => _PickWorkoutSheetState();
@@ -312,6 +389,15 @@ class _PickWorkoutSheet extends ConsumerStatefulWidget {
 class _PickWorkoutSheetState extends ConsumerState<_PickWorkoutSheet> {
   final _searchCtrl = TextEditingController();
   String _query = '';
+  late final Set<int> _selectedDays;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDays = widget.initialWeekday != null
+        ? {widget.initialWeekday!}
+        : {};
+  }
 
   @override
   void dispose() {
@@ -319,11 +405,15 @@ class _PickWorkoutSheetState extends ConsumerState<_PickWorkoutSheet> {
     super.dispose();
   }
 
+  void _pick(int workoutId) =>
+      widget.onPick(workoutId, _selectedDays.toList()..sort());
+
   @override
   Widget build(BuildContext context) {
     final workouts  = ref.watch(allWorkoutsProvider).value ?? [];
     final exercises = ref.watch(categoriesProvider).value ?? [];
     final primary   = Theme.of(context).colorScheme.primary;
+    final showDayPicker = widget.initialWeekday != null;
 
     final q = _query.toLowerCase();
     final filteredWorkouts = q.isEmpty
@@ -350,6 +440,56 @@ class _PickWorkoutSheetState extends ConsumerState<_PickWorkoutSheet> {
                 borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 12),
+
+          // ── Day picker (weekday mode only) ──────────────────────────
+          if (showDayPicker)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: List.generate(7, (i) {
+                  final wd = i + 1;
+                  final selected = _selectedDays.contains(wd);
+                  return GestureDetector(
+                    onTap: () => setState(() {
+                      if (selected) {
+                        _selectedDays.remove(wd);
+                      } else {
+                        _selectedDays.add(wd);
+                      }
+                    }),
+                    child: Container(
+                      width: 40,
+                      height: 32,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? primary.withValues(alpha: 0.25)
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: selected
+                              ? primary
+                              : Colors.white.withValues(alpha: 0.15),
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _days[i],
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.normal,
+                          color: selected
+                              ? primary
+                              : Colors.white.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
@@ -382,7 +522,7 @@ class _PickWorkoutSheetState extends ConsumerState<_PickWorkoutSheet> {
                         leading: const Icon(Icons.list_alt, size: 20),
                         title: Text(w.name),
                         dense: true,
-                        onTap: () => widget.onPick(w.id),
+                        onTap: () => _pick(w.id),
                       )),
                 ],
 
@@ -411,7 +551,7 @@ class _PickWorkoutSheetState extends ConsumerState<_PickWorkoutSheet> {
                           final db = ref.read(dbProvider);
                           final wId = await db.getOrCreateWorkoutForExercise(
                               cat.id, cat.name);
-                          await widget.onPick(wId);
+                          _pick(wId);
                         },
                       )),
                 ],

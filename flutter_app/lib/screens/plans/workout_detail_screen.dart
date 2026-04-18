@@ -16,6 +16,7 @@ class WorkoutDetailScreen extends ConsumerStatefulWidget {
 class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
   late final TextEditingController _notesCtrl;
   bool _notesInited = false;
+  bool _autoOpenedSheet = false;
 
   @override
   void initState() {
@@ -41,6 +42,14 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
     if (!_notesInited && workout != null) {
       _notesInited = true;
       _notesCtrl.text = workout.notes;
+    }
+
+    // Auto-open exercise picker for empty workouts (e.g. just created)
+    if (!_autoOpenedSheet && exercises.isEmpty && workout != null) {
+      _autoOpenedSheet = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showAddExercisesSheet(context, exercises);
+      });
     }
 
     return Scaffold(

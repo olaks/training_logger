@@ -21,8 +21,7 @@ class PlansScreen extends ConsumerWidget {
           // ── Workouts section ─────────────────���─────────────────────────
           _SectionHeader(
             title: 'WORKOUTS',
-            onAdd: () => _showCreateDialog(
-              context, ref, 'New Workout', ref.insertWorkout),
+            onAdd: () => _showCreateWorkoutDialog(context, ref),
           ),
           if (workouts.isEmpty)
             _EmptyHint('No workouts yet.')
@@ -61,6 +60,42 @@ class PlansScreen extends ConsumerWidget {
                       'All workout assignments in this plan will be removed.',
                       () => ref.deletePlan(p.id)),
                 )),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateWorkoutDialog(BuildContext context, WidgetRef ref) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      useRootNavigator: false,
+      builder: (_) => AlertDialog(
+        title: const Text('New Workout'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          textCapitalization: TextCapitalization.words,
+          onSubmitted: (_) async {
+            if (ctrl.text.trim().isEmpty) return;
+            final id = await ref.insertWorkout(ctrl.text.trim());
+            if (context.mounted) Navigator.pop(context);
+            if (context.mounted) context.push('/workouts/$id');
+          },
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () async {
+                if (ctrl.text.trim().isEmpty) return;
+                final id = await ref.insertWorkout(ctrl.text.trim());
+                if (context.mounted) Navigator.pop(context);
+                if (context.mounted) context.push('/workouts/$id');
+              },
+              child: const Text('Create')),
         ],
       ),
     );
