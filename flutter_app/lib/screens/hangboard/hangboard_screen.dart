@@ -163,6 +163,11 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
       case _Phase.switchRest:
         _isLeftHand = true;
         _startWork();
+      case _Phase.setRest:
+        _recordSetWeight();
+        _currentSet++;
+        _currentRep = 1;
+        _startWork();
       case _Phase.work:
         if (_rlMode && !_isLeftHand) {
           _playBeep(_lowBeep);
