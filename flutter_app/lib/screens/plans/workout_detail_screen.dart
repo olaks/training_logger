@@ -15,19 +15,38 @@ class WorkoutDetailScreen extends ConsumerStatefulWidget {
 
 class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
   late final TextEditingController _notesCtrl;
+  late final FocusNode _notesFocus;
   bool _notesInited = false;
   bool _autoOpenedSheet = false;
+  String _savedNotes = '';
 
   @override
   void initState() {
     super.initState();
     _notesCtrl = TextEditingController();
+    _notesFocus = FocusNode()..addListener(_onNotesFocusChange);
   }
 
   @override
   void dispose() {
+    _notesFocus.removeListener(_onNotesFocusChange);
+    // Persist any unsaved edits before disposing.
+    _flushNotes();
+    _notesFocus.dispose();
     _notesCtrl.dispose();
     super.dispose();
+  }
+
+  void _onNotesFocusChange() {
+    if (!_notesFocus.hasFocus) _flushNotes();
+  }
+
+  void _flushNotes() {
+    if (!_notesInited) return;
+    final text = _notesCtrl.text;
+    if (text == _savedNotes) return;
+    _savedNotes = text;
+    ref.read(dbProvider).updateWorkoutNotes(widget.workoutId, text);
   }
 
   @override
@@ -38,9 +57,11 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
     final exercises =
         ref.watch(workoutExercisesProvider(widget.workoutId)).value ?? [];
 
-    // Sync notes controller once when data first arrives
-    if (!_notesInited && workout != null) {
+    // Sync notes controller once when data first arrives. Skip if the user
+    // is already typing — don't clobber in-progress edits.
+    if (!_notesInited && workout != null && !_notesFocus.hasFocus) {
       _notesInited = true;
+      _savedNotes = workout.notes;
       _notesCtrl.text = workout.notes;
     }
 
@@ -78,6 +99,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: TextField(
               controller: _notesCtrl,
+              focusNode: _notesFocus,
               maxLines: null,
               minLines: 1,
               style: TextStyle(
@@ -91,8 +113,6 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
               ),
-              onChanged: (v) =>
-                  ref.updateWorkoutNotes(widget.workoutId, v),
             ),
           ),
           const Divider(height: 1, thickness: 0.5),
@@ -569,7 +589,6 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
                   (g) => g.toLowerCase().contains(v.text.toLowerCase())),
               onSelected: (g) => groupCtrl.text = g,
               fieldViewBuilder: (_, autoCtrl, focus, __) {
-                autoCtrl.addListener(() => groupCtrl.text = autoCtrl.text);
                 return TextField(
                   controller: autoCtrl,
                   focusNode: focus,

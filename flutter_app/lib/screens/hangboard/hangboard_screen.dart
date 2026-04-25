@@ -224,36 +224,44 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
 
   // ── Save to database ─────────────────────────────────────────────────────
 
+  bool _saving = false;
+
   Future<void> _save() async {
-    final db = ref.read(dbProvider);
-    final catId = widget.categoryId ??
-        _selectedCategoryId ??
-        await db.insertOrGetCategory('Hangboard', groupName: 'Hangboard');
-    final dateStr = dateStrFrom(DateTime.now());
-    final baseTs = DateTime.now().millisecondsSinceEpoch;
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final db = ref.read(dbProvider);
+      final catId = widget.categoryId ??
+          _selectedCategoryId ??
+          await db.insertOrGetCategory('Hangboard', groupName: 'Hangboard');
+      final dateStr = dateStrFrom(DateTime.now());
+      final baseTs = DateTime.now().millisecondsSinceEpoch;
 
-    for (final entry in _setWeights.entries) {
-      await db.insertSet(WorkoutSetsCompanion.insert(
-        categoryId: catId,
-        dateStr: dateStr,
-        timestamp: baseTs + entry.key,
-        weightKg: Value(entry.value),
-        reps: Value(_reps),
-        timeSecs: Value(_workSecs),
-      ));
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                'Saved ${_setWeights.length} sets')),
-      );
-      if (widget.categoryId != null) {
-        Navigator.pop(context);
-      } else {
-        setState(() => _phase = _Phase.idle);
+      for (final entry in _setWeights.entries) {
+        await db.insertSet(WorkoutSetsCompanion.insert(
+          categoryId: catId,
+          dateStr: dateStr,
+          timestamp: baseTs + entry.key,
+          weightKg: Value(entry.value),
+          reps: Value(_reps),
+          timeSecs: Value(_workSecs),
+        ));
       }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  'Saved ${_setWeights.length} sets')),
+        );
+        if (widget.categoryId != null) {
+          Navigator.pop(context);
+        } else {
+          setState(() => _phase = _Phase.idle);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -611,17 +619,10 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
                 const Spacer(),
                 SizedBox(
                   width: 80,
-                  child: TextField(
-                    controller: TextEditingController(text: w.toString()),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    textAlign: TextAlign.center,
-                    decoration: const InputDecoration(
-                      suffixText: 'kg',
-                      isDense: true,
-                    ),
-                    onChanged: (v) =>
-                        _setWeights[set] = double.tryParse(v) ?? 0,
+                  child: _DoneSetWeightField(
+                    key: ValueKey('done-weight-$set'),
+                    initial: w,
+                    onChanged: (v) => _setWeights[set] = v,
                   ),
                 ),
               ],
@@ -631,7 +632,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
 
         const SizedBox(height: 32),
         FilledButton.icon(
-          onPressed: _save,
+          onPressed: _saving ? null : _save,
           icon: const Icon(Icons.save),
           label: const Text('SAVE TO LOG'),
           style: FilledButton.styleFrom(
@@ -653,6 +654,52 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
       ],
     );
   }
+}
+
+// ── Per-set weight input on the done screen ─────────────────────────────────
+//
+// Owns its TextEditingController so parent rebuilds (e.g. after save) don't
+// reset the user's typing or jump the cursor to the start.
+
+class _DoneSetWeightField extends StatefulWidget {
+  final double initial;
+  final ValueChanged<double> onChanged;
+  const _DoneSetWeightField({
+    super.key,
+    required this.initial,
+    required this.onChanged,
+  });
+
+  @override
+  State<_DoneSetWeightField> createState() => _DoneSetWeightFieldState();
+}
+
+class _DoneSetWeightFieldState extends State<_DoneSetWeightField> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initial.toString());
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => TextField(
+        controller: _ctrl,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.center,
+        decoration: const InputDecoration(
+          suffixText: 'kg',
+          isDense: true,
+        ),
+        onChanged: (v) => widget.onChanged(double.tryParse(v) ?? 0),
+      );
 }
 
 // ── Exercise picker for standalone mode ──────────────────────────────────────

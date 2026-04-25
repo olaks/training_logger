@@ -390,7 +390,6 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                   g.toLowerCase().contains(v.text.toLowerCase())),
               onSelected: (g) => groupCtrl.text = g,
               fieldViewBuilder: (_, ctrl, focus, __) {
-                groupCtrl.addListener(() {}); // keep in sync
                 return TextField(
                   controller: ctrl,
                   focusNode: focus,
@@ -448,8 +447,6 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
               g.toLowerCase().contains(v.text.toLowerCase())),
           onSelected: (g) => ctrl.text = g,
           fieldViewBuilder: (_, autoCtrl, focus, __) {
-            // Keep ctrl in sync with the autocomplete's internal controller
-            autoCtrl.addListener(() => ctrl.text = autoCtrl.text);
             return TextField(
               controller: autoCtrl,
               focusNode: focus,
@@ -458,6 +455,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                   labelText: 'Category',
                   hintText: 'e.g. Fingers, Back… (leave empty to remove)'),
               textCapitalization: TextCapitalization.words,
+              onChanged: (v) => ctrl.text = v,
             );
           },
         ),

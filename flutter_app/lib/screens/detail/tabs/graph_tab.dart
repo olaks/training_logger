@@ -51,15 +51,31 @@ class _GraphState extends State<_Graph> {
   void initState() {
     super.initState();
     if (widget.isClimbing) {
-      final gradeStrings = widget.sets
-          .where((s) => s.grade != null)
-          .map((s) => s.grade!);
-      _gradeScale = detectGradeScale(gradeStrings);
+      _gradeScale = _detectScale();
       _metric = _Metric.grade;
     } else {
       _metric = _autoMetric(widget.sets);
     }
   }
+
+  @override
+  void didUpdateWidget(_Graph oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isClimbing) {
+      // Re-detect scale: if user logs V-grades after only Font grades (or vice
+      // versa), grade indices need to map to the new scale.
+      final newScale = _detectScale();
+      if (!identical(newScale, _gradeScale)) {
+        setState(() => _gradeScale = newScale);
+      }
+    } else if (!_metricAvailable(_metric)) {
+      // Selected metric became unavailable (e.g. last weight set was deleted).
+      setState(() => _metric = _autoMetric(widget.sets));
+    }
+  }
+
+  List<String> _detectScale() => detectGradeScale(
+      widget.sets.where((s) => s.grade != null).map((s) => s.grade!));
 
   static _Metric _autoMetric(List<WorkoutSet> sets) {
     if (sets.any((s) => (s.weightKg ?? 0) != 0)) return _Metric.weight;

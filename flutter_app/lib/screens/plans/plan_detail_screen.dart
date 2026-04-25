@@ -151,6 +151,12 @@ class PlanDetailScreen extends ConsumerWidget {
       builder: (_) => _PickWorkoutSheet(
         initialWeekday: weekday,
         onPick: (workoutId, selectedWeekdays) async {
+          if (selectedWeekdays.isEmpty && dateStr == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Select at least one day first.')),
+            );
+            return;
+          }
           if (selectedWeekdays.isNotEmpty) {
             for (final wd in selectedWeekdays) {
               await ref.assignWorkoutToPlan(planId, workoutId, weekday: wd);
