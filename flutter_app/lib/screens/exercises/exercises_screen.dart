@@ -260,7 +260,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     // Capture before any await
     final messenger = ScaffoldMessenger.of(context);
 
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['json'],
       withData: kIsWeb,

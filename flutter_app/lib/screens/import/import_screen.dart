@@ -38,7 +38,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   Future<void> _pickFile() async {
     setState(() => _error = null);
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['csv'],
       withData: kIsWeb,      // web needs bytes in-memory
