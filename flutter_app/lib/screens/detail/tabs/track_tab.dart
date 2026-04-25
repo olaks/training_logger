@@ -170,19 +170,20 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                 child: FilledButton(
                   onPressed: () async {
                     FocusScope.of(context).unfocus();
+                    final current = ref.read(trackProvider(widget.categoryId));
                     if (isClimbing) {
-                      if (state.gradeIndex < 0) return;
+                      if (current.gradeIndex < 0) return;
                       await ref.saveSet(
                         categoryId: widget.categoryId,
                         dateStr:    widget.dateStr,
-                        state:      state,
-                        grade:      grades[state.gradeIndex],
+                        state:      current,
+                        grade:      grades[current.gradeIndex],
                       );
                     } else {
                       await ref.saveSet(
                         categoryId: widget.categoryId,
                         dateStr:    widget.dateStr,
-                        state:      state,
+                        state:      current,
                       );
                     }
                     timerNotifier.start();
