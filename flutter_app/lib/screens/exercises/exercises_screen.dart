@@ -114,6 +114,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
           PopupMenuButton<_DataAction>(
             icon: const Icon(Icons.more_vert),
             onSelected: (action) {
+              if (action == _DataAction.inspirations)   context.push('/inspirations');
               if (action == _DataAction.exportBackup)   _exportBackup();
               if (action == _DataAction.importBackup)   _importBackup(context);
               if (action == _DataAction.importFitNotes) context.push('/import');
@@ -121,6 +122,12 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
               if (action == _DataAction.help)           _showHelpSheet(context);
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(
+                  value: _DataAction.inspirations,
+                  child: ListTile(
+                      leading: Icon(Icons.lightbulb_outline),
+                      title: Text('Inspirations'))),
+              PopupMenuDivider(),
               PopupMenuItem(
                   value: _DataAction.exportBackup,
                   child: ListTile(
@@ -881,7 +888,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
       );
 }
 
-enum _DataAction { exportBackup, importBackup, importFitNotes, appearance, help }
+enum _DataAction { inspirations, exportBackup, importBackup, importFitNotes, appearance, help }
 
 enum _ExAction { rename, changeCategory, addToWorkout, delete }
 

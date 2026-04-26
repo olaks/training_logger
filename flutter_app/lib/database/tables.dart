@@ -74,3 +74,14 @@ class BodyWeights extends Table {
   @override
   Set<Column> get primaryKey => {dateStr};
 }
+
+// ── Inspirations (saved YouTube/web videos, optionally tied to an exercise) ───
+
+class Inspirations extends Table {
+  IntColumn  get id         => integer().autoIncrement()();
+  TextColumn get title      => text()();
+  TextColumn get url        => text()();
+  TextColumn get notes      => text().nullable()();
+  IntColumn  get categoryId => integer().nullable().references(ExerciseCategories, #id)();
+  IntColumn  get addedAt    => integer()();
+}

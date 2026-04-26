@@ -84,6 +84,12 @@ final bodyWeightForDateProvider =
     StreamProvider.family<BodyWeight?, String>((ref, dateStr) =>
         ref.watch(dbProvider).watchBodyWeightForDate(dateStr));
 
+// ── Inspirations ───────────────────────────────────────────────────────────
+
+final inspirationsProvider =
+    StreamProvider.family<List<Inspiration>, int?>((ref, categoryId) =>
+        ref.watch(dbProvider).watchInspirations(categoryId: categoryId));
+
 // ── Selected date (home screen) ────────────────────────────────────────────
 
 final selectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -267,6 +273,28 @@ extension DbMutations on WidgetRef {
   Future<int>  removeAllOfExerciseFromWorkout(int wId, int catId) => db.removeAllOfExerciseFromWorkout(wId, catId);
   Future<int>  updateWorkoutTarget(int weId, int? sets, int? reps) =>
       db.updateWorkoutTarget(weId, sets, reps);
+
+  // Inspirations
+  Future<int> addInspiration({
+    required String title,
+    required String url,
+    String? notes,
+    int? categoryId,
+  }) =>
+      db.insertInspiration(
+          title: title, url: url, notes: notes, categoryId: categoryId);
+
+  Future<int> editInspiration(
+    int id, {
+    required String title,
+    required String url,
+    String? notes,
+    int? categoryId,
+  }) =>
+      db.updateInspiration(id,
+          title: title, url: url, notes: notes, categoryId: categoryId);
+
+  Future<int> removeInspiration(int id) => db.deleteInspiration(id);
 
   // Plans
   Future<int>  insertPlan(String name)              => db.insertPlan(name);

@@ -2194,6 +2194,346 @@ class BodyWeightsCompanion extends UpdateCompanion<BodyWeight> {
   }
 }
 
+class $InspirationsTable extends Inspirations
+    with TableInfo<$InspirationsTable, Inspiration> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $InspirationsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _urlMeta = const VerificationMeta('url');
+  @override
+  late final GeneratedColumn<String> url = GeneratedColumn<String>(
+      'url', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+      'notes', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _categoryIdMeta =
+      const VerificationMeta('categoryId');
+  @override
+  late final GeneratedColumn<int> categoryId = GeneratedColumn<int>(
+      'category_id', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES exercise_categories (id)'));
+  static const VerificationMeta _addedAtMeta =
+      const VerificationMeta('addedAt');
+  @override
+  late final GeneratedColumn<int> addedAt = GeneratedColumn<int>(
+      'added_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, title, url, notes, categoryId, addedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'inspirations';
+  @override
+  VerificationContext validateIntegrity(Insertable<Inspiration> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('url')) {
+      context.handle(
+          _urlMeta, url.isAcceptableOrUnknown(data['url']!, _urlMeta));
+    } else if (isInserting) {
+      context.missing(_urlMeta);
+    }
+    if (data.containsKey('notes')) {
+      context.handle(
+          _notesMeta, notes.isAcceptableOrUnknown(data['notes']!, _notesMeta));
+    }
+    if (data.containsKey('category_id')) {
+      context.handle(
+          _categoryIdMeta,
+          categoryId.isAcceptableOrUnknown(
+              data['category_id']!, _categoryIdMeta));
+    }
+    if (data.containsKey('added_at')) {
+      context.handle(_addedAtMeta,
+          addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta));
+    } else if (isInserting) {
+      context.missing(_addedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Inspiration map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Inspiration(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      url: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}url'])!,
+      notes: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}notes']),
+      categoryId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}category_id']),
+      addedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}added_at'])!,
+    );
+  }
+
+  @override
+  $InspirationsTable createAlias(String alias) {
+    return $InspirationsTable(attachedDatabase, alias);
+  }
+}
+
+class Inspiration extends DataClass implements Insertable<Inspiration> {
+  final int id;
+  final String title;
+  final String url;
+  final String? notes;
+  final int? categoryId;
+  final int addedAt;
+  const Inspiration(
+      {required this.id,
+      required this.title,
+      required this.url,
+      this.notes,
+      this.categoryId,
+      required this.addedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['title'] = Variable<String>(title);
+    map['url'] = Variable<String>(url);
+    if (!nullToAbsent || notes != null) {
+      map['notes'] = Variable<String>(notes);
+    }
+    if (!nullToAbsent || categoryId != null) {
+      map['category_id'] = Variable<int>(categoryId);
+    }
+    map['added_at'] = Variable<int>(addedAt);
+    return map;
+  }
+
+  InspirationsCompanion toCompanion(bool nullToAbsent) {
+    return InspirationsCompanion(
+      id: Value(id),
+      title: Value(title),
+      url: Value(url),
+      notes:
+          notes == null && nullToAbsent ? const Value.absent() : Value(notes),
+      categoryId: categoryId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(categoryId),
+      addedAt: Value(addedAt),
+    );
+  }
+
+  factory Inspiration.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Inspiration(
+      id: serializer.fromJson<int>(json['id']),
+      title: serializer.fromJson<String>(json['title']),
+      url: serializer.fromJson<String>(json['url']),
+      notes: serializer.fromJson<String?>(json['notes']),
+      categoryId: serializer.fromJson<int?>(json['categoryId']),
+      addedAt: serializer.fromJson<int>(json['addedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'title': serializer.toJson<String>(title),
+      'url': serializer.toJson<String>(url),
+      'notes': serializer.toJson<String?>(notes),
+      'categoryId': serializer.toJson<int?>(categoryId),
+      'addedAt': serializer.toJson<int>(addedAt),
+    };
+  }
+
+  Inspiration copyWith(
+          {int? id,
+          String? title,
+          String? url,
+          Value<String?> notes = const Value.absent(),
+          Value<int?> categoryId = const Value.absent(),
+          int? addedAt}) =>
+      Inspiration(
+        id: id ?? this.id,
+        title: title ?? this.title,
+        url: url ?? this.url,
+        notes: notes.present ? notes.value : this.notes,
+        categoryId: categoryId.present ? categoryId.value : this.categoryId,
+        addedAt: addedAt ?? this.addedAt,
+      );
+  Inspiration copyWithCompanion(InspirationsCompanion data) {
+    return Inspiration(
+      id: data.id.present ? data.id.value : this.id,
+      title: data.title.present ? data.title.value : this.title,
+      url: data.url.present ? data.url.value : this.url,
+      notes: data.notes.present ? data.notes.value : this.notes,
+      categoryId:
+          data.categoryId.present ? data.categoryId.value : this.categoryId,
+      addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Inspiration(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('url: $url, ')
+          ..write('notes: $notes, ')
+          ..write('categoryId: $categoryId, ')
+          ..write('addedAt: $addedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, title, url, notes, categoryId, addedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Inspiration &&
+          other.id == this.id &&
+          other.title == this.title &&
+          other.url == this.url &&
+          other.notes == this.notes &&
+          other.categoryId == this.categoryId &&
+          other.addedAt == this.addedAt);
+}
+
+class InspirationsCompanion extends UpdateCompanion<Inspiration> {
+  final Value<int> id;
+  final Value<String> title;
+  final Value<String> url;
+  final Value<String?> notes;
+  final Value<int?> categoryId;
+  final Value<int> addedAt;
+  const InspirationsCompanion({
+    this.id = const Value.absent(),
+    this.title = const Value.absent(),
+    this.url = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.categoryId = const Value.absent(),
+    this.addedAt = const Value.absent(),
+  });
+  InspirationsCompanion.insert({
+    this.id = const Value.absent(),
+    required String title,
+    required String url,
+    this.notes = const Value.absent(),
+    this.categoryId = const Value.absent(),
+    required int addedAt,
+  })  : title = Value(title),
+        url = Value(url),
+        addedAt = Value(addedAt);
+  static Insertable<Inspiration> custom({
+    Expression<int>? id,
+    Expression<String>? title,
+    Expression<String>? url,
+    Expression<String>? notes,
+    Expression<int>? categoryId,
+    Expression<int>? addedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (title != null) 'title': title,
+      if (url != null) 'url': url,
+      if (notes != null) 'notes': notes,
+      if (categoryId != null) 'category_id': categoryId,
+      if (addedAt != null) 'added_at': addedAt,
+    });
+  }
+
+  InspirationsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? title,
+      Value<String>? url,
+      Value<String?>? notes,
+      Value<int?>? categoryId,
+      Value<int>? addedAt}) {
+    return InspirationsCompanion(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      url: url ?? this.url,
+      notes: notes ?? this.notes,
+      categoryId: categoryId ?? this.categoryId,
+      addedAt: addedAt ?? this.addedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (url.present) {
+      map['url'] = Variable<String>(url.value);
+    }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
+    }
+    if (categoryId.present) {
+      map['category_id'] = Variable<int>(categoryId.value);
+    }
+    if (addedAt.present) {
+      map['added_at'] = Variable<int>(addedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('InspirationsCompanion(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('url: $url, ')
+          ..write('notes: $notes, ')
+          ..write('categoryId: $categoryId, ')
+          ..write('addedAt: $addedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2207,6 +2547,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $WorkoutSetsTable workoutSets = $WorkoutSetsTable(this);
   late final $DayNotesTable dayNotes = $DayNotesTable(this);
   late final $BodyWeightsTable bodyWeights = $BodyWeightsTable(this);
+  late final $InspirationsTable inspirations = $InspirationsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2219,7 +2560,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         planWorkouts,
         workoutSets,
         dayNotes,
-        bodyWeights
+        bodyWeights,
+        inspirations
       ];
 }
 
@@ -2568,6 +2910,21 @@ final class $$ExerciseCategoriesTableReferences extends BaseReferences<
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$InspirationsTable, List<Inspiration>>
+      _inspirationsRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.inspirations,
+              aliasName: $_aliasNameGenerator(
+                  db.exerciseCategories.id, db.inspirations.categoryId));
+
+  $$InspirationsTableProcessedTableManager get inspirationsRefs {
+    final manager = $$InspirationsTableTableManager($_db, $_db.inspirations)
+        .filter((f) => f.categoryId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_inspirationsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$ExerciseCategoriesTableFilterComposer
@@ -2628,6 +2985,27 @@ class $$ExerciseCategoriesTableFilterComposer
             $$WorkoutSetsTableFilterComposer(
               $db: $db,
               $table: $db.workoutSets,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> inspirationsRefs(
+      Expression<bool> Function($$InspirationsTableFilterComposer f) f) {
+    final $$InspirationsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.inspirations,
+        getReferencedColumn: (t) => t.categoryId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$InspirationsTableFilterComposer(
+              $db: $db,
+              $table: $db.inspirations,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -2728,6 +3106,27 @@ class $$ExerciseCategoriesTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> inspirationsRefs<T extends Object>(
+      Expression<T> Function($$InspirationsTableAnnotationComposer a) f) {
+    final $$InspirationsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.inspirations,
+        getReferencedColumn: (t) => t.categoryId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$InspirationsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.inspirations,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$ExerciseCategoriesTableTableManager extends RootTableManager<
@@ -2741,7 +3140,10 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
     $$ExerciseCategoriesTableUpdateCompanionBuilder,
     (ExerciseCategory, $$ExerciseCategoriesTableReferences),
     ExerciseCategory,
-    PrefetchHooks Function({bool workoutExercisesRefs, bool workoutSetsRefs})> {
+    PrefetchHooks Function(
+        {bool workoutExercisesRefs,
+        bool workoutSetsRefs,
+        bool inspirationsRefs})> {
   $$ExerciseCategoriesTableTableManager(
       _$AppDatabase db, $ExerciseCategoriesTable table)
       : super(TableManagerState(
@@ -2789,12 +3191,15 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
                   ))
               .toList(),
           prefetchHooksCallback: (
-              {workoutExercisesRefs = false, workoutSetsRefs = false}) {
+              {workoutExercisesRefs = false,
+              workoutSetsRefs = false,
+              inspirationsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (workoutExercisesRefs) db.workoutExercises,
-                if (workoutSetsRefs) db.workoutSets
+                if (workoutSetsRefs) db.workoutSets,
+                if (inspirationsRefs) db.inspirations
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -2824,6 +3229,19 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.categoryId == item.id),
+                        typedResults: items),
+                  if (inspirationsRefs)
+                    await $_getPrefetchedData<ExerciseCategory,
+                            $ExerciseCategoriesTable, Inspiration>(
+                        currentTable: table,
+                        referencedTable: $$ExerciseCategoriesTableReferences
+                            ._inspirationsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$ExerciseCategoriesTableReferences(db, table, p0)
+                                .inspirationsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.categoryId == item.id),
                         typedResults: items)
                 ];
               },
@@ -2843,7 +3261,10 @@ typedef $$ExerciseCategoriesTableProcessedTableManager = ProcessedTableManager<
     $$ExerciseCategoriesTableUpdateCompanionBuilder,
     (ExerciseCategory, $$ExerciseCategoriesTableReferences),
     ExerciseCategory,
-    PrefetchHooks Function({bool workoutExercisesRefs, bool workoutSetsRefs})>;
+    PrefetchHooks Function(
+        {bool workoutExercisesRefs,
+        bool workoutSetsRefs,
+        bool inspirationsRefs})>;
 typedef $$WorkoutExercisesTableCreateCompanionBuilder
     = WorkoutExercisesCompanion Function({
   Value<int> id,
@@ -4324,6 +4745,292 @@ typedef $$BodyWeightsTableProcessedTableManager = ProcessedTableManager<
     (BodyWeight, BaseReferences<_$AppDatabase, $BodyWeightsTable, BodyWeight>),
     BodyWeight,
     PrefetchHooks Function()>;
+typedef $$InspirationsTableCreateCompanionBuilder = InspirationsCompanion
+    Function({
+  Value<int> id,
+  required String title,
+  required String url,
+  Value<String?> notes,
+  Value<int?> categoryId,
+  required int addedAt,
+});
+typedef $$InspirationsTableUpdateCompanionBuilder = InspirationsCompanion
+    Function({
+  Value<int> id,
+  Value<String> title,
+  Value<String> url,
+  Value<String?> notes,
+  Value<int?> categoryId,
+  Value<int> addedAt,
+});
+
+final class $$InspirationsTableReferences
+    extends BaseReferences<_$AppDatabase, $InspirationsTable, Inspiration> {
+  $$InspirationsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $ExerciseCategoriesTable _categoryIdTable(_$AppDatabase db) =>
+      db.exerciseCategories.createAlias($_aliasNameGenerator(
+          db.inspirations.categoryId, db.exerciseCategories.id));
+
+  $$ExerciseCategoriesTableProcessedTableManager? get categoryId {
+    final $_column = $_itemColumn<int>('category_id');
+    if ($_column == null) return null;
+    final manager =
+        $$ExerciseCategoriesTableTableManager($_db, $_db.exerciseCategories)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_categoryIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$InspirationsTableFilterComposer
+    extends Composer<_$AppDatabase, $InspirationsTable> {
+  $$InspirationsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get url => $composableBuilder(
+      column: $table.url, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get addedAt => $composableBuilder(
+      column: $table.addedAt, builder: (column) => ColumnFilters(column));
+
+  $$ExerciseCategoriesTableFilterComposer get categoryId {
+    final $$ExerciseCategoriesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.categoryId,
+        referencedTable: $db.exerciseCategories,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ExerciseCategoriesTableFilterComposer(
+              $db: $db,
+              $table: $db.exerciseCategories,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$InspirationsTableOrderingComposer
+    extends Composer<_$AppDatabase, $InspirationsTable> {
+  $$InspirationsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get url => $composableBuilder(
+      column: $table.url, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get addedAt => $composableBuilder(
+      column: $table.addedAt, builder: (column) => ColumnOrderings(column));
+
+  $$ExerciseCategoriesTableOrderingComposer get categoryId {
+    final $$ExerciseCategoriesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.categoryId,
+        referencedTable: $db.exerciseCategories,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ExerciseCategoriesTableOrderingComposer(
+              $db: $db,
+              $table: $db.exerciseCategories,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$InspirationsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $InspirationsTable> {
+  $$InspirationsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get url =>
+      $composableBuilder(column: $table.url, builder: (column) => column);
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<int> get addedAt =>
+      $composableBuilder(column: $table.addedAt, builder: (column) => column);
+
+  $$ExerciseCategoriesTableAnnotationComposer get categoryId {
+    final $$ExerciseCategoriesTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.categoryId,
+            referencedTable: $db.exerciseCategories,
+            getReferencedColumn: (t) => t.id,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$ExerciseCategoriesTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.exerciseCategories,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return composer;
+  }
+}
+
+class $$InspirationsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $InspirationsTable,
+    Inspiration,
+    $$InspirationsTableFilterComposer,
+    $$InspirationsTableOrderingComposer,
+    $$InspirationsTableAnnotationComposer,
+    $$InspirationsTableCreateCompanionBuilder,
+    $$InspirationsTableUpdateCompanionBuilder,
+    (Inspiration, $$InspirationsTableReferences),
+    Inspiration,
+    PrefetchHooks Function({bool categoryId})> {
+  $$InspirationsTableTableManager(_$AppDatabase db, $InspirationsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$InspirationsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$InspirationsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$InspirationsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String> url = const Value.absent(),
+            Value<String?> notes = const Value.absent(),
+            Value<int?> categoryId = const Value.absent(),
+            Value<int> addedAt = const Value.absent(),
+          }) =>
+              InspirationsCompanion(
+            id: id,
+            title: title,
+            url: url,
+            notes: notes,
+            categoryId: categoryId,
+            addedAt: addedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String title,
+            required String url,
+            Value<String?> notes = const Value.absent(),
+            Value<int?> categoryId = const Value.absent(),
+            required int addedAt,
+          }) =>
+              InspirationsCompanion.insert(
+            id: id,
+            title: title,
+            url: url,
+            notes: notes,
+            categoryId: categoryId,
+            addedAt: addedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$InspirationsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({categoryId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (categoryId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.categoryId,
+                    referencedTable:
+                        $$InspirationsTableReferences._categoryIdTable(db),
+                    referencedColumn:
+                        $$InspirationsTableReferences._categoryIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$InspirationsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $InspirationsTable,
+    Inspiration,
+    $$InspirationsTableFilterComposer,
+    $$InspirationsTableOrderingComposer,
+    $$InspirationsTableAnnotationComposer,
+    $$InspirationsTableCreateCompanionBuilder,
+    $$InspirationsTableUpdateCompanionBuilder,
+    (Inspiration, $$InspirationsTableReferences),
+    Inspiration,
+    PrefetchHooks Function({bool categoryId})>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4344,4 +5051,6 @@ class $AppDatabaseManager {
       $$DayNotesTableTableManager(_db, _db.dayNotes);
   $$BodyWeightsTableTableManager get bodyWeights =>
       $$BodyWeightsTableTableManager(_db, _db.bodyWeights);
+  $$InspirationsTableTableManager get inspirations =>
+      $$InspirationsTableTableManager(_db, _db.inspirations);
 }

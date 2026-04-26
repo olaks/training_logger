@@ -9,6 +9,7 @@ import 'screens/plans/plans_screen.dart';
 import 'screens/plans/plan_detail_screen.dart';
 import 'screens/plans/workout_detail_screen.dart';
 import 'screens/hangboard/hangboard_screen.dart';
+import 'screens/inspiration/inspiration_screen.dart';
 import 'theme/app_theme.dart';
 import 'providers/theme_provider.dart';
 
@@ -51,6 +52,10 @@ final router = GoRouter(
     GoRoute(
       path: '/import',
       builder: (_, __) => const ImportScreen(),
+    ),
+    GoRoute(
+      path: '/inspirations',
+      builder: (_, __) => const InspirationScreen(),
     ),
   ],
 );

@@ -6,7 +6,7 @@ import '../utils/format_utils.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Workouts, WorkoutExercises, Plans, PlanWorkouts, ExerciseCategories, WorkoutSets, DayNotes, BodyWeights])
+@DriftDatabase(tables: [Workouts, WorkoutExercises, Plans, PlanWorkouts, ExerciseCategories, WorkoutSets, DayNotes, BodyWeights, Inspirations])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(
     name: 'training_logger',
@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -109,6 +109,9 @@ class AppDatabase extends _$AppDatabase {
         await customStatement('DROP TABLE workout_exercises');
         await customStatement(
             'ALTER TABLE workout_exercises_new RENAME TO workout_exercises');
+      }
+      if (from < 13) {
+        await m.createTable(inspirations);
       }
     },
   );
@@ -282,6 +285,50 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> deleteBodyWeight(String dateStr) =>
       (delete(bodyWeights)..where((t) => t.dateStr.equals(dateStr))).go();
+
+  // ── Inspirations ──────────────────────────────────────────────────────────
+
+  Stream<List<Inspiration>> watchInspirations({int? categoryId}) {
+    final q = select(inspirations)
+      ..orderBy([(t) => OrderingTerm.desc(t.addedAt)]);
+    if (categoryId != null) {
+      q.where((t) => t.categoryId.equals(categoryId));
+    }
+    return q.watch();
+  }
+
+  Future<int> insertInspiration({
+    required String title,
+    required String url,
+    String? notes,
+    int? categoryId,
+  }) =>
+      into(inspirations).insert(InspirationsCompanion.insert(
+        title: title,
+        url: url,
+        notes: Value(notes),
+        categoryId: Value(categoryId),
+        addedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+
+  Future<int> updateInspiration(
+    int id, {
+    required String title,
+    required String url,
+    String? notes,
+    int? categoryId,
+  }) =>
+      (update(inspirations)..where((t) => t.id.equals(id))).write(
+        InspirationsCompanion(
+          title:      Value(title),
+          url:        Value(url),
+          notes:      Value(notes),
+          categoryId: Value(categoryId),
+        ),
+      );
+
+  Future<int> deleteInspiration(int id) =>
+      (delete(inspirations)..where((t) => t.id.equals(id))).go();
 
   // ── Export plan ───────────────────────────────────────────────────────────
 
