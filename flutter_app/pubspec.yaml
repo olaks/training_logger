@@ -38,6 +38,7 @@ dependencies:
   path_provider: ^2.1.5
   shared_preferences: ^2.5.5
   audioplayers: ^6.1.0
+  wakelock_plus: ^1.2.8
 
   # External-URL launching for the Inspirations page
   url_launcher: ^6.3.0

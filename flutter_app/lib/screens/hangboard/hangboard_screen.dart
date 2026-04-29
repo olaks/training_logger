@@ -7,6 +7,7 @@ import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
@@ -63,6 +64,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    WakelockPlus.disable();
     _player.dispose();
     _weightCtrl.dispose();
     super.dispose();
@@ -121,6 +123,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
     _paused = false;
     _setWeights.clear();
     _setWeights[1] = double.tryParse(_weightCtrl.text) ?? 0;
+    WakelockPlus.enable();
     _enterPhase(_Phase.getReady, 5);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
@@ -184,6 +187,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
               _enterPhase(_Phase.setRest, _setRestSecs);
             } else {
               _timer?.cancel();
+              WakelockPlus.disable();
               _playBeep(_doneBeep);
               HapticFeedback.heavyImpact();
               _enterPhase(_Phase.done, 0);
@@ -210,6 +214,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
 
   void _stop() {
     _timer?.cancel();
+    WakelockPlus.disable();
     setState(() => _phase = _Phase.idle);
   }
 
