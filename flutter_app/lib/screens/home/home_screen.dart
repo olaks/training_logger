@@ -43,6 +43,7 @@ class HomeScreen extends ConsumerWidget {
               onNext: () => ref.read(selectedDateProvider.notifier).state =
                   selected.add(const Duration(days: 1)),
               onCalendar: () => _openCalendar(context, ref, selected, woDates),
+              onInspirations: () => context.push('/inspirations'),
             ),
           ),
 
@@ -487,12 +488,13 @@ class _SectionHeader extends StatelessWidget {
 
 class _DayNavBar extends StatelessWidget {
   final DateTime selected;
-  final VoidCallback onPrev, onNext, onCalendar;
+  final VoidCallback onPrev, onNext, onCalendar, onInspirations;
   const _DayNavBar(
       {required this.selected,
       required this.onPrev,
       required this.onNext,
-      required this.onCalendar});
+      required this.onCalendar,
+      required this.onInspirations});
 
   String get _label {
     final now = DateTime.now();
@@ -529,6 +531,12 @@ class _DayNavBar extends StatelessWidget {
             ),
           ),
           IconButton(onPressed: onNext, icon: const Icon(Icons.chevron_right)),
+          IconButton(
+            onPressed: onInspirations,
+            tooltip: 'Inspirations',
+            icon: Icon(Icons.lightbulb_outline,
+                color: Theme.of(context).colorScheme.primary),
+          ),
         ],
       ),
     );
