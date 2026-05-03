@@ -170,6 +170,11 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                 child: FilledButton(
                   onPressed: () async {
                     FocusScope.of(context).unfocus();
+                    // Yield so any focused stepper's focus-loss listener fires
+                    // and commits the typed value into TrackNotifier before we
+                    // read it. Otherwise we'd save the previous (stale) value.
+                    await Future<void>.delayed(Duration.zero);
+                    if (!context.mounted) return;
                     final current = ref.read(trackProvider(widget.categoryId));
                     if (isClimbing) {
                       if (current.gradeIndex < 0) return;
