@@ -6,6 +6,33 @@ import '../../database/database.dart';
 import '../../providers/app_providers.dart';
 import '../../utils/youtube.dart';
 
+/// Opens the add/edit inspiration sheet. Pass [existing] to edit, or
+/// [defaultCategoryId] to pre-link a new entry to an exercise.
+void showInspirationFormSheet(
+  BuildContext context, {
+  required List<ExerciseCategory> categories,
+  Inspiration? existing,
+  int? defaultCategoryId,
+}) {
+  showModalBottomSheet(
+    context: context,
+    useRootNavigator: false,
+    isScrollControlled: true,
+    backgroundColor: Theme.of(context).colorScheme.surface,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+    builder: (_) => Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: _InspirationForm(
+        categories: categories,
+        existing: existing,
+        defaultCategoryId: defaultCategoryId,
+      ),
+    ),
+  );
+}
+
 class InspirationScreen extends ConsumerStatefulWidget {
   const InspirationScreen({super.key});
 
@@ -112,22 +139,11 @@ class _InspirationScreenState extends ConsumerState<InspirationScreen> {
 
   void _showEditSheet(BuildContext context, List<ExerciseCategory> categories,
       Inspiration? existing) {
-    showModalBottomSheet(
-      context: context,
-      useRootNavigator: false,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: _InspirationForm(
-          categories: categories,
-          existing: existing,
-          defaultCategoryId: _filterCategoryId,
-        ),
-      ),
+    showInspirationFormSheet(
+      context,
+      categories: categories,
+      existing: existing,
+      defaultCategoryId: _filterCategoryId,
     );
   }
 }
