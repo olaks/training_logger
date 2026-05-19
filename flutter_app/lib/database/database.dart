@@ -887,6 +887,24 @@ class AppDatabase extends _$AppDatabase {
   Future<int> removeWorkoutFromPlan(int assignmentId) =>
       (delete(planWorkouts)..where((t) => t.id.equals(assignmentId))).go();
 
+  Future<void> shiftPlanDay(int planId, int weekday) async {
+    await customUpdate(
+      'UPDATE plan_workouts SET weekday = (weekday % 7) + 1 '
+      'WHERE plan_id = ? AND weekday = ?',
+      variables: [Variable.withInt(planId), Variable.withInt(weekday)],
+      updates: {planWorkouts},
+    );
+  }
+
+  Future<void> shiftPlanWeekFrom(int planId, int fromWeekday) async {
+    await customUpdate(
+      'UPDATE plan_workouts SET weekday = (weekday % 7) + 1 '
+      'WHERE plan_id = ? AND weekday IS NOT NULL AND weekday >= ?',
+      variables: [Variable.withInt(planId), Variable.withInt(fromWeekday)],
+      updates: {planWorkouts},
+    );
+  }
+
   // ── Home screen: planned exercises for a date ─────────────────────────────
 
   Stream<Set<int>> watchPlannedCategoryIdsForDate(String dateStr) {

@@ -71,12 +71,16 @@ class PlanDetailScreen extends ConsumerWidget {
             final pws = byWeekday[wd] ?? [];
             return _DayRow(
               label: _days[i],
+              nextLabel: _days[wd % 7],
               assignments: pws
                   .map((pw) => (id: pw.id, workout: workoutById(pw.workoutId)))
                   .toList(),
               onAdd: () => _showAddWorkoutSheet(context, ref, weekday: wd),
               onRemove: (id) => ref.removeWorkoutFromPlan(id),
               onTap: (workoutId) => context.push('/workouts/$workoutId'),
+              onShift: (cascade) => cascade
+                  ? ref.shiftPlanWeekFrom(planId, wd)
+                  : ref.shiftPlanDay(planId, wd),
             );
           }),
 
@@ -170,7 +174,7 @@ class PlanDetailScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _pickDate(BuildContext context, WidgetRef ref) async {
+Future<void> _pickDate(BuildContext context, WidgetRef ref) async {
     final picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
@@ -261,15 +265,19 @@ class PlanDetailScreen extends ConsumerWidget {
 
 class _DayRow extends StatefulWidget {
   final String label;
+  final String nextLabel;
   final List<({int id, Workout workout})> assignments;
   final VoidCallback onAdd;
+  final void Function(bool cascade) onShift;
   final void Function(int assignmentId) onRemove;
   final void Function(int workoutId) onTap;
 
   const _DayRow({
     required this.label,
+    required this.nextLabel,
     required this.assignments,
     required this.onAdd,
+    required this.onShift,
     required this.onRemove,
     required this.onTap,
   });
@@ -329,6 +337,29 @@ class _DayRowState extends State<_DayRow> {
                     _expanded ? Icons.expand_less : Icons.expand_more,
                     size: 20,
                     color: Colors.white.withValues(alpha: 0.3),
+                  ),
+                if (hasItems)
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: PopupMenuButton<bool>(
+                      icon: const Icon(Icons.east, size: 18),
+                      padding: EdgeInsets.zero,
+                      tooltip: 'Shift forward',
+                      iconColor: Colors.white.withValues(alpha: 0.5),
+                      onSelected: widget.onShift,
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                          value: false,
+                          child: Text(
+                              'Shift ${widget.label} → ${widget.nextLabel}'),
+                        ),
+                        PopupMenuItem(
+                          value: true,
+                          child: Text('Shift ${widget.label} onward'),
+                        ),
+                      ],
+                    ),
                   ),
                 SizedBox(
                   width: 32,

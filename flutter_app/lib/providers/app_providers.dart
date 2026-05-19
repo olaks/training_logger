@@ -303,4 +303,7 @@ extension DbMutations on WidgetRef {
   Future<int>  assignWorkoutToPlan(int planId, int workoutId, {int? weekday, String? dateStr}) =>
       db.assignWorkoutToPlan(planId, workoutId, weekday: weekday, dateStr: dateStr);
   Future<int>  removeWorkoutFromPlan(int assignmentId) => db.removeWorkoutFromPlan(assignmentId);
+  Future<void> shiftPlanDay(int planId, int weekday) => db.shiftPlanDay(planId, weekday);
+  Future<void> shiftPlanWeekFrom(int planId, int fromWeekday) =>
+      db.shiftPlanWeekFrom(planId, fromWeekday);
 }
