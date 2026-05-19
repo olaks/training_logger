@@ -82,7 +82,13 @@ class HomeScreen extends ConsumerWidget {
                   children: [
                     // ── Planned workout sections ─────────────────────────
                     for (final (workout, exercises) in plannedWorkouts) ...[
-                      _SectionHeader(name: workout.name),
+                      _SectionHeader(
+                        name: workout.name,
+                        onStart: exercises.isEmpty
+                            ? null
+                            : () => context.push(
+                                '/workout-session/${workout.id}/$dateStr'),
+                      ),
                       const SizedBox(height: 4),
                       ...exercises.map((cat) => Padding(
                             padding: const EdgeInsets.only(bottom: 8),
@@ -467,21 +473,47 @@ class _NoteDialogState extends State<_NoteDialog> {
 
 class _SectionHeader extends StatelessWidget {
   final String name;
-  const _SectionHeader({required this.name});
+  final VoidCallback? onStart;
+  const _SectionHeader({required this.name, this.onStart});
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 0, 0, 0),
-        child: Text(
-          name.toUpperCase(),
-          style: TextStyle(
-            fontSize: 11,
-            letterSpacing: 1.4,
-            fontWeight: FontWeight.w700,
-            color: Theme.of(context).colorScheme.primary,
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 0, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name.toUpperCase(),
+              style: TextStyle(
+                fontSize: 11,
+                letterSpacing: 1.4,
+                fontWeight: FontWeight.w700,
+                color: primary,
+              ),
+            ),
           ),
-        ),
-      );
+          if (onStart != null)
+            TextButton.icon(
+              onPressed: onStart,
+              icon: const Icon(Icons.play_arrow, size: 16),
+              label: const Text('START'),
+              style: TextButton.styleFrom(
+                foregroundColor: primary,
+                minimumSize: const Size(0, 28),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                textStyle: const TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w700),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── Day nav bar ─────────────────────────────────────────────────────────────
