@@ -240,6 +240,12 @@ class $ExerciseCategoriesTable extends ExerciseCategories
   late final GeneratedColumn<String> groupName = GeneratedColumn<String>(
       'group_name', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _descriptionMeta =
+      const VerificationMeta('description');
+  @override
+  late final GeneratedColumn<String> description = GeneratedColumn<String>(
+      'description', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _imageDataMeta =
       const VerificationMeta('imageData');
   @override
@@ -256,7 +262,7 @@ class $ExerciseCategoriesTable extends ExerciseCategories
       defaultValue: const Constant(0));
   @override
   List<GeneratedColumn> get $columns =>
-      [id, name, groupName, imageData, exerciseType];
+      [id, name, groupName, description, imageData, exerciseType];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -279,6 +285,12 @@ class $ExerciseCategoriesTable extends ExerciseCategories
     if (data.containsKey('group_name')) {
       context.handle(_groupNameMeta,
           groupName.isAcceptableOrUnknown(data['group_name']!, _groupNameMeta));
+    }
+    if (data.containsKey('description')) {
+      context.handle(
+          _descriptionMeta,
+          description.isAcceptableOrUnknown(
+              data['description']!, _descriptionMeta));
     }
     if (data.containsKey('image_data')) {
       context.handle(_imageDataMeta,
@@ -305,6 +317,8 @@ class $ExerciseCategoriesTable extends ExerciseCategories
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       groupName: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}group_name']),
+      description: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}description']),
       imageData: attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}image_data']),
       exerciseType: attachedDatabase.typeMapping
@@ -323,12 +337,14 @@ class ExerciseCategory extends DataClass
   final int id;
   final String name;
   final String? groupName;
+  final String? description;
   final Uint8List? imageData;
   final int exerciseType;
   const ExerciseCategory(
       {required this.id,
       required this.name,
       this.groupName,
+      this.description,
       this.imageData,
       required this.exerciseType});
   @override
@@ -338,6 +354,9 @@ class ExerciseCategory extends DataClass
     map['name'] = Variable<String>(name);
     if (!nullToAbsent || groupName != null) {
       map['group_name'] = Variable<String>(groupName);
+    }
+    if (!nullToAbsent || description != null) {
+      map['description'] = Variable<String>(description);
     }
     if (!nullToAbsent || imageData != null) {
       map['image_data'] = Variable<Uint8List>(imageData);
@@ -353,6 +372,9 @@ class ExerciseCategory extends DataClass
       groupName: groupName == null && nullToAbsent
           ? const Value.absent()
           : Value(groupName),
+      description: description == null && nullToAbsent
+          ? const Value.absent()
+          : Value(description),
       imageData: imageData == null && nullToAbsent
           ? const Value.absent()
           : Value(imageData),
@@ -367,6 +389,7 @@ class ExerciseCategory extends DataClass
       id: serializer.fromJson<int>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       groupName: serializer.fromJson<String?>(json['groupName']),
+      description: serializer.fromJson<String?>(json['description']),
       imageData: serializer.fromJson<Uint8List?>(json['imageData']),
       exerciseType: serializer.fromJson<int>(json['exerciseType']),
     );
@@ -378,6 +401,7 @@ class ExerciseCategory extends DataClass
       'id': serializer.toJson<int>(id),
       'name': serializer.toJson<String>(name),
       'groupName': serializer.toJson<String?>(groupName),
+      'description': serializer.toJson<String?>(description),
       'imageData': serializer.toJson<Uint8List?>(imageData),
       'exerciseType': serializer.toJson<int>(exerciseType),
     };
@@ -387,12 +411,14 @@ class ExerciseCategory extends DataClass
           {int? id,
           String? name,
           Value<String?> groupName = const Value.absent(),
+          Value<String?> description = const Value.absent(),
           Value<Uint8List?> imageData = const Value.absent(),
           int? exerciseType}) =>
       ExerciseCategory(
         id: id ?? this.id,
         name: name ?? this.name,
         groupName: groupName.present ? groupName.value : this.groupName,
+        description: description.present ? description.value : this.description,
         imageData: imageData.present ? imageData.value : this.imageData,
         exerciseType: exerciseType ?? this.exerciseType,
       );
@@ -401,6 +427,8 @@ class ExerciseCategory extends DataClass
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
       groupName: data.groupName.present ? data.groupName.value : this.groupName,
+      description:
+          data.description.present ? data.description.value : this.description,
       imageData: data.imageData.present ? data.imageData.value : this.imageData,
       exerciseType: data.exerciseType.present
           ? data.exerciseType.value
@@ -414,6 +442,7 @@ class ExerciseCategory extends DataClass
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('groupName: $groupName, ')
+          ..write('description: $description, ')
           ..write('imageData: $imageData, ')
           ..write('exerciseType: $exerciseType')
           ..write(')'))
@@ -421,8 +450,8 @@ class ExerciseCategory extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, name, groupName, $driftBlobEquality.hash(imageData), exerciseType);
+  int get hashCode => Object.hash(id, name, groupName, description,
+      $driftBlobEquality.hash(imageData), exerciseType);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -430,6 +459,7 @@ class ExerciseCategory extends DataClass
           other.id == this.id &&
           other.name == this.name &&
           other.groupName == this.groupName &&
+          other.description == this.description &&
           $driftBlobEquality.equals(other.imageData, this.imageData) &&
           other.exerciseType == this.exerciseType);
 }
@@ -438,12 +468,14 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
   final Value<int> id;
   final Value<String> name;
   final Value<String?> groupName;
+  final Value<String?> description;
   final Value<Uint8List?> imageData;
   final Value<int> exerciseType;
   const ExerciseCategoriesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.groupName = const Value.absent(),
+    this.description = const Value.absent(),
     this.imageData = const Value.absent(),
     this.exerciseType = const Value.absent(),
   });
@@ -451,6 +483,7 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
     this.id = const Value.absent(),
     required String name,
     this.groupName = const Value.absent(),
+    this.description = const Value.absent(),
     this.imageData = const Value.absent(),
     this.exerciseType = const Value.absent(),
   }) : name = Value(name);
@@ -458,6 +491,7 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
     Expression<int>? id,
     Expression<String>? name,
     Expression<String>? groupName,
+    Expression<String>? description,
     Expression<Uint8List>? imageData,
     Expression<int>? exerciseType,
   }) {
@@ -465,6 +499,7 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (groupName != null) 'group_name': groupName,
+      if (description != null) 'description': description,
       if (imageData != null) 'image_data': imageData,
       if (exerciseType != null) 'exercise_type': exerciseType,
     });
@@ -474,12 +509,14 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
       {Value<int>? id,
       Value<String>? name,
       Value<String?>? groupName,
+      Value<String?>? description,
       Value<Uint8List?>? imageData,
       Value<int>? exerciseType}) {
     return ExerciseCategoriesCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
       groupName: groupName ?? this.groupName,
+      description: description ?? this.description,
       imageData: imageData ?? this.imageData,
       exerciseType: exerciseType ?? this.exerciseType,
     );
@@ -497,6 +534,9 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
     if (groupName.present) {
       map['group_name'] = Variable<String>(groupName.value);
     }
+    if (description.present) {
+      map['description'] = Variable<String>(description.value);
+    }
     if (imageData.present) {
       map['image_data'] = Variable<Uint8List>(imageData.value);
     }
@@ -512,6 +552,7 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('groupName: $groupName, ')
+          ..write('description: $description, ')
           ..write('imageData: $imageData, ')
           ..write('exerciseType: $exerciseType')
           ..write(')'))
@@ -2862,6 +2903,7 @@ typedef $$ExerciseCategoriesTableCreateCompanionBuilder
   Value<int> id,
   required String name,
   Value<String?> groupName,
+  Value<String?> description,
   Value<Uint8List?> imageData,
   Value<int> exerciseType,
 });
@@ -2870,6 +2912,7 @@ typedef $$ExerciseCategoriesTableUpdateCompanionBuilder
   Value<int> id,
   Value<String> name,
   Value<String?> groupName,
+  Value<String?> description,
   Value<Uint8List?> imageData,
   Value<int> exerciseType,
 });
@@ -2944,6 +2987,9 @@ class $$ExerciseCategoriesTableFilterComposer
 
   ColumnFilters<String> get groupName => $composableBuilder(
       column: $table.groupName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<Uint8List> get imageData => $composableBuilder(
       column: $table.imageData, builder: (column) => ColumnFilters(column));
@@ -3033,6 +3079,9 @@ class $$ExerciseCategoriesTableOrderingComposer
   ColumnOrderings<String> get groupName => $composableBuilder(
       column: $table.groupName, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<Uint8List> get imageData => $composableBuilder(
       column: $table.imageData, builder: (column) => ColumnOrderings(column));
 
@@ -3058,6 +3107,9 @@ class $$ExerciseCategoriesTableAnnotationComposer
 
   GeneratedColumn<String> get groupName =>
       $composableBuilder(column: $table.groupName, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => column);
 
   GeneratedColumn<Uint8List> get imageData =>
       $composableBuilder(column: $table.imageData, builder: (column) => column);
@@ -3160,6 +3212,7 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
             Value<int> id = const Value.absent(),
             Value<String> name = const Value.absent(),
             Value<String?> groupName = const Value.absent(),
+            Value<String?> description = const Value.absent(),
             Value<Uint8List?> imageData = const Value.absent(),
             Value<int> exerciseType = const Value.absent(),
           }) =>
@@ -3167,6 +3220,7 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
             id: id,
             name: name,
             groupName: groupName,
+            description: description,
             imageData: imageData,
             exerciseType: exerciseType,
           ),
@@ -3174,6 +3228,7 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
             Value<int> id = const Value.absent(),
             required String name,
             Value<String?> groupName = const Value.absent(),
+            Value<String?> description = const Value.absent(),
             Value<Uint8List?> imageData = const Value.absent(),
             Value<int> exerciseType = const Value.absent(),
           }) =>
@@ -3181,6 +3236,7 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
             id: id,
             name: name,
             groupName: groupName,
+            description: description,
             imageData: imageData,
             exerciseType: exerciseType,
           ),

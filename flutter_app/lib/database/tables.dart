@@ -38,6 +38,7 @@ class ExerciseCategories extends Table {
   IntColumn  get id           => integer().autoIncrement()();
   TextColumn get name         => text()();
   TextColumn get groupName    => text().nullable()();
+  TextColumn get description  => text().nullable()();
   BlobColumn get imageData    => blob().nullable()();
   // 0 = standard (weight/reps/time), 1 = climbing (grade)
   IntColumn  get exerciseType => integer().withDefault(const Constant(0))();

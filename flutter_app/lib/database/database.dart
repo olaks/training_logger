@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -113,6 +113,9 @@ class AppDatabase extends _$AppDatabase {
       if (from < 13) {
         await m.createTable(inspirations);
       }
+      if (from < 14) {
+        await m.addColumn(exerciseCategories, exerciseCategories.description);
+      }
     },
   );
 
@@ -189,15 +192,16 @@ class AppDatabase extends _$AppDatabase {
       (select(exerciseCategories)..where((t) => t.id.equals(id)))
           .watchSingleOrNull();
 
-  Future<int> insertCategory(String name, {String? groupName}) =>
+  Future<int> insertCategory(String name, {String? groupName, String? description}) =>
       into(exerciseCategories).insert(ExerciseCategoriesCompanion.insert(
         name: name,
         groupName: Value(groupName),
+        description: Value(description),
       ));
 
   /// Returns existing category id if name matches (case-insensitive),
   /// otherwise inserts a new one.
-  Future<int> insertOrGetCategory(String name, {String? groupName}) async {
+  Future<int> insertOrGetCategory(String name, {String? groupName, String? description}) async {
     final existing = await (select(exerciseCategories)
           ..where((t) => t.name.like(name)))
         .get();
@@ -205,7 +209,7 @@ class AppDatabase extends _$AppDatabase {
         .where((c) => c.name.toLowerCase() == name.toLowerCase())
         .firstOrNull;
     if (match != null) return match.id;
-    return insertCategory(name, groupName: groupName);
+    return insertCategory(name, groupName: groupName, description: description);
   }
 
   Future<int> renameCategory(int id, String name) =>
@@ -215,6 +219,10 @@ class AppDatabase extends _$AppDatabase {
   Future<int> updateCategoryGroup(int id, String? groupName) =>
       (update(exerciseCategories)..where((t) => t.id.equals(id)))
           .write(ExerciseCategoriesCompanion(groupName: Value(groupName)));
+
+  Future<int> updateCategoryDescription(int id, String? description) =>
+      (update(exerciseCategories)..where((t) => t.id.equals(id)))
+          .write(ExerciseCategoriesCompanion(description: Value(description)));
 
   Future<int> deleteCategory(int id) =>
       (delete(exerciseCategories)..where((t) => t.id.equals(id))).go();
@@ -417,9 +425,10 @@ class AppDatabase extends _$AppDatabase {
 
       return <String, dynamic>{
         'name': cat.name,
-        if (cat.groupName  != null) 'group':        cat.groupName,
-        if (cat.imageData  != null) 'image':        base64.encode(cat.imageData!),
-        if (cat.exerciseType != 0)  'exerciseType': cat.exerciseType,
+        if (cat.groupName   != null) 'group':        cat.groupName,
+        if (cat.description != null) 'description':  cat.description,
+        if (cat.imageData   != null) 'image':        base64.encode(cat.imageData!),
+        if (cat.exerciseType != 0)   'exerciseType': cat.exerciseType,
         'sets': sets,
       };
     }).toList();
@@ -491,10 +500,11 @@ class AppDatabase extends _$AppDatabase {
     await transaction(() async {
       // ── Exercises + sets ──────────────────────────────────────────────
       for (final ex in exercises) {
-        final name     = ex['name']  as String;
-        final group    = ex['group'] as String?;
-        final imageB64 = ex['image'] as String?;
-        final exType   = (ex['exerciseType'] as int?) ?? 0;
+        final name        = ex['name']        as String;
+        final group       = ex['group']       as String?;
+        final description = ex['description'] as String?;
+        final imageB64    = ex['image']       as String?;
+        final exType      = (ex['exerciseType'] as int?) ?? 0;
 
         int catId;
         final existing = await (select(exerciseCategories)
@@ -502,7 +512,7 @@ class AppDatabase extends _$AppDatabase {
             .getSingleOrNull();
 
         if (existing == null) {
-          catId = await insertCategory(name, groupName: group);
+          catId = await insertCategory(name, groupName: group, description: description);
           if (imageB64 != null) {
             await updateCategoryImage(catId, base64.decode(imageB64));
           }
@@ -515,11 +525,16 @@ class AppDatabase extends _$AppDatabase {
             groupName: existing.groupName == null && group != null
                 ? Value(group)
                 : const Value.absent(),
+            description: existing.description == null && description != null
+                ? Value(description)
+                : const Value.absent(),
             imageData: existing.imageData == null && imageB64 != null
                 ? Value(base64.decode(imageB64))
                 : const Value.absent(),
           );
-          if (patch.groupName.present || patch.imageData.present) {
+          if (patch.groupName.present ||
+              patch.description.present ||
+              patch.imageData.present) {
             await (update(exerciseCategories)
                   ..where((t) => t.id.equals(catId)))
                 .write(patch);

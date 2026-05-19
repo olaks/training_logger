@@ -209,10 +209,12 @@ final restTimerProvider = StateNotifierProvider<RestTimerNotifier, RestTimerStat
 extension DbMutations on WidgetRef {
   AppDatabase get db => read(dbProvider);
 
-  Future<void> addCategory(String name, {String? groupName}) =>
-      db.insertOrGetCategory(name, groupName: groupName);
+  Future<void> addCategory(String name, {String? groupName, String? description}) =>
+      db.insertOrGetCategory(name, groupName: groupName, description: description);
   Future<void> renameCategory(int id, String name) => db.renameCategory(id, name);
   Future<void> updateCategoryGroup(int id, String? group) => db.updateCategoryGroup(id, group);
+  Future<void> updateCategoryDescription(int id, String? description) =>
+      db.updateCategoryDescription(id, description);
   Future<void> removeCategory(int id)              => db.deleteCategory(id);
 
   /// Pass [grade] for climbing exercises (only grade + rpe are stored).

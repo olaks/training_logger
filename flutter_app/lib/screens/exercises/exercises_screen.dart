@@ -213,6 +213,9 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                             } else if (action == _ExAction.changeCategory) {
                               _showChangeCategoryDialog(
                                   context, cat.id, cat.groupName, groups);
+                            } else if (action == _ExAction.editDescription) {
+                              _showDescriptionDialog(
+                                  context, cat.id, cat.name, cat.description);
                             } else if (action == _ExAction.addToWorkout) {
                               _showAddToWorkoutSheet(context, cat.id, cat.name);
                             } else {
@@ -226,6 +229,9 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                             PopupMenuItem(
                                 value: _ExAction.changeCategory,
                                 child: Text('Change category')),
+                            PopupMenuItem(
+                                value: _ExAction.editDescription,
+                                child: Text('Edit description')),
                             PopupMenuItem(
                                 value: _ExAction.addToWorkout,
                                 child: Text('Add to workout')),
@@ -375,40 +381,54 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
   void _showAddDialog(BuildContext context, List<String> existingGroups) {
     final nameCtrl  = TextEditingController();
     final groupCtrl = TextEditingController();
+    final descCtrl  = TextEditingController();
 
     showDialog(
       context: context,
       useRootNavigator: false,
       builder: (_) => AlertDialog(
         title: const Text('New Exercise'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Exercise name'),
-              textCapitalization: TextCapitalization.words,
-              onSubmitted: (_) => _add(context, nameCtrl.text, groupCtrl.text),
-            ),
-            const SizedBox(height: 12),
-            Autocomplete<String>(
-              optionsBuilder: (v) => existingGroups.where((g) =>
-                  g.toLowerCase().contains(v.text.toLowerCase())),
-              onSelected: (g) => groupCtrl.text = g,
-              fieldViewBuilder: (_, ctrl, focus, __) {
-                return TextField(
-                  controller: ctrl,
-                  focusNode: focus,
-                  decoration: const InputDecoration(
-                      labelText: 'Category (optional)',
-                      hintText: 'e.g. Fingers, Back…'),
-                  textCapitalization: TextCapitalization.words,
-                  onChanged: (v) => groupCtrl.text = v,
-                );
-              },
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Exercise name'),
+                textCapitalization: TextCapitalization.words,
+                onSubmitted: (_) =>
+                    _add(context, nameCtrl.text, groupCtrl.text, descCtrl.text),
+              ),
+              const SizedBox(height: 12),
+              Autocomplete<String>(
+                optionsBuilder: (v) => existingGroups.where((g) =>
+                    g.toLowerCase().contains(v.text.toLowerCase())),
+                onSelected: (g) => groupCtrl.text = g,
+                fieldViewBuilder: (_, ctrl, focus, __) {
+                  return TextField(
+                    controller: ctrl,
+                    focusNode: focus,
+                    decoration: const InputDecoration(
+                        labelText: 'Category (optional)',
+                        hintText: 'e.g. Fingers, Back…'),
+                    textCapitalization: TextCapitalization.words,
+                    onChanged: (v) => groupCtrl.text = v,
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'Description (optional)',
+                    hintText: 'Cues, setup, notes…'),
+                textCapitalization: TextCapitalization.sentences,
+                minLines: 2,
+                maxLines: 5,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -416,14 +436,14 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
               child: const Text('Cancel')),
           TextButton(
               onPressed: () =>
-                  _add(context, nameCtrl.text, groupCtrl.text),
+                  _add(context, nameCtrl.text, groupCtrl.text, descCtrl.text),
               child: const Text('Add')),
         ],
       ),
     );
   }
 
-  void _add(BuildContext context, String name, String group) {
+  void _add(BuildContext context, String name, String group, String description) {
     if (name.trim().isEmpty) return;
     final trimmed = name.trim();
     final all = ref.read(categoriesProvider).value ?? [];
@@ -436,7 +456,8 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
       return;
     }
     final g = group.trim().isEmpty ? null : group.trim();
-    ref.addCategory(trimmed, groupName: g);
+    final d = description.trim().isEmpty ? null : description.trim();
+    ref.addCategory(trimmed, groupName: g, description: d);
     Navigator.pop(context);
   }
 
@@ -514,6 +535,41 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     if (name.trim().isEmpty) return;
     ref.renameCategory(id, name.trim());
     Navigator.pop(context);
+  }
+
+  void _showDescriptionDialog(
+      BuildContext context, int id, String name, String? current) {
+    final ctrl = TextEditingController(text: current ?? '');
+    showDialog(
+      context: context,
+      useRootNavigator: false,
+      builder: (_) => AlertDialog(
+        title: Text('Description — $name'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+              labelText: 'Description',
+              hintText: 'Cues, setup, notes… (leave empty to clear)'),
+          textCapitalization: TextCapitalization.sentences,
+          minLines: 3,
+          maxLines: 8,
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              final v = ctrl.text.trim();
+              ref.updateCategoryDescription(id, v.isEmpty ? null : v);
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showAddToWorkoutSheet(BuildContext context, int categoryId, String exerciseName) {
@@ -890,7 +946,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
 
 enum _DataAction { inspirations, exportBackup, importBackup, importFitNotes, appearance, help }
 
-enum _ExAction { rename, changeCategory, addToWorkout, delete }
+enum _ExAction { rename, changeCategory, editDescription, addToWorkout, delete }
 
 enum _ImageAction { gallery, camera, remove }
 
