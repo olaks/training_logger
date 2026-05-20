@@ -399,6 +399,126 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  // ── Import plan ───────────────────────────────────────────────────────────
+
+  /// Imports a single-plan JSON produced by [exportPlanToJson].
+  ///
+  /// - Plan: matched by name. If present, the plan id is preserved and its
+  ///   weekday/date assignments are REPLACED. Otherwise a new plan is created.
+  /// - Workouts: merged by name. Existing workouts are reused as-is; only
+  ///   workouts with names not yet in the library are created (with their
+  ///   exercise list).
+  /// - Exercise categories: merged by name; missing ones are created.
+  ///
+  /// Returns the plan id.
+  Future<int> importPlanFromJson(String jsonStr) async {
+    final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+    final planJson = data['plan'] as Map<String, dynamic>?;
+    if (planJson == null) {
+      throw const FormatException('Not a plan export: missing "plan" key.');
+    }
+    final planName = planJson['name'] as String?;
+    if (planName == null || planName.isEmpty) {
+      throw const FormatException('Plan export missing "name".');
+    }
+
+    final workoutsJson =
+        (planJson['workouts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final assignmentsJson =
+        (planJson['assignments'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+
+    late int planId;
+    await transaction(() async {
+      // ── Plan ──────────────────────────────────────────────────────────
+      final existingPlan = await (select(plans)
+            ..where((t) => t.name.equals(planName)))
+          .getSingleOrNull();
+      if (existingPlan == null) {
+        planId = await into(plans).insert(PlansCompanion.insert(name: planName));
+      } else {
+        planId = existingPlan.id;
+        await (delete(planWorkouts)..where((t) => t.planId.equals(planId))).go();
+      }
+
+      // ── Workouts (merge by name; create missing with their exercises) ─
+      final workoutIdByName = <String, int>{};
+      final catIdByName     = <String, int>{};
+
+      for (final w in workoutsJson) {
+        final name  = w['name'] as String;
+        final notes = (w['notes'] as String?) ?? '';
+
+        final existingW = await (select(workouts)
+              ..where((t) => t.name.equals(name)))
+            .getSingleOrNull();
+
+        int wId;
+        if (existingW != null) {
+          wId = existingW.id;
+        } else {
+          wId = await into(workouts).insert(
+              WorkoutsCompanion.insert(name: name, notes: Value(notes)));
+
+          final exList =
+              (w['exercises'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+          for (final we in exList) {
+            final exName = we['name'] as String;
+            final group  = we['group'] as String?;
+
+            int catId;
+            if (catIdByName.containsKey(exName)) {
+              catId = catIdByName[exName]!;
+            } else {
+              final existingCat = await (select(exerciseCategories)
+                    ..where((t) => t.name.equals(exName)))
+                  .getSingleOrNull();
+              catId = existingCat?.id ??
+                  await insertCategory(exName, groupName: group);
+              catIdByName[exName] = catId;
+            }
+
+            await into(workoutExercises).insert(
+              WorkoutExercisesCompanion.insert(
+                workoutId:  wId,
+                categoryId: catId,
+                targetSets: Value((we['targetSets'] as num?)?.toInt()),
+                targetReps: Value((we['targetReps'] as num?)?.toInt()),
+                sortOrder:  Value((we['sortOrder']  as num?)?.toInt() ?? 0),
+              ),
+            );
+          }
+        }
+        workoutIdByName[name] = wId;
+      }
+
+      // ── Assignments ───────────────────────────────────────────────────
+      for (final a in assignmentsJson) {
+        final woName = a['workout'] as String?;
+        if (woName == null || woName.isEmpty) continue;
+
+        int? woId = workoutIdByName[woName];
+        if (woId == null) {
+          // Fallback for hand-edited JSON that references a workout
+          // already in the library but not listed under "workouts".
+          final existing = await (select(workouts)
+                ..where((t) => t.name.equals(woName)))
+              .getSingleOrNull();
+          if (existing == null) continue;
+          woId = existing.id;
+          workoutIdByName[woName] = woId;
+        }
+
+        await into(planWorkouts).insert(PlanWorkoutsCompanion.insert(
+          planId:    planId,
+          workoutId: woId,
+          weekday:   Value((a['weekday'] as num?)?.toInt()),
+          dateStr:   Value(a['date'] as String?),
+        ));
+      }
+    });
+    return planId;
+  }
+
   // ── Export / Import backup ────────────────────────────────────────────────
 
   Future<String> exportToJson() async {

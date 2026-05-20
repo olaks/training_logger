@@ -300,6 +300,7 @@ extension DbMutations on WidgetRef {
 
   // Plans
   Future<int>  insertPlan(String name)              => db.insertPlan(name);
+  Future<int>  importPlanFromJson(String jsonStr)   => db.importPlanFromJson(jsonStr);
   Future<int>  renamePlan(int id, String name)      => db.renamePlan(id, name);
   Future<void> deletePlan(int id)                   => db.deletePlan(id);
   Future<int>  assignWorkoutToPlan(int planId, int workoutId, {int? weekday, String? dateStr}) =>

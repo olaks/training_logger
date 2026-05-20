@@ -1,13 +1,22 @@
+import 'dart:convert';
+import 'dart:io' as io;
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/app_providers.dart';
 
-class PlansScreen extends ConsumerWidget {
+class PlansScreen extends ConsumerStatefulWidget {
   const PlansScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PlansScreen> createState() => _PlansScreenState();
+}
+
+class _PlansScreenState extends ConsumerState<PlansScreen> {
+  @override
+  Widget build(BuildContext context) {
     final workouts = ref.watch(allWorkoutsProvider).value ?? [];
     final plans    = ref.watch(allPlansProvider).value ?? [];
 
@@ -45,6 +54,7 @@ class PlansScreen extends ConsumerWidget {
             title: 'TRAINING PLANS',
             onAdd: () => _showCreateDialog(
               context, ref, 'New Plan', ref.insertPlan),
+            onImport: _importPlan,
           ),
           if (plans.isEmpty)
             _EmptyHint('No plans yet.')
@@ -135,6 +145,72 @@ class PlansScreen extends ConsumerWidget {
     Navigator.pop(context);
   }
 
+  Future<void> _importPlan() async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      withData: kIsWeb,
+      withReadStream: false,
+    );
+    if (result == null || !mounted) return;
+
+    String jsonStr;
+    try {
+      if (kIsWeb) {
+        jsonStr = utf8.decode(result.files.single.bytes!);
+      } else {
+        jsonStr = await io.File(result.files.single.path!).readAsString();
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not read file: $e')));
+      return;
+    }
+
+    // If a plan with this name already exists, confirm before clobbering
+    // its existing schedule.
+    String? planName;
+    try {
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+      planName = (data['plan'] as Map<String, dynamic>?)?['name'] as String?;
+    } catch (_) {}
+    if (planName != null && mounted) {
+      final existing = ref.read(allPlansProvider).value ?? [];
+      final clash = existing.any((p) => p.name == planName);
+      if (clash) {
+        final ok = await showDialog<bool>(
+          context: context,
+          useRootNavigator: false,
+          builder: (_) => AlertDialog(
+            title: Text('Replace "$planName"?'),
+            content: const Text(
+                'A plan with this name already exists. Importing will replace '
+                'its current schedule. Workouts in the library are kept as-is; '
+                'any workouts not yet in the library will be added.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Replace')),
+            ],
+          ),
+        );
+        if (ok != true || !mounted) return;
+      }
+    }
+
+    try {
+      final planId = await ref.read(dbProvider).importPlanFromJson(jsonStr);
+      messenger.showSnackBar(const SnackBar(content: Text('Plan imported')));
+      if (mounted) context.push('/plans/$planId');
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Import failed: $e')));
+    }
+  }
+
   void _showRenameDialog(BuildContext context, WidgetRef ref, String current,
       void Function(String) onSave) {
     final ctrl = TextEditingController(text: current);
@@ -201,7 +277,8 @@ class PlansScreen extends ConsumerWidget {
 class _SectionHeader extends StatelessWidget {
   final String title;
   final VoidCallback onAdd;
-  const _SectionHeader({required this.title, required this.onAdd});
+  final VoidCallback? onImport;
+  const _SectionHeader({required this.title, required this.onAdd, this.onImport});
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -218,6 +295,13 @@ class _SectionHeader extends StatelessWidget {
               ),
             ),
             const Spacer(),
+            if (onImport != null)
+              IconButton(
+                icon: const Icon(Icons.file_upload_outlined, size: 20),
+                onPressed: onImport,
+                color: Theme.of(context).colorScheme.primary,
+                tooltip: 'Import from JSON',
+              ),
             IconButton(
               icon: const Icon(Icons.add, size: 20),
               onPressed: onAdd,
