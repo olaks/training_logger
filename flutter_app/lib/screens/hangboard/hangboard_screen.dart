@@ -39,9 +39,13 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   final _weightCtrl = TextEditingController(text: '0');
 
   // ── Timer state ──────────────────────────────────────────────────────────
+  // Countdown is anchored to wall-clock time so OS scheduling jitter and
+  // platform-channel work (audio, haptics) can't make it drift.
   _Phase _phase = _Phase.idle;
-  int _secondsLeft = 0;
-  int _phaseDuration = 0; // total seconds for current phase (for progress)
+  DateTime? _phaseEnd;          // wall-clock time the current phase ends
+  DateTime? _pausedAt;          // non-null while paused; freezes the display
+  int _phaseDurationSecs = 0;   // total seconds for current phase (progress)
+  int _lastBeepedSecond = -1;   // edge-trigger for the 3/2/1 tick beeps
   int _currentSet = 1;
   int _currentRep = 1;
   bool _isLeftHand = false;
@@ -55,25 +59,49 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   final Map<int, double> _setWeights = {};
 
   // ── Audio ────────────────────────────────────────────────────────────────
-  final _player = AudioPlayer();
-  late final Uint8List _highBeep = _generateTone(880, 0.15);
-  late final Uint8List _lowBeep = _generateTone(440, 0.15);
-  late final Uint8List _tickBeep = _generateTone(660, 0.08);
-  late final Uint8List _doneBeep = _generateTone(1760, 0.4);
+  // One AudioPlayer per beep. Sources are loaded once in initState so each
+  // play is just seek+resume — no temp-file writes, no native re-init.
+  late final AudioPlayer _highPlayer;
+  late final AudioPlayer _lowPlayer;
+  late final AudioPlayer _tickPlayer;
+  late final AudioPlayer _donePlayer;
+
+  @override
+  void initState() {
+    super.initState();
+    _highPlayer = _makePlayer(_generateTone(880,  0.15));
+    _lowPlayer  = _makePlayer(_generateTone(440,  0.15));
+    _tickPlayer = _makePlayer(_generateTone(660,  0.08));
+    _donePlayer = _makePlayer(_generateTone(1760, 0.4));
+  }
+
+  AudioPlayer _makePlayer(Uint8List bytes) {
+    final p = AudioPlayer();
+    // Fire-and-forget configuration. lowLatency uses SoundPool on Android,
+    // letting replays start near-instantly off the platform thread.
+    p.setReleaseMode(ReleaseMode.stop);
+    p.setPlayerMode(PlayerMode.lowLatency);
+    p.setSourceBytes(bytes);
+    return p;
+  }
 
   @override
   void dispose() {
     _timer?.cancel();
     WakelockPlus.disable();
-    _player.dispose();
+    _highPlayer.dispose();
+    _lowPlayer.dispose();
+    _tickPlayer.dispose();
+    _donePlayer.dispose();
     _weightCtrl.dispose();
     super.dispose();
   }
 
   // ── Audio helpers ────────────────────────────────────────────────────────
 
-  void _playBeep(Uint8List wav) =>
-      _player.play(BytesSource(wav), volume: 1.0);
+  void _playBeep(AudioPlayer p) {
+    p.seek(Duration.zero).then((_) => p.resume()).catchError((_) {});
+  }
 
   /// Generates a mono 16-bit 44100 Hz WAV containing a sine wave.
   static Uint8List _generateTone(double freq, double durSecs) {
@@ -121,39 +149,47 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
     _currentRep = 1;
     _isLeftHand = false;
     _paused = false;
+    _pausedAt = null;
     _setWeights.clear();
     _setWeights[1] = double.tryParse(_weightCtrl.text) ?? 0;
     WakelockPlus.enable();
     _enterPhase(_Phase.getReady, 5);
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+    _timer = Timer.periodic(
+        const Duration(milliseconds: 100), (_) => _tick());
   }
 
   void _enterPhase(_Phase phase, int seconds) {
     _phase = phase;
-    _secondsLeft = seconds;
-    _phaseDuration = seconds;
+    _phaseDurationSecs = seconds;
+    _phaseEnd = DateTime.now().add(Duration(seconds: seconds));
+    _lastBeepedSecond = -1;
     setState(() {});
   }
 
   void _tick() {
-    if (_paused) return;
+    if (_paused || _phaseEnd == null) return;
 
-    _secondsLeft--;
+    final remainingMs = _phaseEnd!.difference(DateTime.now()).inMilliseconds;
 
-    // Countdown beeps before work
-    if (_secondsLeft <= 3 &&
-        _secondsLeft > 0 &&
+    if (remainingMs <= 0) {
+      _advance();
+      return;
+    }
+
+    final secsLeft = (remainingMs / 1000).ceil();
+
+    if (secsLeft != _lastBeepedSecond &&
+        secsLeft >= 1 &&
+        secsLeft <= 3 &&
         (_phase == _Phase.getReady ||
             _phase == _Phase.rest ||
             _phase == _Phase.switchRest ||
             _phase == _Phase.setRest)) {
-      _playBeep(_tickBeep);
+      _playBeep(_tickPlayer);
       HapticFeedback.lightImpact();
+      _lastBeepedSecond = secsLeft;
     }
 
-    if (_secondsLeft <= 0) {
-      _advance();
-    }
     setState(() {});
   }
 
@@ -173,22 +209,22 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
         _startWork();
       case _Phase.work:
         if (_rlMode && !_isLeftHand) {
-          _playBeep(_lowBeep);
+          _playBeep(_lowPlayer);
           _enterPhase(_Phase.switchRest, _switchRestSecs);
         } else {
           _isLeftHand = false;
           if (_currentRep < _reps) {
-            _playBeep(_lowBeep);
+            _playBeep(_lowPlayer);
             _enterPhase(_Phase.rest, _restSecs);
           } else {
             _recordSetWeight();
             if (_currentSet < _sets) {
-              _playBeep(_lowBeep);
+              _playBeep(_lowPlayer);
               _enterPhase(_Phase.setRest, _setRestSecs);
             } else {
               _timer?.cancel();
               WakelockPlus.disable();
-              _playBeep(_doneBeep);
+              _playBeep(_donePlayer);
               HapticFeedback.heavyImpact();
               _enterPhase(_Phase.done, 0);
             }
@@ -200,7 +236,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   }
 
   void _startWork() {
-    _playBeep(_highBeep);
+    _playBeep(_highPlayer);
     HapticFeedback.mediumImpact();
     _enterPhase(_Phase.work, _workSecs);
   }
@@ -210,12 +246,30 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
         double.tryParse(_weightCtrl.text) ?? 0;
   }
 
-  void _togglePause() => setState(() => _paused = !_paused);
+  void _togglePause() {
+    setState(() {
+      if (_paused) {
+        if (_pausedAt != null && _phaseEnd != null) {
+          _phaseEnd =
+              _phaseEnd!.add(DateTime.now().difference(_pausedAt!));
+        }
+        _pausedAt = null;
+        _paused = false;
+      } else {
+        _pausedAt = DateTime.now();
+        _paused = true;
+      }
+    });
+  }
 
   void _stop() {
     _timer?.cancel();
     WakelockPlus.disable();
-    setState(() => _phase = _Phase.idle);
+    setState(() {
+      _phase = _Phase.idle;
+      _phaseEnd = null;
+      _pausedAt = null;
+    });
   }
 
   void _skipSetRest() {
@@ -454,8 +508,16 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
         ? (_isLeftHand ? 'LEFT HAND' : 'RIGHT HAND')
         : null;
 
-    final progress = _phaseDuration > 0
-        ? 1.0 - (_secondsLeft / _phaseDuration)
+    // Derive countdown + progress from wall-clock so they always match
+    // regardless of timer-tick jitter.
+    final nowRef    = _pausedAt ?? DateTime.now();
+    final remaining = _phaseEnd == null
+        ? 0
+        : _phaseEnd!.difference(nowRef).inMilliseconds;
+    final safeRem   = remaining < 0 ? 0 : remaining;
+    final secsDisplay = (safeRem / 1000).ceil();
+    final progress = _phaseDurationSecs > 0
+        ? 1.0 - (safeRem / (_phaseDurationSecs * 1000)).clamp(0.0, 1.0)
         : 0.0;
 
     return Column(
@@ -484,8 +546,8 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
         // Big countdown
         Text(
           _phase == _Phase.setRest
-              ? _fmtDuration(_secondsLeft)
-              : '$_secondsLeft',
+              ? _fmtDuration(secsDisplay)
+              : '$secsDisplay',
           style: TextStyle(
             fontSize: _phase == _Phase.setRest ? 64 : 96,
             fontWeight: FontWeight.w800,
