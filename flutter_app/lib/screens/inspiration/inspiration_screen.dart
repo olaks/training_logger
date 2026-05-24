@@ -448,7 +448,7 @@ class _InspirationFormState extends ConsumerState<_InspirationForm> {
             orElse: () => ExerciseCategory(
                 id: _categoryId!, name: '?', exerciseType: 0));
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
