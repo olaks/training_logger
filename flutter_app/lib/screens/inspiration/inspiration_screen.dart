@@ -21,9 +21,9 @@ void showInspirationFormSheet(
     backgroundColor: Theme.of(context).colorScheme.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-    builder: (_) => Padding(
+    builder: (ctx) => Padding(
       padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
       child: _InspirationForm(
         categories: categories,
         existing: existing,
