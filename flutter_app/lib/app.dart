@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/exercises/exercises_screen.dart';
+import 'screens/exercises/edit_exercise_screen.dart';
 import 'screens/detail/exercise_detail_screen.dart';
 import 'screens/import/import_screen.dart';
 import 'screens/plans/plans_screen.dart';
@@ -24,6 +25,12 @@ final router = GoRouter(
         GoRoute(path: '/plans',     builder: (_, __) => const PlansScreen()),
         GoRoute(path: '/hangboard', builder: (_, __) => const HangboardScreen()),
       ],
+    ),
+    GoRoute(
+      path: '/exercise/:id/edit',
+      builder: (_, state) => EditExerciseScreen(
+        categoryId: int.parse(state.pathParameters['id']!),
+      ),
     ),
     GoRoute(
       path: '/exercise/:id/:date',

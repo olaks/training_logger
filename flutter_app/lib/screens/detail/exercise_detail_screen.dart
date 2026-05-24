@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
@@ -31,10 +32,9 @@ class ExerciseDetailScreen extends ConsumerWidget {
           actions: [
             if (cat != null)
               IconButton(
-                icon: const Icon(Icons.info_outline),
-                tooltip: 'Edit description',
-                onPressed: () =>
-                    _showDescriptionDialog(context, ref, name, description),
+                icon: const Icon(Icons.edit_outlined),
+                tooltip: 'Edit exercise',
+                onPressed: () => context.push('/exercise/$categoryId/edit'),
               ),
             if (cat != null)
               PopupMenuButton<int>(
@@ -102,40 +102,6 @@ class ExerciseDetailScreen extends ConsumerWidget {
     );
   }
 
-  void _showDescriptionDialog(
-      BuildContext context, WidgetRef ref, String name, String? current) {
-    final ctrl = TextEditingController(text: current ?? '');
-    showDialog(
-      context: context,
-      useRootNavigator: false,
-      builder: (_) => AlertDialog(
-        title: Text('Description — $name'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-              labelText: 'Description',
-              hintText: 'Cues, setup, notes… (leave empty to clear)'),
-          textCapitalization: TextCapitalization.sentences,
-          minLines: 3,
-          maxLines: 8,
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              final v = ctrl.text.trim();
-              ref.updateCategoryDescription(categoryId, v.isEmpty ? null : v);
-              Navigator.pop(context);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _DescriptionBanner extends StatelessWidget {

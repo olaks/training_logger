@@ -208,14 +208,8 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                               color: Colors.white.withValues(alpha:0.35),
                               size: 20),
                           onSelected: (action) {
-                            if (action == _ExAction.rename) {
-                              _showRenameDialog(context, cat.id, cat.name);
-                            } else if (action == _ExAction.changeCategory) {
-                              _showChangeCategoryDialog(
-                                  context, cat.id, cat.groupName, groups);
-                            } else if (action == _ExAction.editDescription) {
-                              _showDescriptionDialog(
-                                  context, cat.id, cat.name, cat.description);
+                            if (action == _ExAction.edit) {
+                              context.push('/exercise/${cat.id}/edit');
                             } else if (action == _ExAction.addToWorkout) {
                               _showAddToWorkoutSheet(context, cat.id, cat.name);
                             } else {
@@ -224,14 +218,8 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                           },
                           itemBuilder: (_) => const [
                             PopupMenuItem(
-                                value: _ExAction.rename,
-                                child: Text('Rename')),
-                            PopupMenuItem(
-                                value: _ExAction.changeCategory,
-                                child: Text('Change category')),
-                            PopupMenuItem(
-                                value: _ExAction.editDescription,
-                                child: Text('Edit description')),
+                                value: _ExAction.edit,
+                                child: Text('Edit')),
                             PopupMenuItem(
                                 value: _ExAction.addToWorkout,
                                 child: Text('Add to workout')),
@@ -459,117 +447,6 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     final d = description.trim().isEmpty ? null : description.trim();
     ref.addCategory(trimmed, groupName: g, description: d);
     Navigator.pop(context);
-  }
-
-  void _showChangeCategoryDialog(BuildContext context, int id,
-      String? currentGroup, List<String> existingGroups) {
-    final ctrl = TextEditingController(text: currentGroup ?? '');
-    showDialog(
-      context: context,
-      useRootNavigator: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Change Category'),
-        content: Autocomplete<String>(
-          initialValue: TextEditingValue(text: currentGroup ?? ''),
-          optionsBuilder: (v) => existingGroups.where((g) =>
-              g.toLowerCase().contains(v.text.toLowerCase())),
-          onSelected: (g) => ctrl.text = g,
-          fieldViewBuilder: (_, autoCtrl, focus, __) {
-            return TextField(
-              controller: autoCtrl,
-              focusNode: focus,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: 'Category',
-                  hintText: 'e.g. Fingers, Back… (leave empty to remove)'),
-              textCapitalization: TextCapitalization.words,
-              onChanged: (v) => ctrl.text = v,
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => _changeCategory(context, id, ctrl.text),
-              child: const Text('Save')),
-        ],
-      ),
-    );
-  }
-
-  void _changeCategory(BuildContext context, int id, String group) {
-    final g = group.trim().isEmpty ? null : group.trim();
-    ref.updateCategoryGroup(id, g);
-    Navigator.pop(context);
-  }
-
-  void _showRenameDialog(BuildContext context, int id, String currentName) {
-    final ctrl = TextEditingController(text: currentName);
-    showDialog(
-      context: context,
-      useRootNavigator: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Rename Exercise'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Exercise name'),
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (_) => _rename(context, id, ctrl.text),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => _rename(context, id, ctrl.text),
-              child: const Text('Save')),
-        ],
-      ),
-    );
-  }
-
-  void _rename(BuildContext context, int id, String name) {
-    if (name.trim().isEmpty) return;
-    ref.renameCategory(id, name.trim());
-    Navigator.pop(context);
-  }
-
-  void _showDescriptionDialog(
-      BuildContext context, int id, String name, String? current) {
-    final ctrl = TextEditingController(text: current ?? '');
-    showDialog(
-      context: context,
-      useRootNavigator: false,
-      builder: (_) => AlertDialog(
-        title: Text('Description — $name'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-              labelText: 'Description',
-              hintText: 'Cues, setup, notes… (leave empty to clear)'),
-          textCapitalization: TextCapitalization.sentences,
-          minLines: 3,
-          maxLines: 8,
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              final v = ctrl.text.trim();
-              ref.updateCategoryDescription(id, v.isEmpty ? null : v);
-              Navigator.pop(context);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
   }
 
   void _showAddToWorkoutSheet(BuildContext context, int categoryId, String exerciseName) {
@@ -946,7 +823,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
 
 enum _DataAction { inspirations, exportBackup, importBackup, importFitNotes, appearance, help }
 
-enum _ExAction { rename, changeCategory, editDescription, addToWorkout, delete }
+enum _ExAction { edit, addToWorkout, delete }
 
 enum _ImageAction { gallery, camera, remove }
 
