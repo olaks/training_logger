@@ -102,12 +102,16 @@ class TrackState {
   final int timeSecs;
   final int rpe;        // 0 = not set, 1–10
   final int gradeIndex; // −1 = not set; index into grade scale list
+  final int wallAngle;  // 0 = not set, in degrees
+  final String climbName; // '' = not set
   const TrackState({
     this.weightKg = 0,
     this.reps = 0,
     this.timeSecs = 0,
     this.rpe = 0,
     this.gradeIndex = -1,
+    this.wallAngle = 0,
+    this.climbName = '',
   });
 
   TrackState copyWith({
@@ -116,12 +120,16 @@ class TrackState {
     int? timeSecs,
     int? rpe,
     int? gradeIndex,
+    int? wallAngle,
+    String? climbName,
   }) => TrackState(
     weightKg:   weightKg   ?? this.weightKg,
     reps:       reps       ?? this.reps,
     timeSecs:   timeSecs   ?? this.timeSecs,
     rpe:        rpe        ?? this.rpe,
     gradeIndex: gradeIndex ?? this.gradeIndex,
+    wallAngle:  wallAngle  ?? this.wallAngle,
+    climbName:  climbName  ?? this.climbName,
   );
 }
 
@@ -144,6 +152,12 @@ class TrackNotifier extends StateNotifier<TrackState> {
   void decrementGrade() => state = state.copyWith(
       gradeIndex: (state.gradeIndex - 1).clamp(-1, 999));
   void setGradeIndex(int v) => state = state.copyWith(gradeIndex: v.clamp(-1, 999));
+  void incrementWallAngle() => state = state.copyWith(
+      wallAngle: (state.wallAngle + 5).clamp(0, 90));
+  void decrementWallAngle() => state = state.copyWith(
+      wallAngle: (state.wallAngle - 5).clamp(0, 90));
+  void setWallAngle(int v)  => state = state.copyWith(wallAngle: v.clamp(0, 90));
+  void setClimbName(String v) => state = state.copyWith(climbName: v);
   void clear()              => state = const TrackState();
 }
 
@@ -226,12 +240,17 @@ extension DbMutations on WidgetRef {
   }) {
     final e = state.rpe > 0 ? state.rpe : null;
     if (grade != null) {
+      final angle = state.wallAngle > 0 ? state.wallAngle : null;
+      final trimmedName = state.climbName.trim();
+      final name = trimmedName.isEmpty ? null : trimmedName;
       return db.insertSet(WorkoutSetsCompanion.insert(
         categoryId: categoryId,
         dateStr:    dateStr,
         timestamp:  DateTime.now().millisecondsSinceEpoch,
         grade:      Value(grade),
         rpe:        Value(e),
+        wallAngle:  Value(angle),
+        climbName:  Value(name),
       ));
     }
     final w = state.weightKg != 0 ? state.weightKg : null;

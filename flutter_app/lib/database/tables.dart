@@ -54,6 +54,8 @@ class WorkoutSets extends Table {
   IntColumn  get timeSecs   => integer().nullable()();
   IntColumn  get rpe        => integer().nullable()(); // 1–10, null = not recorded
   TextColumn get grade      => text().nullable()();   // climbing grade string, null for standard sets
+  IntColumn  get wallAngle  => integer().nullable()(); // climbing wall angle in degrees, null = not recorded
+  TextColumn get climbName  => text().nullable()();   // climbing route/problem name, null = not recorded
 }
 
 // ── Day notes (one free-text note per calendar day) ───────────────────────────

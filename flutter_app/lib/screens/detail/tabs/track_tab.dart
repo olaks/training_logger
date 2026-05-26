@@ -60,6 +60,8 @@ class _TrackTabState extends ConsumerState<TrackTab> {
   void _fillFrom(WorkoutSet s, TrackNotifier notifier, List<String> grades, bool isClimbing) {
     if (isClimbing && s.grade != null) {
       notifier.setGradeIndex(gradeToIndex(s.grade!, grades));
+      notifier.setWallAngle(s.wallAngle ?? 0);
+      notifier.setClimbName(s.climbName ?? '');
     } else {
       notifier.setWeight(s.weightKg ?? 0);
       notifier.setReps(s.reps ?? 0);
@@ -310,6 +312,28 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         ),
         const Divider(height: 32),
 
+        // Wall angle (degrees)
+        _StepperRow(
+          label:        'WALL ANGLE (°)',
+          value:        state.wallAngle == 0 ? '—' : '${state.wallAngle}°',
+          editValue:    state.wallAngle == 0 ? '' : '${state.wallAngle}',
+          keyboardType: TextInputType.number,
+          onDecrement:  notifier.decrementWallAngle,
+          onIncrement:  notifier.incrementWallAngle,
+          onTyped: (s) {
+            final v = int.tryParse(s);
+            if (v != null) notifier.setWallAngle(v);
+          },
+        ),
+        const Divider(height: 32),
+
+        // Climb name
+        _ClimbNameField(
+          value:   state.climbName,
+          onChanged: notifier.setClimbName,
+        ),
+        const Divider(height: 32),
+
         // RPE
         _RpeRow(
           rpe:         state.rpe,
@@ -456,6 +480,95 @@ class _TrackTabState extends ConsumerState<TrackTab> {
   }
 }
 
+// ── Climbing set summary ─────────────────────────────────────────────────────
+
+String _formatClimbingSet(WorkoutSet s) {
+  final parts = <String>[s.grade!];
+  final name = s.climbName?.trim();
+  if (name != null && name.isNotEmpty) parts.add(name);
+  if (s.wallAngle != null) parts.add('${s.wallAngle}°');
+  return parts.join(' · ');
+}
+
+// ── Climb name text field ────────────────────────────────────────────────────
+
+class _ClimbNameField extends StatefulWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _ClimbNameField({required this.value, required this.onChanged});
+
+  @override
+  State<_ClimbNameField> createState() => _ClimbNameFieldState();
+}
+
+class _ClimbNameFieldState extends State<_ClimbNameField> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ClimbNameField old) {
+    super.didUpdateWidget(old);
+    if (widget.value != _ctrl.text) {
+      _ctrl.value = TextEditingValue(
+        text: widget.value,
+        selection: TextSelection.collapsed(offset: widget.value.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('CLIMB NAME',
+            style: TextStyle(
+                fontSize: 12,
+                letterSpacing: 1.2,
+                color: primary,
+                fontWeight: FontWeight.w600)),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _ctrl,
+          textCapitalization: TextCapitalization.words,
+          onChanged: widget.onChanged,
+          decoration: InputDecoration(
+            hintText: 'optional',
+            hintStyle:
+                TextStyle(color: Colors.white.withValues(alpha: 0.25)),
+            isDense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide:
+                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide:
+                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+          ),
+          style: const TextStyle(fontSize: 18),
+        ),
+      ],
+    );
+  }
+}
+
 // ── Logged set row (tappable + deletable) ────────────────────────────────────
 
 class _LoggedSetRow extends StatelessWidget {
@@ -486,12 +599,18 @@ class _LoggedSetRow extends StatelessWidget {
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.4))),
                 const Spacer(),
-                Text(set.grade != null
-                    ? set.grade!
-                    : formatSet(
-                        weightKg: set.weightKg,
-                        reps:     set.reps,
-                        timeSecs: set.timeSecs)),
+                Flexible(
+                  child: Text(
+                    set.grade != null
+                        ? _formatClimbingSet(set)
+                        : formatSet(
+                            weightKg: set.weightKg,
+                            reps:     set.reps,
+                            timeSecs: set.timeSecs),
+                    textAlign: TextAlign.right,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
                 if (set.rpe != null) ...[
                   const SizedBox(width: 8),
                   Container(

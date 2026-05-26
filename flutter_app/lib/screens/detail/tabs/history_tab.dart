@@ -140,6 +140,41 @@ class HistoryTab extends ConsumerWidget {
   }
 }
 
+class _ClimbingSetLine extends StatelessWidget {
+  final WorkoutSet set;
+  const _ClimbingSetLine({required this.set});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = set.climbName?.trim();
+    final hasName = name != null && name.isNotEmpty;
+    final hasAngle = set.wallAngle != null;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(set.grade!,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+        if (hasName || hasAngle) ...[
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              [
+                if (hasName) name,
+                if (hasAngle) '${set.wallAngle}°',
+              ].join(' · '),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.6)),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _SetRow extends StatelessWidget {
   final WorkoutSet set;
   final int index;
@@ -169,19 +204,17 @@ class _SetRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      set.grade != null
-                          ? set.grade!
-                          : formatSet(
-                              weightKg: set.weightKg,
-                              reps:     set.reps,
-                              timeSecs: set.timeSecs),
-                      style: TextStyle(
-                          fontSize: set.grade != null ? 20 : 14,
-                          fontWeight: set.grade != null
-                              ? FontWeight.w700
-                              : FontWeight.normal),
-                    ),
+                    if (set.grade != null)
+                      _ClimbingSetLine(set: set)
+                    else
+                      Text(
+                        formatSet(
+                          weightKg: set.weightKg,
+                          reps:     set.reps,
+                          timeSecs: set.timeSecs,
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                      ),
                     if (set.rpe != null)
                       Text(
                         'RPE ${set.rpe}',

@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   ));
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -115,6 +115,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 14) {
         await m.addColumn(exerciseCategories, exerciseCategories.description);
+      }
+      if (from < 15) {
+        await m.addColumn(workoutSets, workoutSets.wallAngle);
+        await m.addColumn(workoutSets, workoutSets.climbName);
       }
     },
   );
@@ -536,11 +540,13 @@ class AppDatabase extends _$AppDatabase {
       final sets = (setsByCategory[cat.id] ?? []).map((s) => <String, dynamic>{
         'date':      s.dateStr,
         'timestamp': s.timestamp,
-        if (s.weightKg != null) 'weightKg': s.weightKg,
-        if (s.reps     != null) 'reps':     s.reps,
-        if (s.timeSecs != null) 'timeSecs': s.timeSecs,
-        if (s.rpe      != null) 'rpe':      s.rpe,
-        if (s.grade    != null) 'grade':    s.grade,
+        if (s.weightKg  != null) 'weightKg':  s.weightKg,
+        if (s.reps      != null) 'reps':      s.reps,
+        if (s.timeSecs  != null) 'timeSecs':  s.timeSecs,
+        if (s.rpe       != null) 'rpe':       s.rpe,
+        if (s.grade     != null) 'grade':     s.grade,
+        if (s.wallAngle != null) 'wallAngle': s.wallAngle,
+        if (s.climbName != null) 'climbName': s.climbName,
       }).toList();
 
       return <String, dynamic>{
@@ -674,11 +680,13 @@ class AppDatabase extends _$AppDatabase {
             categoryId: catId,
             dateStr:    s['date'] as String,
             timestamp:  ts,
-            weightKg:   Value((s['weightKg'] as num?)?.toDouble()),
-            reps:       Value((s['reps']     as num?)?.toInt()),
-            timeSecs:   Value((s['timeSecs'] as num?)?.toInt()),
-            rpe:        Value((s['rpe']      as num?)?.toInt()),
-            grade:      Value(s['grade']     as String?),
+            weightKg:   Value((s['weightKg']  as num?)?.toDouble()),
+            reps:       Value((s['reps']      as num?)?.toInt()),
+            timeSecs:   Value((s['timeSecs']  as num?)?.toInt()),
+            rpe:        Value((s['rpe']       as num?)?.toInt()),
+            grade:      Value(s['grade']      as String?),
+            wallAngle:  Value((s['wallAngle'] as num?)?.toInt()),
+            climbName:  Value(s['climbName']  as String?),
           ));
           inserted++;
         }

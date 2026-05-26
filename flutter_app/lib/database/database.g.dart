@@ -1458,6 +1458,18 @@ class $WorkoutSetsTable extends WorkoutSets
   late final GeneratedColumn<String> grade = GeneratedColumn<String>(
       'grade', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _wallAngleMeta =
+      const VerificationMeta('wallAngle');
+  @override
+  late final GeneratedColumn<int> wallAngle = GeneratedColumn<int>(
+      'wall_angle', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _climbNameMeta =
+      const VerificationMeta('climbName');
+  @override
+  late final GeneratedColumn<String> climbName = GeneratedColumn<String>(
+      'climb_name', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -1468,7 +1480,9 @@ class $WorkoutSetsTable extends WorkoutSets
         reps,
         timeSecs,
         rpe,
-        grade
+        grade,
+        wallAngle,
+        climbName
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1523,6 +1537,14 @@ class $WorkoutSetsTable extends WorkoutSets
       context.handle(
           _gradeMeta, grade.isAcceptableOrUnknown(data['grade']!, _gradeMeta));
     }
+    if (data.containsKey('wall_angle')) {
+      context.handle(_wallAngleMeta,
+          wallAngle.isAcceptableOrUnknown(data['wall_angle']!, _wallAngleMeta));
+    }
+    if (data.containsKey('climb_name')) {
+      context.handle(_climbNameMeta,
+          climbName.isAcceptableOrUnknown(data['climb_name']!, _climbNameMeta));
+    }
     return context;
   }
 
@@ -1550,6 +1572,10 @@ class $WorkoutSetsTable extends WorkoutSets
           .read(DriftSqlType.int, data['${effectivePrefix}rpe']),
       grade: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}grade']),
+      wallAngle: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}wall_angle']),
+      climbName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}climb_name']),
     );
   }
 
@@ -1569,6 +1595,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
   final int? timeSecs;
   final int? rpe;
   final String? grade;
+  final int? wallAngle;
+  final String? climbName;
   const WorkoutSet(
       {required this.id,
       required this.categoryId,
@@ -1578,7 +1606,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       this.reps,
       this.timeSecs,
       this.rpe,
-      this.grade});
+      this.grade,
+      this.wallAngle,
+      this.climbName});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1601,6 +1631,12 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
     if (!nullToAbsent || grade != null) {
       map['grade'] = Variable<String>(grade);
     }
+    if (!nullToAbsent || wallAngle != null) {
+      map['wall_angle'] = Variable<int>(wallAngle);
+    }
+    if (!nullToAbsent || climbName != null) {
+      map['climb_name'] = Variable<String>(climbName);
+    }
     return map;
   }
 
@@ -1620,6 +1656,12 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       rpe: rpe == null && nullToAbsent ? const Value.absent() : Value(rpe),
       grade:
           grade == null && nullToAbsent ? const Value.absent() : Value(grade),
+      wallAngle: wallAngle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(wallAngle),
+      climbName: climbName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(climbName),
     );
   }
 
@@ -1636,6 +1678,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       timeSecs: serializer.fromJson<int?>(json['timeSecs']),
       rpe: serializer.fromJson<int?>(json['rpe']),
       grade: serializer.fromJson<String?>(json['grade']),
+      wallAngle: serializer.fromJson<int?>(json['wallAngle']),
+      climbName: serializer.fromJson<String?>(json['climbName']),
     );
   }
   @override
@@ -1651,6 +1695,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       'timeSecs': serializer.toJson<int?>(timeSecs),
       'rpe': serializer.toJson<int?>(rpe),
       'grade': serializer.toJson<String?>(grade),
+      'wallAngle': serializer.toJson<int?>(wallAngle),
+      'climbName': serializer.toJson<String?>(climbName),
     };
   }
 
@@ -1663,7 +1709,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
           Value<int?> reps = const Value.absent(),
           Value<int?> timeSecs = const Value.absent(),
           Value<int?> rpe = const Value.absent(),
-          Value<String?> grade = const Value.absent()}) =>
+          Value<String?> grade = const Value.absent(),
+          Value<int?> wallAngle = const Value.absent(),
+          Value<String?> climbName = const Value.absent()}) =>
       WorkoutSet(
         id: id ?? this.id,
         categoryId: categoryId ?? this.categoryId,
@@ -1674,6 +1722,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
         timeSecs: timeSecs.present ? timeSecs.value : this.timeSecs,
         rpe: rpe.present ? rpe.value : this.rpe,
         grade: grade.present ? grade.value : this.grade,
+        wallAngle: wallAngle.present ? wallAngle.value : this.wallAngle,
+        climbName: climbName.present ? climbName.value : this.climbName,
       );
   WorkoutSet copyWithCompanion(WorkoutSetsCompanion data) {
     return WorkoutSet(
@@ -1687,6 +1737,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       timeSecs: data.timeSecs.present ? data.timeSecs.value : this.timeSecs,
       rpe: data.rpe.present ? data.rpe.value : this.rpe,
       grade: data.grade.present ? data.grade.value : this.grade,
+      wallAngle: data.wallAngle.present ? data.wallAngle.value : this.wallAngle,
+      climbName: data.climbName.present ? data.climbName.value : this.climbName,
     );
   }
 
@@ -1701,14 +1753,16 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
           ..write('reps: $reps, ')
           ..write('timeSecs: $timeSecs, ')
           ..write('rpe: $rpe, ')
-          ..write('grade: $grade')
+          ..write('grade: $grade, ')
+          ..write('wallAngle: $wallAngle, ')
+          ..write('climbName: $climbName')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, categoryId, dateStr, timestamp, weightKg, reps, timeSecs, rpe, grade);
+  int get hashCode => Object.hash(id, categoryId, dateStr, timestamp, weightKg,
+      reps, timeSecs, rpe, grade, wallAngle, climbName);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1721,7 +1775,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
           other.reps == this.reps &&
           other.timeSecs == this.timeSecs &&
           other.rpe == this.rpe &&
-          other.grade == this.grade);
+          other.grade == this.grade &&
+          other.wallAngle == this.wallAngle &&
+          other.climbName == this.climbName);
 }
 
 class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
@@ -1734,6 +1790,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
   final Value<int?> timeSecs;
   final Value<int?> rpe;
   final Value<String?> grade;
+  final Value<int?> wallAngle;
+  final Value<String?> climbName;
   const WorkoutSetsCompanion({
     this.id = const Value.absent(),
     this.categoryId = const Value.absent(),
@@ -1744,6 +1802,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     this.timeSecs = const Value.absent(),
     this.rpe = const Value.absent(),
     this.grade = const Value.absent(),
+    this.wallAngle = const Value.absent(),
+    this.climbName = const Value.absent(),
   });
   WorkoutSetsCompanion.insert({
     this.id = const Value.absent(),
@@ -1755,6 +1815,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     this.timeSecs = const Value.absent(),
     this.rpe = const Value.absent(),
     this.grade = const Value.absent(),
+    this.wallAngle = const Value.absent(),
+    this.climbName = const Value.absent(),
   })  : categoryId = Value(categoryId),
         dateStr = Value(dateStr),
         timestamp = Value(timestamp);
@@ -1768,6 +1830,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     Expression<int>? timeSecs,
     Expression<int>? rpe,
     Expression<String>? grade,
+    Expression<int>? wallAngle,
+    Expression<String>? climbName,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1779,6 +1843,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
       if (timeSecs != null) 'time_secs': timeSecs,
       if (rpe != null) 'rpe': rpe,
       if (grade != null) 'grade': grade,
+      if (wallAngle != null) 'wall_angle': wallAngle,
+      if (climbName != null) 'climb_name': climbName,
     });
   }
 
@@ -1791,7 +1857,9 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
       Value<int?>? reps,
       Value<int?>? timeSecs,
       Value<int?>? rpe,
-      Value<String?>? grade}) {
+      Value<String?>? grade,
+      Value<int?>? wallAngle,
+      Value<String?>? climbName}) {
     return WorkoutSetsCompanion(
       id: id ?? this.id,
       categoryId: categoryId ?? this.categoryId,
@@ -1802,6 +1870,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
       timeSecs: timeSecs ?? this.timeSecs,
       rpe: rpe ?? this.rpe,
       grade: grade ?? this.grade,
+      wallAngle: wallAngle ?? this.wallAngle,
+      climbName: climbName ?? this.climbName,
     );
   }
 
@@ -1835,6 +1905,12 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     if (grade.present) {
       map['grade'] = Variable<String>(grade.value);
     }
+    if (wallAngle.present) {
+      map['wall_angle'] = Variable<int>(wallAngle.value);
+    }
+    if (climbName.present) {
+      map['climb_name'] = Variable<String>(climbName.value);
+    }
     return map;
   }
 
@@ -1849,7 +1925,9 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
           ..write('reps: $reps, ')
           ..write('timeSecs: $timeSecs, ')
           ..write('rpe: $rpe, ')
-          ..write('grade: $grade')
+          ..write('grade: $grade, ')
+          ..write('wallAngle: $wallAngle, ')
+          ..write('climbName: $climbName')
           ..write(')'))
         .toString();
   }
@@ -4239,6 +4317,8 @@ typedef $$WorkoutSetsTableCreateCompanionBuilder = WorkoutSetsCompanion
   Value<int?> timeSecs,
   Value<int?> rpe,
   Value<String?> grade,
+  Value<int?> wallAngle,
+  Value<String?> climbName,
 });
 typedef $$WorkoutSetsTableUpdateCompanionBuilder = WorkoutSetsCompanion
     Function({
@@ -4251,6 +4331,8 @@ typedef $$WorkoutSetsTableUpdateCompanionBuilder = WorkoutSetsCompanion
   Value<int?> timeSecs,
   Value<int?> rpe,
   Value<String?> grade,
+  Value<int?> wallAngle,
+  Value<String?> climbName,
 });
 
 final class $$WorkoutSetsTableReferences
@@ -4307,6 +4389,12 @@ class $$WorkoutSetsTableFilterComposer
   ColumnFilters<String> get grade => $composableBuilder(
       column: $table.grade, builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<int> get wallAngle => $composableBuilder(
+      column: $table.wallAngle, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get climbName => $composableBuilder(
+      column: $table.climbName, builder: (column) => ColumnFilters(column));
+
   $$ExerciseCategoriesTableFilterComposer get categoryId {
     final $$ExerciseCategoriesTableFilterComposer composer = $composerBuilder(
         composer: this,
@@ -4360,6 +4448,12 @@ class $$WorkoutSetsTableOrderingComposer
 
   ColumnOrderings<String> get grade => $composableBuilder(
       column: $table.grade, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get wallAngle => $composableBuilder(
+      column: $table.wallAngle, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get climbName => $composableBuilder(
+      column: $table.climbName, builder: (column) => ColumnOrderings(column));
 
   $$ExerciseCategoriesTableOrderingComposer get categoryId {
     final $$ExerciseCategoriesTableOrderingComposer composer = $composerBuilder(
@@ -4415,6 +4509,12 @@ class $$WorkoutSetsTableAnnotationComposer
   GeneratedColumn<String> get grade =>
       $composableBuilder(column: $table.grade, builder: (column) => column);
 
+  GeneratedColumn<int> get wallAngle =>
+      $composableBuilder(column: $table.wallAngle, builder: (column) => column);
+
+  GeneratedColumn<String> get climbName =>
+      $composableBuilder(column: $table.climbName, builder: (column) => column);
+
   $$ExerciseCategoriesTableAnnotationComposer get categoryId {
     final $$ExerciseCategoriesTableAnnotationComposer composer =
         $composerBuilder(
@@ -4469,6 +4569,8 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             Value<int?> timeSecs = const Value.absent(),
             Value<int?> rpe = const Value.absent(),
             Value<String?> grade = const Value.absent(),
+            Value<int?> wallAngle = const Value.absent(),
+            Value<String?> climbName = const Value.absent(),
           }) =>
               WorkoutSetsCompanion(
             id: id,
@@ -4480,6 +4582,8 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             timeSecs: timeSecs,
             rpe: rpe,
             grade: grade,
+            wallAngle: wallAngle,
+            climbName: climbName,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -4491,6 +4595,8 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             Value<int?> timeSecs = const Value.absent(),
             Value<int?> rpe = const Value.absent(),
             Value<String?> grade = const Value.absent(),
+            Value<int?> wallAngle = const Value.absent(),
+            Value<String?> climbName = const Value.absent(),
           }) =>
               WorkoutSetsCompanion.insert(
             id: id,
@@ -4502,6 +4608,8 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             timeSecs: timeSecs,
             rpe: rpe,
             grade: grade,
+            wallAngle: wallAngle,
+            climbName: climbName,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
