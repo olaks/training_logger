@@ -77,10 +77,12 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
 
   AudioPlayer _makePlayer(Uint8List bytes) {
     final p = AudioPlayer();
-    // Fire-and-forget configuration. lowLatency uses SoundPool on Android,
-    // letting replays start near-instantly off the platform thread.
+    // Fire-and-forget configuration. Stay in the default mediaPlayer mode:
+    // Android's lowLatency (SoundPool) backend rejects byte sources
+    // ("Bytes sources are not supported on LOW_LATENCY mode yet"), which left
+    // the hangboard timer completely silent. mediaPlayer mode loads the source
+    // once and supports seek-to-zero replays.
     p.setReleaseMode(ReleaseMode.stop);
-    p.setPlayerMode(PlayerMode.lowLatency);
     p.setSourceBytes(bytes);
     return p;
   }

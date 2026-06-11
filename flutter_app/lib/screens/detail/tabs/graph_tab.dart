@@ -43,9 +43,36 @@ class _Graph extends StatefulWidget {
 
 enum _Metric { weight, oneRM, volume, reps, time, grade }
 
+enum _Range { month, threeMonths, year, all }
+
 class _GraphState extends State<_Graph> {
   _Metric _metric = _Metric.weight;
+  _Range _range = _Range.all;
   List<String> _gradeScale = fontGrades;
+
+  String _rangeLabel(_Range r) => switch (r) {
+        _Range.month       => '1M',
+        _Range.threeMonths => '3M',
+        _Range.year        => '1Y',
+        _Range.all         => 'All',
+      };
+
+  /// Earliest `yyyy-MM-dd` to include, or null for the full history.
+  String? get _cutoff {
+    final now = DateTime.now();
+    return switch (_range) {
+      _Range.month       => dateStrFrom(DateTime(now.year, now.month - 1, now.day)),
+      _Range.threeMonths => dateStrFrom(DateTime(now.year, now.month - 3, now.day)),
+      _Range.year        => dateStrFrom(DateTime(now.year - 1, now.month, now.day)),
+      _Range.all         => null,
+    };
+  }
+
+  List<WorkoutSet> get _rangedSets {
+    final cutoff = _cutoff;
+    if (cutoff == null) return widget.sets;
+    return widget.sets.where((s) => s.dateStr.compareTo(cutoff) >= 0).toList();
+  }
 
   @override
   void initState() {
@@ -87,7 +114,7 @@ class _GraphState extends State<_Graph> {
 
   List<({String date, double value})> _buildPoints(_Metric metric) {
     final grouped = <String, List<WorkoutSet>>{};
-    for (final s in widget.sets) {
+    for (final s in _rangedSets) {
       grouped.putIfAbsent(s.dateStr, () => []).add(s);
     }
     final dates = grouped.keys.toList()..sort();
@@ -212,6 +239,23 @@ class _GraphState extends State<_Graph> {
                   color: primary),
             ),
           ],
+
+          const SizedBox(height: 8),
+
+          // Time-range selector
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: _Range.values.map((r) {
+              return ChoiceChip(
+                label: Text(_rangeLabel(r),
+                    style: const TextStyle(fontSize: 12)),
+                selected: _range == r,
+                onSelected: (_) => setState(() => _range = r),
+                selectedColor: primary.withValues(alpha: 0.25),
+              );
+            }).toList(),
+          ),
 
           if (_metric == _Metric.oneRM || _metric == _Metric.volume) ...[
             const SizedBox(height: 6),
