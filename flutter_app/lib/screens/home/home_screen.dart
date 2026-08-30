@@ -22,6 +22,7 @@ class HomeScreen extends ConsumerWidget {
 
     // Unstarted planned exercises for the FAB quick-pick
     final loggedCatIds = (setsAsync.value ?? []).map((s) => s.categoryId).toSet();
+    final loggedSetCount = setsAsync.value?.length ?? 0;
     final unstartedExercises = <(String, ExerciseCategory)>[];
     for (final (workout, exercises) in plannedWorkouts) {
       for (final cat in exercises) {
@@ -44,6 +45,10 @@ class HomeScreen extends ConsumerWidget {
                   selected.add(const Duration(days: 1)),
               onCalendar: () => _openCalendar(context, ref, selected, woDates),
               onInspirations: () => context.push('/inspirations'),
+              onSaveAsWorkout: loggedCatIds.isEmpty
+                  ? null
+                  : () => _saveDayAsWorkout(context, ref, selected, dateStr,
+                      loggedCatIds.length, loggedSetCount),
             ),
           ),
 
@@ -143,6 +148,42 @@ class HomeScreen extends ConsumerWidget {
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  /// Turns the exercises logged on [dateStr] into a reusable workout, using
+  /// the logged set/rep counts as targets.
+  Future<void> _saveDayAsWorkout(
+    BuildContext context,
+    WidgetRef ref,
+    DateTime selected,
+    String dateStr,
+    int exerciseCount,
+    int setCount,
+  ) async {
+    final defaultName = await ref
+        .uniqueWorkoutName('${DateFormat('EEE').format(selected)} session');
+    if (!context.mounted) return;
+
+    final name = await showDialog<String>(
+      context: context,
+      useRootNavigator: false,
+      builder: (_) => _SaveDayDialog(
+        initialName:   defaultName,
+        exerciseCount: exerciseCount,
+        setCount:      setCount,
+      ),
+    );
+    if (name == null || !context.mounted) return;
+
+    final id = await ref.createWorkoutFromDay(dateStr, name);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Saved "$name"'),
+      action: SnackBarAction(
+        label: 'OPEN',
+        onPressed: () => context.push('/workouts/$id'),
+      ),
+    ));
   }
 
   void _showQuickPick(
@@ -521,12 +562,15 @@ class _SectionHeader extends StatelessWidget {
 class _DayNavBar extends StatelessWidget {
   final DateTime selected;
   final VoidCallback onPrev, onNext, onCalendar, onInspirations;
+  /// Null when nothing is logged on this day — the action is then hidden.
+  final VoidCallback? onSaveAsWorkout;
   const _DayNavBar(
       {required this.selected,
       required this.onPrev,
       required this.onNext,
       required this.onCalendar,
-      required this.onInspirations});
+      required this.onInspirations,
+      this.onSaveAsWorkout});
 
   String get _label {
     final now = DateTime.now();
@@ -569,10 +613,96 @@ class _DayNavBar extends StatelessWidget {
             icon: Icon(Icons.lightbulb_outline,
                 color: Theme.of(context).colorScheme.primary),
           ),
+          if (onSaveAsWorkout != null)
+            PopupMenuButton<void>(
+              icon: Icon(Icons.more_vert,
+                  color: Colors.white.withValues(alpha: 0.5)),
+              tooltip: 'More',
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  onTap: onSaveAsWorkout,
+                  child: const Text('Save day as workout…'),
+                ),
+              ],
+            ),
         ],
       ),
     );
   }
+}
+
+// ── Save-day-as-workout dialog ──────────────────────────────────────────────
+
+class _SaveDayDialog extends StatefulWidget {
+  final String initialName;
+  final int exerciseCount;
+  final int setCount;
+  const _SaveDayDialog(
+      {required this.initialName,
+      required this.exerciseCount,
+      required this.setCount});
+
+  @override
+  State<_SaveDayDialog> createState() => _SaveDayDialogState();
+}
+
+class _SaveDayDialogState extends State<_SaveDayDialog> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initialName)
+      ..selection = TextSelection(
+          baseOffset: 0, extentOffset: widget.initialName.length);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final name = _ctrl.text.trim();
+    if (name.isEmpty) return;
+    Navigator.pop(context, name);
+  }
+
+  static String _plural(int n, String word) =>
+      '$n $word${n == 1 ? '' : 's'}';
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Save day as workout'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${_plural(widget.exerciseCount, 'exercise')} '
+              '(${_plural(widget.setCount, 'set')}) from this day will become '
+              'a reusable workout, with the logged sets and reps as targets.',
+              style: TextStyle(
+                  fontSize: 13, color: Colors.white.withValues(alpha: 0.6)),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Workout name'),
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (_) => _save(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(onPressed: _save, child: const Text('Save')),
+        ],
+      );
 }
 
 // ── Empty state ─────────────────────────────────────────────────────────────

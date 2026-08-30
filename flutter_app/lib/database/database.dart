@@ -16,6 +16,9 @@ class AppDatabase extends _$AppDatabase {
     ),
   ));
 
+  /// Test-only: run against a caller-supplied executor (e.g. in-memory).
+  AppDatabase.forTesting(super.e);
+
   @override
   int get schemaVersion => 15;
 
@@ -889,6 +892,85 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> insertWorkout(String name) =>
       into(workouts).insert(WorkoutsCompanion.insert(name: name));
+
+  /// Returns [base] if no workout uses it, otherwise "[base] 2", "[base] 3"…
+  Future<String> uniqueWorkoutName(String base) async {
+    final taken = (await select(workouts).get()).map((w) => w.name).toSet();
+    if (!taken.contains(base)) return base;
+    for (var n = 2;; n++) {
+      final candidate = '$base $n';
+      if (!taken.contains(candidate)) return candidate;
+    }
+  }
+
+  /// Copies [workoutId] into a new workout with the same notes, exercises,
+  /// targets and order. Falls back to `<name> (copy)` when [newName] is blank.
+  Future<int> duplicateWorkout(int workoutId, {String? newName}) async {
+    final source =
+        await (select(workouts)..where((t) => t.id.equals(workoutId)))
+            .getSingleOrNull();
+    if (source == null) throw StateError('No workout with id $workoutId');
+
+    final trimmed = newName?.trim() ?? '';
+    final name = trimmed.isNotEmpty
+        ? trimmed
+        : await uniqueWorkoutName('${source.name} (copy)');
+
+    final rows = await (select(workoutExercises)
+          ..where((t) => t.workoutId.equals(workoutId))
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .get();
+
+    return transaction(() async {
+      final newId = await into(workouts).insert(
+          WorkoutsCompanion.insert(name: name, notes: Value(source.notes)));
+      for (var i = 0; i < rows.length; i++) {
+        await into(workoutExercises).insert(WorkoutExercisesCompanion.insert(
+          workoutId:  newId,
+          categoryId: rows[i].categoryId,
+          targetSets: Value(rows[i].targetSets),
+          targetReps: Value(rows[i].targetReps),
+          sortOrder:  Value(i),
+        ));
+      }
+      return newId;
+    });
+  }
+
+  /// Builds a workout named [name] from the sets logged on [dateStr]: one
+  /// entry per exercise in first-logged order, the number of logged sets as
+  /// the sets target, and the rep count as the reps target when every set of
+  /// that exercise used the same reps.
+  Future<int> createWorkoutFromDay(String dateStr, String name) async {
+    final sets = await (select(workoutSets)
+          ..where((t) => t.dateStr.equals(dateStr))
+          ..orderBy([(t) => OrderingTerm.asc(t.timestamp)]))
+        .get();
+    if (sets.isEmpty) throw StateError('No sets logged on $dateStr');
+
+    // Insertion-ordered, so exercises keep the order they were logged in.
+    final byCategory = <int, List<WorkoutSet>>{};
+    for (final s in sets) {
+      byCategory.putIfAbsent(s.categoryId, () => []).add(s);
+    }
+
+    return transaction(() async {
+      final wId =
+          await into(workouts).insert(WorkoutsCompanion.insert(name: name));
+      var order = 0;
+      for (final entry in byCategory.entries) {
+        final reps = entry.value.map((s) => s.reps).toSet();
+        await into(workoutExercises).insert(WorkoutExercisesCompanion.insert(
+          workoutId:  wId,
+          categoryId: entry.key,
+          targetSets: Value(entry.value.length),
+          targetReps: Value(reps.length == 1 ? reps.first : null),
+          sortOrder:  Value(order++),
+        ));
+      }
+      return wId;
+    });
+  }
 
   Future<int> renameWorkout(int id, String name) =>
       (update(workouts)..where((t) => t.id.equals(id)))

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../database/database.dart';
 import '../../providers/app_providers.dart';
 
 class PlansScreen extends ConsumerStatefulWidget {
@@ -30,7 +31,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
           // ── Workouts section ─────────────────���─────────────────────────
           _SectionHeader(
             title: 'WORKOUTS',
-            onAdd: () => _showCreateWorkoutDialog(context, ref),
+            onAdd: _showCreateWorkoutDialog,
           ),
           if (workouts.isEmpty)
             _EmptyHint('No workouts yet.')
@@ -41,6 +42,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
                   onRename: () => _showRenameDialog(
                       context, ref, w.name,
                       (name) => ref.renameWorkout(w.id, name)),
+                  onDuplicate: () => _duplicateWorkout(w.id),
                   onDelete: () => _showDeleteDialog(
                       context, ref, '"${w.name}"',
                       'All exercises in this workout will be removed.',
@@ -75,40 +77,25 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
     );
   }
 
-  void _showCreateWorkoutDialog(BuildContext context, WidgetRef ref) {
-    final ctrl = TextEditingController();
-    showDialog(
+  Future<void> _showCreateWorkoutDialog() async {
+    final result = await showDialog<(String, int?)>(
       context: context,
       useRootNavigator: false,
-      builder: (_) => AlertDialog(
-        title: const Text('New Workout'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name'),
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (_) async {
-            if (ctrl.text.trim().isEmpty) return;
-            final id = await ref.insertWorkout(ctrl.text.trim());
-            if (context.mounted) Navigator.pop(context);
-            if (context.mounted) context.push('/workouts/$id');
-          },
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () async {
-                if (ctrl.text.trim().isEmpty) return;
-                final id = await ref.insertWorkout(ctrl.text.trim());
-                if (context.mounted) Navigator.pop(context);
-                if (context.mounted) context.push('/workouts/$id');
-              },
-              child: const Text('Create')),
-        ],
-      ),
+      builder: (_) =>
+          _NewWorkoutDialog(sources: ref.read(allWorkoutsProvider).value ?? []),
     );
+    if (result == null) return;
+
+    final (name, copyFromId) = result;
+    final id = copyFromId == null
+        ? await ref.insertWorkout(name)
+        : await ref.duplicateWorkout(copyFromId, newName: name);
+    if (mounted) context.push('/workouts/$id');
+  }
+
+  Future<void> _duplicateWorkout(int workoutId) async {
+    final id = await ref.duplicateWorkout(workoutId);
+    if (mounted) context.push('/workouts/$id');
   }
 
   void _showCreateDialog(BuildContext context, WidgetRef ref, String title,
@@ -330,11 +317,13 @@ class _ItemTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onDelete;
+  final VoidCallback? onDuplicate;
   const _ItemTile(
       {required this.title,
       required this.onTap,
       required this.onRename,
-      required this.onDelete});
+      required this.onDelete,
+      this.onDuplicate});
 
   @override
   Widget build(BuildContext context) => ListTile(
@@ -342,15 +331,90 @@ class _ItemTile extends StatelessWidget {
         trailing: PopupMenuButton<_Action>(
           icon: Icon(Icons.more_vert,
               color: Colors.white.withValues(alpha: 0.35), size: 20),
-          onSelected: (a) =>
-              a == _Action.rename ? onRename() : onDelete(),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: _Action.rename, child: Text('Rename')),
-            PopupMenuItem(value: _Action.delete, child: Text('Delete')),
+          onSelected: (a) => switch (a) {
+            _Action.rename    => onRename(),
+            _Action.duplicate => onDuplicate?.call(),
+            _Action.delete    => onDelete(),
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: _Action.rename, child: Text('Rename')),
+            if (onDuplicate != null)
+              const PopupMenuItem(
+                  value: _Action.duplicate, child: Text('Duplicate')),
+            const PopupMenuItem(value: _Action.delete, child: Text('Delete')),
           ],
         ),
         onTap: onTap,
       );
 }
 
-enum _Action { rename, delete }
+enum _Action { rename, duplicate, delete }
+
+// ── New workout dialog (optionally pre-filled from an existing workout) ──────
+
+class _NewWorkoutDialog extends StatefulWidget {
+  final List<Workout> sources;
+  const _NewWorkoutDialog({required this.sources});
+
+  @override
+  State<_NewWorkoutDialog> createState() => _NewWorkoutDialogState();
+}
+
+class _NewWorkoutDialogState extends State<_NewWorkoutDialog> {
+  final _ctrl = TextEditingController();
+  int? _copyFromId;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  /// Pops with (name, copyFromId) — copyFromId null means an empty workout.
+  void _submit() {
+    final name = _ctrl.text.trim();
+    if (name.isEmpty) return;
+    Navigator.pop(context, (name, _copyFromId));
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('New Workout'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Name'),
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (_) => _submit(),
+            ),
+            if (widget.sources.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<int?>(
+                initialValue: _copyFromId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Start from'),
+                items: [
+                  const DropdownMenuItem(
+                      value: null, child: Text('Empty workout')),
+                  ...widget.sources.map((w) => DropdownMenuItem(
+                        value: w.id,
+                        child:
+                            Text(w.name, overflow: TextOverflow.ellipsis),
+                      )),
+                ],
+                onChanged: (v) => setState(() => _copyFromId = v),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(onPressed: _submit, child: const Text('Create')),
+        ],
+      );
+}

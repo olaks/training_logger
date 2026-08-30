@@ -81,11 +81,20 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
           if (workout != null)
             PopupMenuButton<_Action>(
               icon: const Icon(Icons.more_vert),
-              onSelected: (a) => a == _Action.rename
-                  ? _showRenameDialog(context, workout.id, workout.name)
-                  : _showDeleteDialog(context, workout.id, workout.name),
+              onSelected: (a) {
+                switch (a) {
+                  case _Action.rename:
+                    _showRenameDialog(context, workout.id, workout.name);
+                  case _Action.duplicate:
+                    _duplicate(workout.id);
+                  case _Action.delete:
+                    _showDeleteDialog(context, workout.id, workout.name);
+                }
+              },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: _Action.rename, child: Text('Rename')),
+                PopupMenuItem(
+                    value: _Action.duplicate, child: Text('Duplicate')),
                 PopupMenuItem(
                     value: _Action.delete, child: Text('Delete workout')),
               ],
@@ -309,6 +318,14 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
         workoutId: widget.workoutId,
       ),
     );
+  }
+
+  /// Copies this workout and opens the copy in place of the original, so
+  /// going back still lands on the workout list.
+  Future<void> _duplicate(int id) async {
+    _flushNotes();
+    final newId = await ref.duplicateWorkout(id);
+    if (mounted) context.pushReplacement('/workouts/$newId');
   }
 
   void _showRenameDialog(
@@ -628,4 +645,4 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
   }
 }
 
-enum _Action { rename, delete }
+enum _Action { rename, duplicate, delete }
