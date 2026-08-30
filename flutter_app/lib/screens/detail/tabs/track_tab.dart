@@ -1,13 +1,20 @@
-import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../database/database.dart';
 import '../../../providers/app_providers.dart';
+import '../../../utils/beeper.dart';
 import '../../../utils/format_utils.dart';
 import '../../../utils/grades.dart';
+
+// ── Timed-set timer phases ───────────────────────────────────────────────────
+
+enum _ExPhase { idle, getReady, work }
 
 class TrackTab extends ConsumerStatefulWidget {
   final int    categoryId;
@@ -20,8 +27,124 @@ class TrackTab extends ConsumerStatefulWidget {
 
 class _TrackTabState extends ConsumerState<TrackTab> {
   static const _restOptions = [60, 120, 180, 300]; // 1 2 3 5 min
+  static const _getReadySecs = 5;
 
   bool _prefilled = false;
+
+  // ── Timed-set timer ───────────────────────────────────────────────────────
+  // Only used by standard exercises that have a TIME value set. Countdown is
+  // anchored to wall-clock time so OS scheduling jitter and platform-channel
+  // work (audio, haptics) can't make it drift.
+  Beeper?   _beeper;
+  Timer?    _exTimer;
+  _ExPhase  _exPhase = _ExPhase.idle;
+  DateTime? _exPhaseEnd;      // wall-clock time the current phase ends
+  int       _exPhaseSecs = 0; // total seconds for current phase (progress)
+  int       _exLastBeeped = -1;
+  int       _exWorkSecs = 0;
+
+  bool get _exRunning => _exPhase != _ExPhase.idle;
+
+  @override
+  void dispose() {
+    _exTimer?.cancel();
+    if (_exRunning) WakelockPlus.disable();
+    _beeper?.dispose();
+    super.dispose();
+  }
+
+  /// Runs a [workSecs] hold after a 5-second get-ready countdown, then logs
+  /// the set and starts the rest timer.
+  void _startExerciseTimer(int workSecs) {
+    FocusScope.of(context).unfocus();
+    ref.read(restTimerProvider.notifier).cancel();
+    _beeper ??= Beeper();
+    _exWorkSecs = workSecs;
+    WakelockPlus.enable();
+    _enterExPhase(_ExPhase.getReady, _getReadySecs);
+    _exTimer?.cancel();
+    _exTimer =
+        Timer.periodic(const Duration(milliseconds: 100), (_) => _exTick());
+  }
+
+  void _enterExPhase(_ExPhase phase, int seconds) {
+    _exPhase = phase;
+    _exPhaseSecs = seconds;
+    _exPhaseEnd = DateTime.now().add(Duration(seconds: seconds));
+    _exLastBeeped = -1;
+    setState(() {});
+  }
+
+  void _exTick() {
+    if (_exPhaseEnd == null) return;
+
+    final remainingMs = _exPhaseEnd!.difference(DateTime.now()).inMilliseconds;
+    if (remainingMs <= 0) {
+      _exAdvance();
+      return;
+    }
+
+    final secsLeft = (remainingMs / 1000).ceil();
+    if (secsLeft != _exLastBeeped && secsLeft >= 1 && secsLeft <= 3) {
+      _beeper?.tick();
+      HapticFeedback.lightImpact();
+      _exLastBeeped = secsLeft;
+    }
+
+    setState(() {});
+  }
+
+  void _exAdvance() {
+    switch (_exPhase) {
+      case _ExPhase.getReady:
+        _beeper?.high();
+        HapticFeedback.mediumImpact();
+        _enterExPhase(_ExPhase.work, _exWorkSecs);
+      case _ExPhase.work:
+        _exTimer?.cancel();
+        WakelockPlus.disable();
+        _beeper?.done();
+        HapticFeedback.heavyImpact();
+        setState(() {
+          _exPhase = _ExPhase.idle;
+          _exPhaseEnd = null;
+        });
+        // Nothing is written here — the set is only logged when SAVE is
+        // tapped, so a hold that didn't go the distance can be corrected
+        // first.
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Hold complete — ${_exWorkSecs}s. '
+              'Tap SAVE to log it.'),
+          duration: const Duration(seconds: 3),
+        ));
+      case _ExPhase.idle:
+        break;
+    }
+  }
+
+  /// Cancels the timer. Stopping mid-hold drops the actual time held into the
+  /// TIME field, so a short hold can be saved as what really happened.
+  void _stopExerciseTimer() {
+    final held = _exPhase == _ExPhase.work ? _heldSecs() : 0;
+    _exTimer?.cancel();
+    WakelockPlus.disable();
+    setState(() {
+      _exPhase = _ExPhase.idle;
+      _exPhaseEnd = null;
+    });
+    if (held > 0) {
+      ref.read(trackProvider(widget.categoryId).notifier).setTimeSecs(held);
+    }
+  }
+
+  /// Seconds elapsed in the current hold phase.
+  int _heldSecs() {
+    final remainingMs =
+        _exPhaseEnd?.difference(DateTime.now()).inMilliseconds ?? 0;
+    final elapsedMs =
+        _exWorkSecs * 1000 - (remainingMs < 0 ? 0 : remainingMs);
+    return (elapsedMs / 1000).round().clamp(0, _exWorkSecs);
+  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -165,7 +288,16 @@ class _TrackTabState extends ConsumerState<TrackTab> {
 
           const SizedBox(height: 28),
 
-          // Save / Clear
+          // ── Timed-set countdown (replaces the buttons while running) ─────
+          if (_exRunning)
+            _ExerciseTimerPanel(
+              phase:     _exPhase,
+              phaseSecs: _exPhaseSecs,
+              phaseEnd:  _exPhaseEnd,
+              onStop:    _stopExerciseTimer,
+            )
+          else
+          // Save / Clear / Start
           Row(
             children: [
               Expanded(
@@ -216,6 +348,24 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                           fontWeight: FontWeight.bold, fontSize: 15)),
                 ),
               ),
+              // Timer mode — only meaningful once a hold duration is set.
+              if (!isClimbing && state.timeSecs > 0) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _startExerciseTimer(state.timeSecs),
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: const Text('START',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primary,
+                      side: BorderSide(color: primary.withValues(alpha: 0.6)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
 
@@ -691,6 +841,108 @@ class _RpeRow extends StatelessWidget {
           ),
         ],
       );
+}
+
+// ── Timed-set countdown panel ────────────────────────────────────────────────
+
+class _ExerciseTimerPanel extends StatelessWidget {
+  final _ExPhase phase;
+  final int phaseSecs;
+  final DateTime? phaseEnd;
+  final VoidCallback onStop;
+
+  const _ExerciseTimerPanel({
+    required this.phase,
+    required this.phaseSecs,
+    required this.phaseEnd,
+    required this.onStop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final working = phase == _ExPhase.work;
+    final color   = working ? const Color(0xFF43A047) : Colors.white70;
+
+    // Derived from wall-clock so the number and the bar always agree,
+    // regardless of timer-tick jitter.
+    final remainingMs = phaseEnd == null
+        ? 0
+        : phaseEnd!.difference(DateTime.now()).inMilliseconds;
+    final safeRem  = remainingMs < 0 ? 0 : remainingMs;
+    final secs     = (safeRem / 1000).ceil();
+    final progress = phaseSecs > 0
+        ? 1.0 - (safeRem / (phaseSecs * 1000)).clamp(0.0, 1.0)
+        : 0.0;
+
+    // The whole panel is a stop target — on a failed hold you want to hit it
+    // without aiming.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onStop,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          children: [
+            Text(working ? 'HOLD' : 'GET READY',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2,
+                    color: color)),
+            Text('$secs',
+                style: TextStyle(
+                    fontSize: 72, fontWeight: FontWeight.w800, color: color)),
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 5,
+                backgroundColor: Colors.white12,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Oversized stop target
+            SizedBox(
+              width: double.infinity,
+              height: 96,
+              child: FilledButton.icon(
+                onPressed: onStop,
+                icon: const Icon(Icons.stop, size: 36),
+                label: const Text('STOP',
+                    style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 3)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFC62828),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              working
+                  ? 'Stop early to keep the time you actually held'
+                  : 'Get into position',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ── Rest timer widget ─────────────────────────────────────────────────────────

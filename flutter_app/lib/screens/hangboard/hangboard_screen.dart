@@ -1,8 +1,5 @@
 import 'dart:async';
-import 'dart:math';
-import 'dart:typed_data';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
+import '../../utils/beeper.dart';
 import '../../utils/format_utils.dart';
 
 // ── Timer phases ─────────────────────────────────────────────────────────────
@@ -59,89 +57,21 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   final Map<int, double> _setWeights = {};
 
   // ── Audio ────────────────────────────────────────────────────────────────
-  // One AudioPlayer per beep. Sources are loaded once in initState so each
-  // play is just seek+resume — no temp-file writes, no native re-init.
-  late final AudioPlayer _highPlayer;
-  late final AudioPlayer _lowPlayer;
-  late final AudioPlayer _tickPlayer;
-  late final AudioPlayer _donePlayer;
+  late final Beeper _beeper;
 
   @override
   void initState() {
     super.initState();
-    _highPlayer = _makePlayer(_generateTone(880,  0.15));
-    _lowPlayer  = _makePlayer(_generateTone(440,  0.15));
-    _tickPlayer = _makePlayer(_generateTone(660,  0.08));
-    _donePlayer = _makePlayer(_generateTone(1760, 0.4));
-  }
-
-  AudioPlayer _makePlayer(Uint8List bytes) {
-    final p = AudioPlayer();
-    // Fire-and-forget configuration. Stay in the default mediaPlayer mode:
-    // Android's lowLatency (SoundPool) backend rejects byte sources
-    // ("Bytes sources are not supported on LOW_LATENCY mode yet"), which left
-    // the hangboard timer completely silent. mediaPlayer mode loads the source
-    // once and supports seek-to-zero replays.
-    p.setReleaseMode(ReleaseMode.stop);
-    p.setSourceBytes(bytes);
-    return p;
+    _beeper = Beeper();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
     WakelockPlus.disable();
-    _highPlayer.dispose();
-    _lowPlayer.dispose();
-    _tickPlayer.dispose();
-    _donePlayer.dispose();
+    _beeper.dispose();
     _weightCtrl.dispose();
     super.dispose();
-  }
-
-  // ── Audio helpers ────────────────────────────────────────────────────────
-
-  void _playBeep(AudioPlayer p) {
-    p.seek(Duration.zero).then((_) => p.resume()).catchError((_) {});
-  }
-
-  /// Generates a mono 16-bit 44100 Hz WAV containing a sine wave.
-  static Uint8List _generateTone(double freq, double durSecs) {
-    const sr = 44100;
-    final n = (sr * durSecs).toInt();
-    final dataSize = n * 2;
-    final buf = ByteData(44 + dataSize);
-
-    void str(int o, String s) {
-      for (var i = 0; i < s.length; i++) {
-        buf.setUint8(o + i, s.codeUnitAt(i));
-      }
-    }
-
-    str(0, 'RIFF');
-    buf.setUint32(4, 36 + dataSize, Endian.little);
-    str(8, 'WAVE');
-    str(12, 'fmt ');
-    buf.setUint32(16, 16, Endian.little);
-    buf.setUint16(20, 1, Endian.little);
-    buf.setUint16(22, 1, Endian.little);
-    buf.setUint32(24, sr, Endian.little);
-    buf.setUint32(28, sr * 2, Endian.little);
-    buf.setUint16(32, 2, Endian.little);
-    buf.setUint16(34, 16, Endian.little);
-    str(36, 'data');
-    buf.setUint32(40, dataSize, Endian.little);
-
-    final fade = min(n ~/ 4, sr ~/ 100);
-    for (var i = 0; i < n; i++) {
-      var env = 1.0;
-      if (i < fade) env = i / fade;
-      if (i > n - fade) env = (n - i) / fade;
-      final s =
-          (sin(2 * pi * freq * i / sr) * 32767 * 0.8 * env).toInt();
-      buf.setInt16(44 + i * 2, s.clamp(-32768, 32767), Endian.little);
-    }
-    return buf.buffer.asUint8List();
   }
 
   // ── Timer logic ──────────────────────────────────────────────────────────
@@ -187,7 +117,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
             _phase == _Phase.rest ||
             _phase == _Phase.switchRest ||
             _phase == _Phase.setRest)) {
-      _playBeep(_tickPlayer);
+      _beeper.tick();
       HapticFeedback.lightImpact();
       _lastBeepedSecond = secsLeft;
     }
@@ -211,22 +141,22 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
         _startWork();
       case _Phase.work:
         if (_rlMode && !_isLeftHand) {
-          _playBeep(_lowPlayer);
+          _beeper.low();
           _enterPhase(_Phase.switchRest, _switchRestSecs);
         } else {
           _isLeftHand = false;
           if (_currentRep < _reps) {
-            _playBeep(_lowPlayer);
+            _beeper.low();
             _enterPhase(_Phase.rest, _restSecs);
           } else {
             _recordSetWeight();
             if (_currentSet < _sets) {
-              _playBeep(_lowPlayer);
+              _beeper.low();
               _enterPhase(_Phase.setRest, _setRestSecs);
             } else {
               _timer?.cancel();
               WakelockPlus.disable();
-              _playBeep(_donePlayer);
+              _beeper.done();
               HapticFeedback.heavyImpact();
               _enterPhase(_Phase.done, 0);
             }
@@ -238,7 +168,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   }
 
   void _startWork() {
-    _playBeep(_highPlayer);
+    _beeper.high();
     HapticFeedback.mediumImpact();
     _enterPhase(_Phase.work, _workSecs);
   }
