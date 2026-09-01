@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:drift/drift.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../database/database.dart';
+import '../utils/beeper.dart';
 
 // ── Database singleton ─────────────────────────────────────────────────────
 
@@ -177,40 +180,100 @@ class RestTimerState {
 }
 
 class RestTimerNotifier extends StateNotifier<RestTimerState> {
+  /// How long the finished panel stays up before it dismisses itself.
+  static const _completedHoldSecs = 3;
+
+  /// A tick that lands this late means the timer was throttled while the app
+  /// was in the background — the rest is long over, so don't beep about it.
+  static const _staleFinishMs = 2000;
+
   Timer? _timer;
-  RestTimerNotifier() : super(const RestTimerState());
+  Beeper? _beeper;
+  DateTime? _endsAt;
+  int _lastBeeped = -1;
 
-  void start() {
-    _timer?.cancel();
-    state = RestTimerState(active: true, remaining: state.restSecs, restSecs: state.restSecs);
-    _tick();
-  }
+  /// Sound, haptics and the wakelock all need platform plugins; tests turn
+  /// them off to exercise the countdown itself.
+  final bool _withFeedback;
 
-  void setDurationAndRestart(int secs) {
+  RestTimerNotifier({bool withFeedback = true})
+      : _withFeedback = withFeedback,
+        super(const RestTimerState());
+
+  void start() => _run(state.restSecs);
+
+  void setDurationAndRestart(int secs) => _run(secs);
+
+  void _run(int secs) {
     _timer?.cancel();
+    if (_withFeedback) {
+      _beeper ??= Beeper();
+      WakelockPlus.enable();
+    }
+    _endsAt = DateTime.now().add(Duration(seconds: secs));
+    _lastBeeped = -1;
     state = RestTimerState(active: true, remaining: secs, restSecs: secs);
-    _tick();
+    // Driven off wall-clock time like the timed-set and hangboard countdowns.
+    // A counter decremented once per tick stalls whenever the OS throttles
+    // timers, which is exactly what happens with the phone in a pocket.
+    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) => _tick());
   }
 
   void cancel() {
     _timer?.cancel();
+    _endsAt = null;
+    _releaseWakelock();
     state = RestTimerState(active: false, remaining: 0, restSecs: state.restSecs);
   }
 
+  void _releaseWakelock() {
+    if (_withFeedback) WakelockPlus.disable();
+  }
+
   void _tick() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (state.remaining > 0) {
-        state = RestTimerState(active: true, remaining: state.remaining - 1, restSecs: state.restSecs);
-      } else {
-        _timer?.cancel();
-        state = RestTimerState(active: false, remaining: 0, restSecs: state.restSecs);
-      }
+    final endsAt = _endsAt;
+    if (endsAt == null) return;
+
+    final remainingMs = endsAt.difference(DateTime.now()).inMilliseconds;
+    if (remainingMs <= 0) {
+      _finish(overshootMs: -remainingMs);
+      return;
+    }
+
+    final secsLeft = (remainingMs / 1000).ceil();
+    if (secsLeft != _lastBeeped && secsLeft <= 3) {
+      _beeper?.tick();
+      if (_withFeedback) HapticFeedback.lightImpact();
+      _lastBeeped = secsLeft;
+    }
+    // Ticks are 10× a second for beep accuracy; only publish whole seconds.
+    if (secsLeft != state.remaining) {
+      state = RestTimerState(
+          active: true, remaining: secsLeft, restSecs: state.restSecs);
+    }
+  }
+
+  void _finish({required int overshootMs}) {
+    _timer?.cancel();
+    _endsAt = null;
+    _releaseWakelock();
+    if (overshootMs < _staleFinishMs) {
+      _beeper?.done();
+      if (_withFeedback) HapticFeedback.heavyImpact();
+    }
+    state = RestTimerState(
+        active: true, remaining: 0, restSecs: state.restSecs);
+    _timer = Timer(const Duration(seconds: _completedHoldSecs), () {
+      state = RestTimerState(
+          active: false, remaining: 0, restSecs: state.restSecs);
     });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _beeper?.dispose();
+    if (state.active) _releaseWakelock();
     super.dispose();
   }
 }
