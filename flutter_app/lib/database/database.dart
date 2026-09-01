@@ -20,7 +20,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -123,8 +123,46 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(workoutSets, workoutSets.wallAngle);
         await m.addColumn(workoutSets, workoutSets.climbName);
       }
+      if (from < 16) {
+        // Deleting an exercise used to drop only its category row, leaving
+        // rows behind that point at a category that no longer exists. Those
+        // sets are unreachable (nothing can display or export them) but still
+        // marked their days as trained on the calendar. Clear them out before
+        // foreign keys start being enforced in beforeOpen.
+        await _purgeOrphans();
+      }
+    },
+    beforeOpen: (details) async {
+      // sqlite3 ignores foreign keys unless asked. Without this, a delete that
+      // forgets to clean up its children fails silently instead of throwing.
+      // Must run outside a transaction — the pragma is a no-op inside one,
+      // which is why it lives here rather than in onUpgrade.
+      await customStatement('PRAGMA foreign_keys = ON');
     },
   );
+
+  /// Deletes rows whose parent is gone, so foreign key enforcement has a
+  /// consistent database to start from.
+  Future<void> _purgeOrphans() async {
+    const statements = [
+      'DELETE FROM workout_sets WHERE category_id NOT IN '
+          '(SELECT id FROM exercise_categories)',
+      'DELETE FROM workout_exercises WHERE category_id NOT IN '
+          '(SELECT id FROM exercise_categories)',
+      'DELETE FROM workout_exercises WHERE workout_id NOT IN '
+          '(SELECT id FROM workouts)',
+      'DELETE FROM plan_workouts WHERE workout_id NOT IN '
+          '(SELECT id FROM workouts)',
+      'DELETE FROM plan_workouts WHERE plan_id NOT IN (SELECT id FROM plans)',
+      // Inspirations link to an exercise optionally, so a dangling link is
+      // cleared rather than taking the saved video down with it.
+      'UPDATE inspirations SET category_id = NULL WHERE category_id IS NOT NULL '
+          'AND category_id NOT IN (SELECT id FROM exercise_categories)',
+    ];
+    for (final sql in statements) {
+      await customStatement(sql);
+    }
+  }
 
   Future<void> _seedDefaults() async {
     // (name, group, exerciseType)  0=standard  1=climbing
@@ -231,8 +269,35 @@ class AppDatabase extends _$AppDatabase {
       (update(exerciseCategories)..where((t) => t.id.equals(id)))
           .write(ExerciseCategoriesCompanion(description: Value(description)));
 
-  Future<int> deleteCategory(int id) =>
-      (delete(exerciseCategories)..where((t) => t.id.equals(id))).go();
+  /// Number of logged sets and containing workouts that [deleteCategory]
+  /// would take with the exercise.
+  Future<({int sets, int workouts})> categoryDeletionImpact(int id) async {
+    final setCount = await (selectOnly(workoutSets)
+          ..addColumns([workoutSets.id.count()])
+          ..where(workoutSets.categoryId.equals(id)))
+        .map((r) => r.read(workoutSets.id.count()) ?? 0)
+        .getSingle();
+    final workoutCount = await (selectOnly(workoutExercises, distinct: true)
+          ..addColumns([workoutExercises.workoutId])
+          ..where(workoutExercises.categoryId.equals(id)))
+        .get()
+        .then((rows) => rows.length);
+    return (sets: setCount, workouts: workoutCount);
+  }
+
+  /// Deletes an exercise along with everything that references it. Logged sets
+  /// go too: with the category gone they can't be displayed or exported, so
+  /// leaving them behind only produced unreachable rows that still marked
+  /// their days as trained.
+  Future<void> deleteCategory(int id) => transaction(() async {
+        await (delete(workoutSets)..where((t) => t.categoryId.equals(id))).go();
+        await (delete(workoutExercises)..where((t) => t.categoryId.equals(id)))
+            .go();
+        // Saved videos outlive the exercise they were filed under.
+        await (update(inspirations)..where((t) => t.categoryId.equals(id)))
+            .write(const InspirationsCompanion(categoryId: Value(null)));
+        await (delete(exerciseCategories)..where((t) => t.id.equals(id))).go();
+      });
 
   Future<int> updateCategoryImage(int id, Uint8List? data) =>
       (update(exerciseCategories)..where((t) => t.id.equals(id)))

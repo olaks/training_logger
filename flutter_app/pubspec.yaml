@@ -49,6 +49,8 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   drift_dev: ^2.18.0
   build_runner: ^2.4.9
+  # Raw connection used by the migration test to write a pre-upgrade database.
+  sqlite3: ^3.3.0
 
 flutter:
   uses-material-design: true

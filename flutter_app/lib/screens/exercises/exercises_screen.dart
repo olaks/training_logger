@@ -467,26 +467,68 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
     showDialog(
       context: context,
       useRootNavigator: false,
-      builder: (_) => AlertDialog(
-        title: Text('Delete "$name"?'),
-        content: const Text(
-            'All logged sets for this exercise will remain in history.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              ref.removeCategory(id);
-              Navigator.pop(context);
-            },
-            child: Text('Delete',
-                style:
-                    TextStyle(color: Theme.of(context).colorScheme.error)),
-          ),
-        ],
-      ),
+      builder: (_) => _DeleteExerciseDialog(categoryId: id, name: name),
     );
+  }
+}
+
+// ── Delete confirmation ───────────────────────────────────────────────────────
+
+/// Deleting an exercise takes its logged sets with it, so the dialog names the
+/// cost before asking.
+class _DeleteExerciseDialog extends ConsumerWidget {
+  final int    categoryId;
+  final String name;
+
+  const _DeleteExerciseDialog({required this.categoryId, required this.name});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return AlertDialog(
+      title: Text('Delete "$name"?'),
+      content: FutureBuilder<({int sets, int workouts})>(
+        future: ref.read(dbProvider).categoryDeletionImpact(categoryId),
+        builder: (context, snap) {
+          final impact = snap.data;
+          if (impact == null) {
+            return const Text('Checking what this will remove…');
+          }
+          return Text(_impactText(impact));
+        },
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        TextButton(
+          onPressed: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            final navigator = Navigator.of(context);
+            await ref.removeCategory(categoryId);
+            navigator.pop();
+            messenger.showSnackBar(
+                SnackBar(content: Text('Deleted "$name"')));
+          },
+          child: Text('Delete',
+              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        ),
+      ],
+    );
+  }
+
+  static String _impactText(({int sets, int workouts}) impact) {
+    if (impact.sets == 0 && impact.workouts == 0) {
+      return 'Nothing has been logged for this exercise yet.';
+    }
+    final parts = <String>[
+      if (impact.sets > 0)
+        '${impact.sets} logged ${impact.sets == 1 ? 'set' : 'sets'}',
+      if (impact.workouts > 0)
+        'its place in ${impact.workouts} '
+            '${impact.workouts == 1 ? 'workout' : 'workouts'}',
+    ];
+    return 'This also deletes ${parts.join(' and ')}. '
+        'It cannot be undone.';
   }
 }
 
