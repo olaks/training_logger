@@ -365,11 +365,15 @@ class _ItemTile extends StatelessWidget {
               icon: Icon(Icons.more_vert,
                   color: Colors.white.withValues(alpha: 0.35), size: 20),
               onSelected: (a) => switch (a) {
+                _Action.start     => onStart?.call(),
                 _Action.rename    => onRename(),
                 _Action.duplicate => onDuplicate?.call(),
                 _Action.delete    => onDelete(),
               },
               itemBuilder: (_) => [
+                if (onStart != null)
+                  const PopupMenuItem(
+                      value: _Action.start, child: Text('Start workout')),
                 const PopupMenuItem(
                     value: _Action.rename, child: Text('Rename')),
                 if (onDuplicate != null)
@@ -385,7 +389,7 @@ class _ItemTile extends StatelessWidget {
       );
 }
 
-enum _Action { rename, duplicate, delete }
+enum _Action { start, rename, duplicate, delete }
 
 // ── New workout dialog (optionally pre-filled from an existing workout) ──────
 

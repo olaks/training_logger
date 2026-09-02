@@ -80,6 +80,14 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
         title: Text(workout?.name ?? '',
             style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          // Start straight from the workout's own screen — it doesn't have to
+          // belong to a plan, or be scheduled, to be trained.
+          IconButton(
+            tooltip: 'Start workout',
+            onPressed: exercises.isEmpty ? null : _startToday,
+            icon: const Icon(Icons.play_arrow),
+            color: Theme.of(context).colorScheme.primary,
+          ),
           if (workout != null)
             PopupMenuButton<_Action>(
               icon: const Icon(Icons.more_vert),
