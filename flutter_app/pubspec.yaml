@@ -37,12 +37,18 @@ dependencies:
   image_picker: ^1.1.0
 
   # File picking for CSV import
-  file_picker: ^12.0.0
-  share_plus: ^13.0.0
+  # This trio is bound together by win32. file_picker 12 and share_plus 13
+  # both want win32 6, and win32 6 forces wakelock_plus 1.6+, whose Android
+  # sources fail to compile here ("Unresolved reference 'ToggleMessage'"),
+  # breaking the APK build. Android is the primary target, so all three stay
+  # on the win32 5 line. Move them together once wakelock_plus builds again.
+  file_picker: ^11.0.0
+  share_plus: ^12.0.2
   path_provider: ^2.1.5
   shared_preferences: ^2.5.5
   audioplayers: ^6.1.0
-  wakelock_plus: ^1.2.8
+  # Held below 1.6 — see the win32 note under file_picker.
+  wakelock_plus: '>=1.2.8 <1.6.0'
 
   # External-URL launching for the Inspirations page
   url_launcher: ^6.3.0
