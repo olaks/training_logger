@@ -95,6 +95,16 @@ class _WorkoutSessionScreenState
             ),
           ],
         ),
+        actions: [
+          // The session shows only the Track tab, so this is the way to last
+          // session's numbers and the trend without leaving the workout.
+          IconButton(
+            tooltip: 'History & graph',
+            icon: const Icon(Icons.query_stats),
+            onPressed: () =>
+                context.push('/exercise/${current.id}/${widget.dateStr}'),
+          ),
+        ],
       ),
       body: Column(
         children: [
