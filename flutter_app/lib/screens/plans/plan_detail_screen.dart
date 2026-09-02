@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
+import '../../utils/undo_snackbar.dart';
 import '../../utils/format_utils.dart';
 import '../../utils/share_file.dart';
 
@@ -254,9 +255,14 @@ Future<void> _pickDate(BuildContext context, WidgetRef ref) async {
               child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
-              await ref.deletePlan(id);
+              final messenger = ScaffoldMessenger.of(context);
+              final deleted = await ref.deletePlan(id);
               if (context.mounted) Navigator.pop(context);
               if (context.mounted) context.pop();
+              if (deleted == null) return;
+              showUndoSnackBar(messenger,
+                  message: 'Deleted "$name"',
+                  onUndo: () => ref.restorePlan(deleted));
             },
             child: Text('Delete',
                 style:

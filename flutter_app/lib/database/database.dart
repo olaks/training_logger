@@ -285,11 +285,26 @@ class AppDatabase extends _$AppDatabase {
     return (sets: setCount, workouts: workoutCount);
   }
 
-  /// Deletes an exercise along with everything that references it. Logged sets
-  /// go too: with the category gone they can't be displayed or exported, so
-  /// leaving them behind only produced unreachable rows that still marked
-  /// their days as trained.
-  Future<void> deleteCategory(int id) => transaction(() async {
+  /// Deletes an exercise along with everything that references it, returning
+  /// what was removed so it can be put back. Logged sets go too: with the
+  /// category gone they can't be displayed or exported, so leaving them behind
+  /// only produced unreachable rows that still marked their days as trained.
+  Future<DeletedCategory?> deleteCategory(int id) => transaction(() async {
+        final category = await (select(exerciseCategories)
+              ..where((t) => t.id.equals(id)))
+            .getSingleOrNull();
+        if (category == null) return null;
+
+        final sets = await (select(workoutSets)
+              ..where((t) => t.categoryId.equals(id)))
+            .get();
+        final members = await (select(workoutExercises)
+              ..where((t) => t.categoryId.equals(id)))
+            .get();
+        final linked = await (select(inspirations)
+              ..where((t) => t.categoryId.equals(id)))
+            .get();
+
         await (delete(workoutSets)..where((t) => t.categoryId.equals(id))).go();
         await (delete(workoutExercises)..where((t) => t.categoryId.equals(id)))
             .go();
@@ -297,6 +312,31 @@ class AppDatabase extends _$AppDatabase {
         await (update(inspirations)..where((t) => t.categoryId.equals(id)))
             .write(const InspirationsCompanion(categoryId: Value(null)));
         await (delete(exerciseCategories)..where((t) => t.id.equals(id))).go();
+
+        return DeletedCategory(
+          category: category,
+          sets: sets,
+          memberships: members,
+          unlinkedInspirationIds: linked.map((i) => i.id).toList(),
+        );
+      });
+
+  /// Reverses [deleteCategory]. The exercise goes back first so everything
+  /// pointing at it has something to point at.
+  Future<void> restoreCategory(DeletedCategory deleted) => transaction(() async {
+        await into(exerciseCategories)
+            .insert(deleted.category.toCompanion(false));
+        for (final s in deleted.sets) {
+          await into(workoutSets).insert(s.toCompanion(false));
+        }
+        for (final m in deleted.memberships) {
+          await into(workoutExercises).insert(m.toCompanion(false));
+        }
+        for (final id in deleted.unlinkedInspirationIds) {
+          await (update(inspirations)..where((t) => t.id.equals(id)))
+              .write(InspirationsCompanion(
+                  categoryId: Value(deleted.category.id)));
+        }
       });
 
   Future<int> updateCategoryImage(int id, Uint8List? data) =>
@@ -332,8 +372,43 @@ class AppDatabase extends _$AppDatabase {
   Future<int> insertSet(WorkoutSetsCompanion set) =>
       into(workoutSets).insert(set);
 
-  Future<int> deleteSet(int id) =>
-      (delete(workoutSets)..where((t) => t.id.equals(id))).go();
+  /// Overwrites a logged set. Every field is written, so leaving one out
+  /// clears it — an edit replaces the set rather than merging into it.
+  Future<int> updateSet(
+    int id, {
+    double? weightKg,
+    int? reps,
+    int? timeSecs,
+    int? rpe,
+    String? grade,
+    int? wallAngle,
+    String? climbName,
+  }) =>
+      (update(workoutSets)..where((t) => t.id.equals(id))).write(
+        WorkoutSetsCompanion(
+          weightKg:  Value(weightKg),
+          reps:      Value(reps),
+          timeSecs:  Value(timeSecs),
+          rpe:       Value(rpe),
+          grade:     Value(grade),
+          wallAngle: Value(wallAngle),
+          climbName: Value(climbName),
+        ),
+      );
+
+  /// Deletes a set and hands back what was removed, so the caller can offer
+  /// an undo. Returns null if the set was already gone.
+  Future<WorkoutSet?> deleteSet(int id) async {
+    final row = await (select(workoutSets)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (row == null) return null;
+    await (delete(workoutSets)..where((t) => t.id.equals(id))).go();
+    return row;
+  }
+
+  /// Puts a deleted set back exactly as it was, id included.
+  Future<void> restoreSet(WorkoutSet set) =>
+      into(workoutSets).insert(set.toCompanion(false));
 
   // ── Day notes ─────────────────────────────────────────────────────────────
 
@@ -377,18 +452,21 @@ class AppDatabase extends _$AppDatabase {
     return q.watch();
   }
 
+  /// [addedAt] is only passed when restoring from a backup, so a re-imported
+  /// link keeps its original place in the list.
   Future<int> insertInspiration({
     required String title,
     required String url,
     String? notes,
     int? categoryId,
+    int? addedAt,
   }) =>
       into(inspirations).insert(InspirationsCompanion.insert(
         title: title,
         url: url,
         notes: Value(notes),
         categoryId: Value(categoryId),
-        addedAt: DateTime.now().millisecondsSinceEpoch,
+        addedAt: addedAt ?? DateTime.now().millisecondsSinceEpoch,
       ));
 
   Future<int> updateInspiration(
@@ -672,14 +750,26 @@ class AppDatabase extends _$AppDatabase {
     final notes   = await select(dayNotes).get();
     final weights = await select(bodyWeights).get();
 
+    // ── Inspirations ────────────────────────────────────────────────────
+    final links = await select(inspirations).get();
+    final inspirationsJson = links.map((i) => <String, dynamic>{
+      'title': i.title,
+      'url':   i.url,
+      if (i.notes != null) 'notes': i.notes,
+      if (i.categoryId != null && catNameById[i.categoryId] != null)
+        'exercise': catNameById[i.categoryId],
+      'addedAt': i.addedAt,
+    }).toList();
+
     return const JsonEncoder.withIndent('  ').convert({
-      'version':     2,
-      'exportedAt':  DateTime.now().toIso8601String(),
-      'exercises':   exercisesJson,
-      'workouts':    workoutsJson,
-      'plans':       plansJson,
-      'dayNotes':    notes.map((n) => {'date': n.dateStr, 'note': n.note}).toList(),
-      'bodyWeights': weights.map((b) => {'date': b.dateStr, 'kg': b.kg}).toList(),
+      'version':      3,
+      'exportedAt':   DateTime.now().toIso8601String(),
+      'exercises':    exercisesJson,
+      'workouts':     workoutsJson,
+      'plans':        plansJson,
+      'dayNotes':     notes.map((n) => {'date': n.dateStr, 'note': n.note}).toList(),
+      'bodyWeights':  weights.map((b) => {'date': b.dateStr, 'kg': b.kg}).toList(),
+      'inspirations': inspirationsJson,
     });
   }
 
@@ -870,6 +960,27 @@ class AppDatabase extends _$AppDatabase {
             .getSingleOrNull();
         if (existing != null) continue;
         await saveBodyWeight(dateStr, kg);
+      }
+
+      // ── Inspirations ──────────────────────────────────────────────────
+      // Absent from exports before version 3; older files just skip this.
+      final linksData =
+          (data['inspirations'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      for (final i in linksData) {
+        final url   = i['url'] as String;
+        final title = i['title'] as String;
+        final dup = await (select(inspirations)
+              ..where((t) => t.url.equals(url) & t.title.equals(title)))
+            .getSingleOrNull();
+        if (dup != null) continue;
+
+        await insertInspiration(
+          title:      title,
+          url:        url,
+          notes:      i['notes'] as String?,
+          categoryId: catIdByName[i['exercise'] as String? ?? ''],
+          addedAt:    (i['addedAt'] as num?)?.toInt(),
+        );
       }
     });
     return inserted;
@@ -1072,11 +1183,43 @@ class AppDatabase extends _$AppDatabase {
     return wId;
   }
 
-  Future<void> deleteWorkout(int id) async {
-    await (delete(planWorkouts)..where((t) => t.workoutId.equals(id))).go();
-    await (delete(workoutExercises)..where((t) => t.workoutId.equals(id))).go();
-    await (delete(workouts)..where((t) => t.id.equals(id))).go();
-  }
+  /// Deletes a workout and everything scheduling it, returning the pieces so
+  /// the caller can offer an undo.
+  Future<DeletedWorkout?> deleteWorkout(int id) => transaction(() async {
+        final workout =
+            await (select(workouts)..where((t) => t.id.equals(id)))
+                .getSingleOrNull();
+        if (workout == null) return null;
+
+        final assignments = await (select(planWorkouts)
+              ..where((t) => t.workoutId.equals(id)))
+            .get();
+        final exercises = await (select(workoutExercises)
+              ..where((t) => t.workoutId.equals(id)))
+            .get();
+
+        await (delete(planWorkouts)..where((t) => t.workoutId.equals(id))).go();
+        await (delete(workoutExercises)..where((t) => t.workoutId.equals(id)))
+            .go();
+        await (delete(workouts)..where((t) => t.id.equals(id))).go();
+
+        return DeletedWorkout(
+          workout: workout,
+          exercises: exercises,
+          assignments: assignments,
+        );
+      });
+
+  /// Reverses [deleteWorkout].
+  Future<void> restoreWorkout(DeletedWorkout deleted) => transaction(() async {
+        await into(workouts).insert(deleted.workout.toCompanion(false));
+        for (final e in deleted.exercises) {
+          await into(workoutExercises).insert(e.toCompanion(false));
+        }
+        for (final a in deleted.assignments) {
+          await into(planWorkouts).insert(a.toCompanion(false));
+        }
+      });
 
   // Returns (weId, category, targetSets, targetReps) per exercise in the workout.
   Stream<List<(int, ExerciseCategory, int?, int?)>> watchExercisesForWorkout(int workoutId) {
@@ -1155,10 +1298,27 @@ class AppDatabase extends _$AppDatabase {
       (update(plans)..where((t) => t.id.equals(id)))
           .write(PlansCompanion(name: Value(name)));
 
-  Future<void> deletePlan(int id) async {
-    await (delete(planWorkouts)..where((t) => t.planId.equals(id))).go();
-    await (delete(plans)..where((t) => t.id.equals(id))).go();
-  }
+  /// Deletes a plan and its assignments, returning them for undo.
+  Future<DeletedPlan?> deletePlan(int id) => transaction(() async {
+        final plan =
+            await (select(plans)..where((t) => t.id.equals(id))).getSingleOrNull();
+        if (plan == null) return null;
+        final assignments =
+            await (select(planWorkouts)..where((t) => t.planId.equals(id))).get();
+
+        await (delete(planWorkouts)..where((t) => t.planId.equals(id))).go();
+        await (delete(plans)..where((t) => t.id.equals(id))).go();
+
+        return DeletedPlan(plan: plan, assignments: assignments);
+      });
+
+  /// Reverses [deletePlan].
+  Future<void> restorePlan(DeletedPlan deleted) => transaction(() async {
+        await into(plans).insert(deleted.plan.toCompanion(false));
+        for (final a in deleted.assignments) {
+          await into(planWorkouts).insert(a.toCompanion(false));
+        }
+      });
 
   // ── Plan ↔ Workout assignments ────────────────────────────────────────────
 
@@ -1283,4 +1443,43 @@ class AppDatabase extends _$AppDatabase {
     final total = h * 3600 + m * 60 + sec;
     return total > 0 ? total : null;
   }
+}
+
+// ── Undo snapshots ───────────────────────────────────────────────────────────
+
+/// Everything removed by [AppDatabase.deleteCategory], kept together so the
+/// exercise can be put back exactly as it was.
+class DeletedCategory {
+  final ExerciseCategory category;
+  final List<WorkoutSet> sets;
+  final List<WorkoutExercise> memberships;
+  final List<int> unlinkedInspirationIds;
+
+  const DeletedCategory({
+    required this.category,
+    required this.sets,
+    required this.memberships,
+    required this.unlinkedInspirationIds,
+  });
+}
+
+/// Everything removed by [AppDatabase.deleteWorkout].
+class DeletedWorkout {
+  final Workout workout;
+  final List<WorkoutExercise> exercises;
+  final List<PlanWorkout> assignments;
+
+  const DeletedWorkout({
+    required this.workout,
+    required this.exercises,
+    required this.assignments,
+  });
+}
+
+/// Everything removed by [AppDatabase.deletePlan].
+class DeletedPlan {
+  final Plan plan;
+  final List<PlanWorkout> assignments;
+
+  const DeletedPlan({required this.plan, required this.assignments});
 }

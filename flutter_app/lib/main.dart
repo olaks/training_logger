@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
+import 'providers/backup_provider.dart';
 import 'providers/theme_provider.dart';
 
 void main() async {
@@ -12,6 +13,7 @@ void main() async {
   runApp(
     ProviderScope(
       overrides: [
+        prefsProvider.overrideWithValue(prefs),
         themeIndexProvider.overrideWith(
           (ref) => ThemeNotifier(savedIndex, prefs),
         ),

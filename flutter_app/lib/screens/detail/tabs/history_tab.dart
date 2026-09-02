@@ -5,6 +5,8 @@ import '../../../database/database.dart';
 import '../../../providers/app_providers.dart';
 import '../../../utils/format_utils.dart';
 import '../../../utils/grades.dart';
+import '../../../utils/undo_snackbar.dart';
+import '../edit_set_sheet.dart';
 
 class HistoryTab extends ConsumerWidget {
   final int categoryId;
@@ -106,6 +108,8 @@ class HistoryTab extends ConsumerWidget {
                     set:      s,
                     index:    e.key,
                     isPr:     isPr,
+                    onEdit:   () =>
+                        showEditSetSheet(context, s, gradeScale: gradeScale),
                     onDelete: () => _confirmDelete(context, ref, s.id),
                   );
                 }),
@@ -127,9 +131,15 @@ class HistoryTab extends ConsumerWidget {
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel')),
           TextButton(
-            onPressed: () {
-              ref.removeSet(id);
-              Navigator.pop(context);
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(context);
+              final deleted = await ref.removeSet(id);
+              navigator.pop();
+              if (deleted == null) return;
+              showUndoSnackBar(messenger,
+                  message: 'Set deleted',
+                  onUndo: () => ref.restoreSet(deleted));
             },
             child: Text('Delete',
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -179,74 +189,93 @@ class _SetRow extends StatelessWidget {
   final WorkoutSet set;
   final int index;
   final bool isPr;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
   const _SetRow(
       {required this.set,
       required this.index,
       required this.isPr,
+      required this.onEdit,
       required this.onDelete});
 
   @override
   Widget build(BuildContext context) => Card(
         margin: const EdgeInsets.only(bottom: 4),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 52,
-                child: Text('Set ${index + 1}',
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.white.withValues(alpha: 0.4))),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (set.grade != null)
-                      _ClimbingSetLine(set: set)
-                    else
-                      Text(
-                        formatSet(
-                          weightKg: set.weightKg,
-                          reps:     set.reps,
-                          timeSecs: set.timeSecs,
-                        ),
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    if (set.rpe != null)
-                      Text(
-                        'RPE ${set.rpe}',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withValues(alpha: 0.8)),
-                      ),
-                  ],
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onEdit,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 52,
+                  child: Text('Set ${index + 1}',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.4))),
                 ),
-              ),
-              if (isPr)
-                const Padding(
-                  padding: EdgeInsets.only(right: 8),
-                  child: Tooltip(
-                    message: 'Personal record',
-                    child: Icon(Icons.star_rounded,
-                        size: 17, color: Colors.amber),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (set.grade != null)
+                        _ClimbingSetLine(set: set)
+                      else
+                        Text(
+                          formatSet(
+                            weightKg: set.weightKg,
+                            reps:     set.reps,
+                            timeSecs: set.timeSecs,
+                          ),
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      if (set.rpe != null)
+                        Text(
+                          'RPE ${set.rpe}',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withValues(alpha: 0.8)),
+                        ),
+                    ],
                   ),
                 ),
-              GestureDetector(
-                onTap: onDelete,
-                child: Icon(Icons.delete_outline,
-                    size: 18,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .error
-                        .withValues(alpha: 0.5)),
-              ),
-            ],
+                if (isPr)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: Tooltip(
+                      message: 'Personal record',
+                      child: Icon(Icons.star_rounded,
+                          size: 17, color: Colors.amber),
+                    ),
+                  ),
+                GestureDetector(
+                  onTap: onEdit,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(Icons.edit_outlined,
+                        size: 18,
+                        color: Colors.white.withValues(alpha: 0.35)),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: onDelete,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(Icons.delete_outline,
+                        size: 18,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .error
+                            .withValues(alpha: 0.5)),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );

@@ -1,17 +1,12 @@
-import 'dart:convert';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io' as io;
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
-import '../../providers/theme_provider.dart';
-import '../../theme/app_theme.dart';
 import '../../utils/format_utils.dart';
-import '../../utils/share_file.dart';
+import '../../utils/undo_snackbar.dart';
 
 class ExercisesScreen extends ConsumerStatefulWidget {
   const ExercisesScreen({super.key});
@@ -23,7 +18,6 @@ class ExercisesScreen extends ConsumerStatefulWidget {
 class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
   final _searchCtrl = TextEditingController();
   String _query = '';
-  bool   _importing = false;
 
   @override
   void dispose() {
@@ -114,12 +108,9 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
           PopupMenuButton<_DataAction>(
             icon: const Icon(Icons.more_vert),
             onSelected: (action) {
-              if (action == _DataAction.inspirations)   context.push('/inspirations');
-              if (action == _DataAction.exportBackup)   _exportBackup();
-              if (action == _DataAction.importBackup)   _importBackup(context);
-              if (action == _DataAction.importFitNotes) context.push('/import');
-              if (action == _DataAction.appearance)     _showAppearanceSheet(context);
-              if (action == _DataAction.help)           _showHelpSheet(context);
+              if (action == _DataAction.inspirations) context.push('/inspirations');
+              if (action == _DataAction.settings)     context.push('/settings');
+              if (action == _DataAction.help)         _showHelpSheet(context);
             },
             itemBuilder: (_) => const [
               PopupMenuItem(
@@ -129,25 +120,11 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                       title: Text('Inspirations'))),
               PopupMenuDivider(),
               PopupMenuItem(
-                  value: _DataAction.exportBackup,
+                  value: _DataAction.settings,
                   child: ListTile(
-                      leading: Icon(Icons.download), title: Text('Export backup'))),
-              PopupMenuItem(
-                  value: _DataAction.importBackup,
-                  child: ListTile(
-                      leading: Icon(Icons.upload), title: Text('Import backup'))),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                  value: _DataAction.importFitNotes,
-                  child: ListTile(
-                      leading: Icon(Icons.upload_file),
-                      title: Text('Import FitNotes CSV'))),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                  value: _DataAction.appearance,
-                  child: ListTile(
-                      leading: Icon(Icons.palette_outlined),
-                      title: Text('Appearance'))),
+                      leading: Icon(Icons.settings_outlined),
+                      title: Text('Settings'),
+                      subtitle: Text('Backup, import, appearance'))),
               PopupMenuDivider(),
               PopupMenuItem(
                   value: _DataAction.help,
@@ -175,8 +152,6 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
               ),
             ),
           ),
-          if (_importing)
-            const LinearProgressIndicator(),
           Expanded(
             child: visible.isEmpty
                 ? Center(
@@ -239,51 +214,6 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
         ],
       ),
     );
-  }
-
-  // ── Backup export / import ────────────────────────────────────────────────
-
-  Future<void> _exportBackup() async {
-    try {
-      final json     = await ref.read(dbProvider).exportToJson();
-      final filename =
-          'training_logger_${dateStrFrom(DateTime.now())}.json';
-      await shareJsonFile(json, filename);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Export failed: $e')));
-      }
-    }
-  }
-
-  Future<void> _importBackup(BuildContext context) async {
-    // Capture before any await
-    final messenger = ScaffoldMessenger.of(context);
-
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-      withData: kIsWeb,
-      withReadStream: false,
-    );
-    if (result == null || !mounted) return;
-
-    setState(() => _importing = true);
-    try {
-      final String jsonStr;
-      if (kIsWeb) {
-        jsonStr = utf8.decode(result.files.single.bytes!);
-      } else {
-        jsonStr = await io.File(result.files.single.path!).readAsString();
-      }
-      final count = await ref.read(dbProvider).importFromJson(jsonStr);
-      messenger.showSnackBar(SnackBar(content: Text('Imported $count sets')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Import failed: $e')));
-    } finally {
-      if (mounted) setState(() => _importing = false);
-    }
   }
 
   Future<void> _pickImage(
@@ -349,20 +279,6 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => const _HelpSheet(),
-    );
-  }
-
-  void _showAppearanceSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      useRootNavigator: false,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => _AppearanceSheet(
-        currentIndex: ref.read(themeIndexProvider),
-        onSelect: (i) => ref.read(themeIndexProvider.notifier).setTheme(i),
-      ),
     );
   }
 
@@ -504,10 +420,12 @@ class _DeleteExerciseDialog extends ConsumerWidget {
           onPressed: () async {
             final messenger = ScaffoldMessenger.of(context);
             final navigator = Navigator.of(context);
-            await ref.removeCategory(categoryId);
+            final deleted = await ref.removeCategory(categoryId);
             navigator.pop();
-            messenger.showSnackBar(
-                SnackBar(content: Text('Deleted "$name"')));
+            if (deleted == null) return;
+            showUndoSnackBar(messenger,
+                message: 'Deleted "$name"',
+                onUndo: () => ref.restoreCategory(deleted));
           },
           child: Text('Delete',
               style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -786,84 +704,7 @@ class _HelpSection extends StatelessWidget {
       );
 }
 
-// ── Appearance picker ─────────────────────────────────────────────────────────
-
-class _AppearanceSheet extends StatefulWidget {
-  final int currentIndex;
-  final void Function(int) onSelect;
-  const _AppearanceSheet({required this.currentIndex, required this.onSelect});
-
-  @override
-  State<_AppearanceSheet> createState() => _AppearanceSheetState();
-}
-
-class _AppearanceSheetState extends State<_AppearanceSheet> {
-  late int _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = widget.currentIndex;
-  }
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Appearance',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: List.generate(themeAccents.length, (i) {
-                final accent = themeAccents[i];
-                final selected = _selected == i;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() => _selected = i);
-                    widget.onSelect(i);
-                  },
-                  child: Column(
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: accent.color,
-                          shape: BoxShape.circle,
-                          border: selected
-                              ? Border.all(color: Colors.white, width: 3)
-                              : Border.all(color: Colors.transparent, width: 3),
-                          boxShadow: selected
-                              ? [BoxShadow(color: accent.color.withValues(alpha: 0.5), blurRadius: 12)]
-                              : null,
-                        ),
-                        child: selected
-                            ? const Icon(Icons.check, color: Colors.white, size: 22)
-                            : null,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(accent.name,
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: selected
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.5))),
-                    ],
-                  ),
-                );
-              }),
-            ),
-          ],
-        ),
-      );
-}
-
-enum _DataAction { inspirations, exportBackup, importBackup, importFitNotes, appearance, help }
+enum _DataAction { inspirations, settings, help }
 
 enum _ExAction { edit, addToWorkout, delete }
 

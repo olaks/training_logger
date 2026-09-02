@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../database/database.dart';
 import '../utils/beeper.dart';
+import '../utils/phase_countdown.dart';
 
 // ── Database singleton ─────────────────────────────────────────────────────
 
@@ -187,10 +188,9 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
   /// was in the background — the rest is long over, so don't beep about it.
   static const _staleFinishMs = 2000;
 
-  Timer? _timer;
+  late final PhaseCountdown _countdown;
+  Timer? _dismissTimer;
   Beeper? _beeper;
-  DateTime? _endsAt;
-  int _lastBeeped = -1;
 
   /// Sound, haptics and the wakelock all need platform plugins; tests turn
   /// them off to exercise the countdown itself.
@@ -198,30 +198,34 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
 
   RestTimerNotifier({bool withFeedback = true})
       : _withFeedback = withFeedback,
-        super(const RestTimerState());
+        super(const RestTimerState()) {
+    _countdown = PhaseCountdown(
+      onChanged: _publish,
+      onElapsed: _finish,
+      onFinalSeconds: (_) {
+        _beeper?.tick();
+        if (_withFeedback) HapticFeedback.lightImpact();
+      },
+    );
+  }
 
   void start() => _run(state.restSecs);
 
   void setDurationAndRestart(int secs) => _run(secs);
 
   void _run(int secs) {
-    _timer?.cancel();
+    _dismissTimer?.cancel();
     if (_withFeedback) {
       _beeper ??= Beeper();
       WakelockPlus.enable();
     }
-    _endsAt = DateTime.now().add(Duration(seconds: secs));
-    _lastBeeped = -1;
+    _countdown.start(secs);
     state = RestTimerState(active: true, remaining: secs, restSecs: secs);
-    // Driven off wall-clock time like the timed-set and hangboard countdowns.
-    // A counter decremented once per tick stalls whenever the OS throttles
-    // timers, which is exactly what happens with the phone in a pocket.
-    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) => _tick());
   }
 
   void cancel() {
-    _timer?.cancel();
-    _endsAt = null;
+    _dismissTimer?.cancel();
+    _countdown.stop();
     _releaseWakelock();
     state = RestTimerState(active: false, remaining: 0, restSecs: state.restSecs);
   }
@@ -230,32 +234,17 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
     if (_withFeedback) WakelockPlus.disable();
   }
 
-  void _tick() {
-    final endsAt = _endsAt;
-    if (endsAt == null) return;
-
-    final remainingMs = endsAt.difference(DateTime.now()).inMilliseconds;
-    if (remainingMs <= 0) {
-      _finish(overshootMs: -remainingMs);
-      return;
-    }
-
-    final secsLeft = (remainingMs / 1000).ceil();
-    if (secsLeft != _lastBeeped && secsLeft <= 3) {
-      _beeper?.tick();
-      if (_withFeedback) HapticFeedback.lightImpact();
-      _lastBeeped = secsLeft;
-    }
-    // Ticks are 10× a second for beep accuracy; only publish whole seconds.
+  /// Ticks come ten times a second; only whole seconds are worth publishing.
+  void _publish() {
+    final secsLeft = _countdown.remainingSecs;
     if (secsLeft != state.remaining) {
       state = RestTimerState(
           active: true, remaining: secsLeft, restSecs: state.restSecs);
     }
   }
 
-  void _finish({required int overshootMs}) {
-    _timer?.cancel();
-    _endsAt = null;
+  void _finish(int overshootMs) {
+    _countdown.stop();
     _releaseWakelock();
     if (overshootMs < _staleFinishMs) {
       _beeper?.done();
@@ -263,7 +252,7 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
     }
     state = RestTimerState(
         active: true, remaining: 0, restSecs: state.restSecs);
-    _timer = Timer(const Duration(seconds: _completedHoldSecs), () {
+    _dismissTimer = Timer(const Duration(seconds: _completedHoldSecs), () {
       state = RestTimerState(
           active: false, remaining: 0, restSecs: state.restSecs);
     });
@@ -271,7 +260,8 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _dismissTimer?.cancel();
+    _countdown.dispose();
     _beeper?.dispose();
     if (state.active) _releaseWakelock();
     super.dispose();
@@ -292,7 +282,8 @@ extension DbMutations on WidgetRef {
   Future<void> updateCategoryGroup(int id, String? group) => db.updateCategoryGroup(id, group);
   Future<void> updateCategoryDescription(int id, String? description) =>
       db.updateCategoryDescription(id, description);
-  Future<void> removeCategory(int id)              => db.deleteCategory(id);
+  Future<DeletedCategory?> removeCategory(int id)  => db.deleteCategory(id);
+  Future<void> restoreCategory(DeletedCategory d)  => db.restoreCategory(d);
 
   /// Pass [grade] for climbing exercises (only grade + rpe are stored).
   Future<void> saveSet({
@@ -339,7 +330,31 @@ extension DbMutations on WidgetRef {
       db.saveBodyWeight(dateStr, kg);
   Future<void> deleteBodyWeight(String dateStr) => db.deleteBodyWeight(dateStr);
 
-  Future<void> removeSet(int id) => db.deleteSet(id);
+  Future<WorkoutSet?> removeSet(int id) => db.deleteSet(id);
+  Future<void> restoreSet(WorkoutSet set) => db.restoreSet(set);
+
+  /// Writes a corrected version of an already-logged set. Empty values are
+  /// cleared rather than kept, so the set ends up as what the sheet shows.
+  Future<void> editSet(
+    int id, {
+    double? weightKg,
+    int? reps,
+    int? timeSecs,
+    int? rpe,
+    String? grade,
+    int? wallAngle,
+    String? climbName,
+  }) =>
+      db.updateSet(
+        id,
+        weightKg:  weightKg,
+        reps:      reps,
+        timeSecs:  timeSecs,
+        rpe:       rpe,
+        grade:     grade,
+        wallAngle: wallAngle,
+        climbName: climbName,
+      );
 
   Future<void> saveCategoryImage(int id, Uint8List? data) =>
       db.updateCategoryImage(id, data);
@@ -355,7 +370,8 @@ extension DbMutations on WidgetRef {
   Future<int>  renameWorkout(int id, String name)             => db.renameWorkout(id, name);
   Future<int>  updateWorkoutNotes(int id, String notes)      => db.updateWorkoutNotes(id, notes);
   Future<void> reorderWorkoutExercises(int wId, List<int> weIds) => db.reorderWorkoutExercises(wId, weIds);
-  Future<void> deleteWorkout(int id)                          => db.deleteWorkout(id);
+  Future<DeletedWorkout?> deleteWorkout(int id)               => db.deleteWorkout(id);
+  Future<void> restoreWorkout(DeletedWorkout d)               => db.restoreWorkout(d);
   Future<void> addExerciseToWorkout(int workoutId, int catId) => db.addExerciseToWorkout(workoutId, catId);
   Future<int>  removeExerciseFromWorkout(int weId)            => db.removeExerciseFromWorkout(weId);
   Future<int>  removeAllOfExerciseFromWorkout(int wId, int catId) => db.removeAllOfExerciseFromWorkout(wId, catId);
@@ -388,7 +404,8 @@ extension DbMutations on WidgetRef {
   Future<int>  insertPlan(String name)              => db.insertPlan(name);
   Future<int>  importPlanFromJson(String jsonStr)   => db.importPlanFromJson(jsonStr);
   Future<int>  renamePlan(int id, String name)      => db.renamePlan(id, name);
-  Future<void> deletePlan(int id)                   => db.deletePlan(id);
+  Future<DeletedPlan?> deletePlan(int id)           => db.deletePlan(id);
+  Future<void> restorePlan(DeletedPlan d)           => db.restorePlan(d);
   Future<int>  assignWorkoutToPlan(int planId, int workoutId, {int? weekday, String? dateStr}) =>
       db.assignWorkoutToPlan(planId, workoutId, weekday: weekday, dateStr: dateStr);
   Future<int>  removeWorkoutFromPlan(int assignmentId) => db.removeWorkoutFromPlan(assignmentId);

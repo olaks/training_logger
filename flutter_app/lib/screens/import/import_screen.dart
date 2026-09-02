@@ -1,10 +1,7 @@
-import 'dart:convert';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:io' as io;
 import '../../providers/app_providers.dart';
+import '../../utils/pick_text_file.dart';
 
 class ImportScreen extends ConsumerStatefulWidget {
   const ImportScreen({super.key});
@@ -38,21 +35,10 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   Future<void> _pickFile() async {
     setState(() => _error = null);
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['csv'],
-      withData: kIsWeb,      // web needs bytes in-memory
-      withReadStream: false,
-    );
-    if (result == null) return;
+    final csv = await pickTextFile(extension: 'csv');
+    if (csv == null) return;
 
     try {
-      String csv;
-      if (kIsWeb) {
-        csv = utf8.decode(result.files.single.bytes!);
-      } else {
-        csv = await io.File(result.files.single.path!).readAsString();
-      }
       final rows = _parseCsv(csv);
       if (rows.isEmpty) throw 'No data rows found in file.';
       setState(() {

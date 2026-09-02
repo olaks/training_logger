@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
+import '../../utils/undo_snackbar.dart';
 
 class WorkoutDetailScreen extends ConsumerStatefulWidget {
   final int workoutId;
@@ -376,9 +377,14 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
               child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
-              await ref.deleteWorkout(id);
+              final messenger = ScaffoldMessenger.of(context);
+              final deleted = await ref.deleteWorkout(id);
               if (context.mounted) Navigator.pop(context);
               if (context.mounted) context.pop();
+              if (deleted == null) return;
+              showUndoSnackBar(messenger,
+                  message: 'Deleted "$name"',
+                  onUndo: () => ref.restoreWorkout(deleted));
             },
             child: Text('Delete',
                 style:

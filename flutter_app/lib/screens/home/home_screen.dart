@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
+import '../../providers/backup_provider.dart';
 import '../../utils/format_utils.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -55,6 +56,8 @@ class HomeScreen extends ConsumerWidget {
           // ── Day meta row (body weight + session note) ──────────────────
           _DayMetaSection(dateStr: dateStr),
           const Divider(height: 1, thickness: 0.5),
+
+          if (woDates.isNotEmpty) const _BackupNudge(),
 
           Expanded(
             child: setsAsync.when(
@@ -329,6 +332,55 @@ class _DayMetaSection extends ConsumerWidget {
             ref.saveDayNote(dateStr, note);
           }
         },
+      ),
+    );
+  }
+}
+
+/// Nothing here syncs anywhere, so this is the one reminder the app gives:
+/// a quiet line when the last export is a month behind, dismissible for a
+/// week at a time.
+class _BackupNudge extends ConsumerWidget {
+  const _BackupNudge();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(backupProvider);
+    if (!status.needsReminder(DateTime.now())) return const SizedBox.shrink();
+
+    final days = status.daysSinceBackup(DateTime.now());
+    final color = Theme.of(context).colorScheme.error;
+    return Material(
+      color: color.withValues(alpha: 0.10),
+      child: InkWell(
+        onTap: () => context.push('/settings'),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 18, color: color),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  days == null
+                      ? 'Your training history has never been backed up.'
+                      : 'Last backup was $days days ago.',
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+              TextButton(
+                onPressed: () => context.push('/settings'),
+                child: const Text('BACK UP', style: TextStyle(fontSize: 12)),
+              ),
+              IconButton(
+                tooltip: 'Remind me later',
+                onPressed: () => ref.read(backupProvider.notifier).snoozeReminder(),
+                icon: Icon(Icons.close,
+                    size: 16, color: Colors.white.withValues(alpha: 0.4)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

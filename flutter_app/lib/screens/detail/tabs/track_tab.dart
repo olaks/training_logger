@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +9,10 @@ import '../../../providers/app_providers.dart';
 import '../../../utils/beeper.dart';
 import '../../../utils/format_utils.dart';
 import '../../../utils/grades.dart';
+import '../../../utils/phase_countdown.dart';
+import '../../../utils/undo_snackbar.dart';
+import '../edit_set_sheet.dart';
+import '../widgets/set_inputs.dart';
 
 // ── Timed-set timer phases ───────────────────────────────────────────────────
 
@@ -32,22 +34,31 @@ class _TrackTabState extends ConsumerState<TrackTab> {
   bool _prefilled = false;
 
   // ── Timed-set timer ───────────────────────────────────────────────────────
-  // Only used by standard exercises that have a TIME value set. Countdown is
-  // anchored to wall-clock time so OS scheduling jitter and platform-channel
-  // work (audio, haptics) can't make it drift.
-  Beeper?   _beeper;
-  Timer?    _exTimer;
-  _ExPhase  _exPhase = _ExPhase.idle;
-  DateTime? _exPhaseEnd;      // wall-clock time the current phase ends
-  int       _exPhaseSecs = 0; // total seconds for current phase (progress)
-  int       _exLastBeeped = -1;
-  int       _exWorkSecs = 0;
+  // Only used by standard exercises that have a TIME value set. The countdown
+  // itself lives in PhaseCountdown; this tracks which phase it is running.
+  Beeper?  _beeper;
+  _ExPhase _exPhase = _ExPhase.idle;
+  int      _exWorkSecs = 0;
+  late final PhaseCountdown _exCountdown;
 
   bool get _exRunning => _exPhase != _ExPhase.idle;
 
   @override
+  void initState() {
+    super.initState();
+    _exCountdown = PhaseCountdown(
+      onChanged: () => setState(() {}),
+      onElapsed: (_) => _exAdvance(),
+      onFinalSeconds: (_) {
+        _beeper?.tick();
+        HapticFeedback.lightImpact();
+      },
+    );
+  }
+
+  @override
   void dispose() {
-    _exTimer?.cancel();
+    _exCountdown.dispose();
     if (_exRunning) WakelockPlus.disable();
     _beeper?.dispose();
     super.dispose();
@@ -62,36 +73,11 @@ class _TrackTabState extends ConsumerState<TrackTab> {
     _exWorkSecs = workSecs;
     WakelockPlus.enable();
     _enterExPhase(_ExPhase.getReady, _getReadySecs);
-    _exTimer?.cancel();
-    _exTimer =
-        Timer.periodic(const Duration(milliseconds: 100), (_) => _exTick());
   }
 
   void _enterExPhase(_ExPhase phase, int seconds) {
-    _exPhase = phase;
-    _exPhaseSecs = seconds;
-    _exPhaseEnd = DateTime.now().add(Duration(seconds: seconds));
-    _exLastBeeped = -1;
-    setState(() {});
-  }
-
-  void _exTick() {
-    if (_exPhaseEnd == null) return;
-
-    final remainingMs = _exPhaseEnd!.difference(DateTime.now()).inMilliseconds;
-    if (remainingMs <= 0) {
-      _exAdvance();
-      return;
-    }
-
-    final secsLeft = (remainingMs / 1000).ceil();
-    if (secsLeft != _exLastBeeped && secsLeft >= 1 && secsLeft <= 3) {
-      _beeper?.tick();
-      HapticFeedback.lightImpact();
-      _exLastBeeped = secsLeft;
-    }
-
-    setState(() {});
+    setState(() => _exPhase = phase);
+    _exCountdown.start(seconds);
   }
 
   void _exAdvance() {
@@ -101,14 +87,11 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         HapticFeedback.mediumImpact();
         _enterExPhase(_ExPhase.work, _exWorkSecs);
       case _ExPhase.work:
-        _exTimer?.cancel();
+        _exCountdown.stop();
         WakelockPlus.disable();
         _beeper?.done();
         HapticFeedback.heavyImpact();
-        setState(() {
-          _exPhase = _ExPhase.idle;
-          _exPhaseEnd = null;
-        });
+        setState(() => _exPhase = _ExPhase.idle);
         // Nothing is written here — the set is only logged when SAVE is
         // tapped, so a hold that didn't go the distance can be corrected
         // first.
@@ -125,25 +108,14 @@ class _TrackTabState extends ConsumerState<TrackTab> {
   /// Cancels the timer. Stopping mid-hold drops the actual time held into the
   /// TIME field, so a short hold can be saved as what really happened.
   void _stopExerciseTimer() {
-    final held = _exPhase == _ExPhase.work ? _heldSecs() : 0;
-    _exTimer?.cancel();
+    final held =
+        _exPhase == _ExPhase.work ? _exCountdown.elapsedSecs : 0;
+    _exCountdown.stop();
     WakelockPlus.disable();
-    setState(() {
-      _exPhase = _ExPhase.idle;
-      _exPhaseEnd = null;
-    });
+    setState(() => _exPhase = _ExPhase.idle);
     if (held > 0) {
       ref.read(trackProvider(widget.categoryId).notifier).setTimeSecs(held);
     }
-  }
-
-  /// Seconds elapsed in the current hold phase.
-  int _heldSecs() {
-    final remainingMs =
-        _exPhaseEnd?.difference(DateTime.now()).inMilliseconds ?? 0;
-    final elapsedMs =
-        _exWorkSecs * 1000 - (remainingMs < 0 ? 0 : remainingMs);
-    return (elapsedMs / 1000).round().clamp(0, _exWorkSecs);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -152,15 +124,6 @@ class _TrackTabState extends ConsumerState<TrackTab> {
     if (v == 0) return '';
     return v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
   }
-
-  static String _rpeLabel(int rpe) => switch (rpe) {
-        0           => '—',
-        1 || 2 || 3 => 'Easy',
-        4 || 5      => 'Moderate',
-        6 || 7      => 'Hard',
-        8 || 9      => 'Very Hard',
-        _           => 'Max',
-      };
 
   static String _targetLabel(int? sets, int? reps, int done) {
     final parts = <String>[];
@@ -203,9 +166,15 @@ class _TrackTabState extends ConsumerState<TrackTab> {
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel')),
           TextButton(
-            onPressed: () {
-              ref.removeSet(id);
-              Navigator.pop(context);
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(context);
+              final deleted = await ref.removeSet(id);
+              navigator.pop();
+              if (deleted == null) return;
+              showUndoSnackBar(messenger,
+                  message: 'Set deleted',
+                  onUndo: () => ref.restoreSet(deleted));
             },
             child: Text('Delete',
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -292,8 +261,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
           if (_exRunning)
             _ExerciseTimerPanel(
               phase:     _exPhase,
-              phaseSecs: _exPhaseSecs,
-              phaseEnd:  _exPhaseEnd,
+              countdown: _exCountdown,
               onStop:    _stopExerciseTimer,
             )
           else
@@ -412,6 +380,8 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                 index: e.key,
                 primary: primary,
                 onTap: () => _fillFrom(e.value, notifier, grades, isClimbing),
+                onEdit: () =>
+                    showEditSetSheet(context, e.value, gradeScale: grades),
                 onDelete: () => _confirmDelete(context, ref, e.value.id),
               ),
             ),
@@ -441,7 +411,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         const SizedBox(height: 10),
         Row(
           children: [
-            _StepBtn(
+            StepBtn(
               label: '−',
               onTap: notifier.decrementGrade,
             ),
@@ -454,7 +424,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                     letterSpacing: 1),
               ),
             ),
-            _StepBtn(
+            StepBtn(
               label: '+',
               onTap: () => notifier.incrementGrade(grades.length - 1),
             ),
@@ -463,7 +433,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         const Divider(height: 32),
 
         // Wall angle (degrees)
-        _StepperRow(
+        StepperRow(
           label:        'WALL ANGLE (°)',
           value:        state.wallAngle == 0 ? '—' : '${state.wallAngle}°',
           editValue:    state.wallAngle == 0 ? '' : '${state.wallAngle}',
@@ -478,16 +448,16 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         const Divider(height: 32),
 
         // Climb name
-        _ClimbNameField(
+        ClimbNameField(
           value:   state.climbName,
           onChanged: notifier.setClimbName,
         ),
         const Divider(height: 32),
 
         // RPE
-        _RpeRow(
+        RpeRow(
           rpe:         state.rpe,
-          label:       _rpeLabel(state.rpe),
+          label:       rpeLabel(state.rpe),
           onDecrement: () => notifier.setRpe(state.rpe > 0 ? state.rpe - 1 : 0),
           onIncrement: () => notifier.setRpe(state.rpe < 10 ? state.rpe + 1 : 10),
         ),
@@ -505,7 +475,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Weight
-        _StepperRow(
+        StepperRow(
           label: state.weightKg < 0 ? 'WEIGHT (kg) — ASSISTED' : 'WEIGHT (kg)',
           value:        formatWeight(state.weightKg),
           editValue:    _weightEditStr(state.weightKg),
@@ -521,7 +491,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         const Divider(height: 32),
 
         // Reps
-        _StepperRow(
+        StepperRow(
           label:        'REPS',
           value:        '${state.reps}',
           editValue:    state.reps == 0 ? '' : '${state.reps}',
@@ -536,7 +506,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         const Divider(height: 32),
 
         // Time
-        _StepperRow(
+        StepperRow(
           label:        'TIME (tap to enter seconds)',
           value:        state.timeSecs == 0 ? '0s' : formatTime(state.timeSecs),
           editValue:    state.timeSecs == 0 ? '' : '${state.timeSecs}',
@@ -551,9 +521,9 @@ class _TrackTabState extends ConsumerState<TrackTab> {
         const Divider(height: 32),
 
         // RPE
-        _RpeRow(
+        RpeRow(
           rpe:         state.rpe,
-          label:       _rpeLabel(state.rpe),
+          label:       rpeLabel(state.rpe),
           onDecrement: () => notifier.setRpe(state.rpe > 0 ? state.rpe - 1 : 0),
           onIncrement: () => notifier.setRpe(state.rpe < 10 ? state.rpe + 1 : 10),
         ),
@@ -620,6 +590,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                 index: e.key,
                 primary: primary,
                 onTap: () {},
+                onEdit: () => showEditSetSheet(context, e.value),
                 onDelete: () => _confirmDelete(context, ref, e.value.id),
               ),
             ),
@@ -640,98 +611,22 @@ String _formatClimbingSet(WorkoutSet s) {
   return parts.join(' · ');
 }
 
-// ── Climb name text field ────────────────────────────────────────────────────
-
-class _ClimbNameField extends StatefulWidget {
-  final String value;
-  final ValueChanged<String> onChanged;
-  const _ClimbNameField({required this.value, required this.onChanged});
-
-  @override
-  State<_ClimbNameField> createState() => _ClimbNameFieldState();
-}
-
-class _ClimbNameFieldState extends State<_ClimbNameField> {
-  late final TextEditingController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = TextEditingController(text: widget.value);
-  }
-
-  @override
-  void didUpdateWidget(covariant _ClimbNameField old) {
-    super.didUpdateWidget(old);
-    if (widget.value != _ctrl.text) {
-      _ctrl.value = TextEditingValue(
-        text: widget.value,
-        selection: TextSelection.collapsed(offset: widget.value.length),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('CLIMB NAME',
-            style: TextStyle(
-                fontSize: 12,
-                letterSpacing: 1.2,
-                color: primary,
-                fontWeight: FontWeight.w600)),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _ctrl,
-          textCapitalization: TextCapitalization.words,
-          onChanged: widget.onChanged,
-          decoration: InputDecoration(
-            hintText: 'optional',
-            hintStyle:
-                TextStyle(color: Colors.white.withValues(alpha: 0.25)),
-            isDense: true,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide:
-                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide:
-                  BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-          ),
-          style: const TextStyle(fontSize: 18),
-        ),
-      ],
-    );
-  }
-}
-
 // ── Logged set row (tappable + deletable) ────────────────────────────────────
 
 class _LoggedSetRow extends StatelessWidget {
   final WorkoutSet set;
   final int index;
   final Color primary;
+  /// Copies the set back into the steppers, ready to log another like it.
   final VoidCallback onTap;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
   const _LoggedSetRow({
     required this.set,
     required this.index,
     required this.primary,
     required this.onTap,
+    required this.onEdit,
     required this.onDelete,
   });
 
@@ -775,12 +670,25 @@ class _LoggedSetRow extends StatelessWidget {
                             fontSize: 11, color: primary)),
                   ),
                 ],
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onEdit,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(Icons.edit_outlined,
+                        size: 16,
+                        color: Colors.white.withValues(alpha: 0.25)),
+                  ),
+                ),
+                const SizedBox(width: 4),
                 GestureDetector(
                   onTap: onDelete,
-                  child: Icon(Icons.close,
-                      size: 16,
-                      color: Colors.white.withValues(alpha: 0.25)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(Icons.close,
+                        size: 16,
+                        color: Colors.white.withValues(alpha: 0.25)),
+                  ),
                 ),
               ],
             ),
@@ -789,72 +697,16 @@ class _LoggedSetRow extends StatelessWidget {
       );
 }
 
-// ── RPE row ───────────────────────────────────────────────────────────────────
-
-class _RpeRow extends StatelessWidget {
-  final int rpe;
-  final String label;
-  final VoidCallback onDecrement;
-  final VoidCallback onIncrement;
-  const _RpeRow({
-    required this.rpe,
-    required this.label,
-    required this.onDecrement,
-    required this.onIncrement,
-  });
-
-  @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('RPE (EFFORT)',
-              style: TextStyle(
-                  fontSize: 12,
-                  letterSpacing: 1.2,
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _StepBtn(label: '−', onTap: onDecrement),
-              Expanded(
-                child: Column(
-                  children: [
-                    Text(
-                      rpe == 0 ? '—' : '$rpe',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          fontSize: 32, fontWeight: FontWeight.w600),
-                    ),
-                    Text(
-                      rpe == 0 ? 'not set' : label,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.white.withValues(alpha: 0.4)),
-                    ),
-                  ],
-                ),
-              ),
-              _StepBtn(label: '+', onTap: onIncrement),
-            ],
-          ),
-        ],
-      );
-}
-
 // ── Timed-set countdown panel ────────────────────────────────────────────────
 
 class _ExerciseTimerPanel extends StatelessWidget {
   final _ExPhase phase;
-  final int phaseSecs;
-  final DateTime? phaseEnd;
+  final PhaseCountdown countdown;
   final VoidCallback onStop;
 
   const _ExerciseTimerPanel({
     required this.phase,
-    required this.phaseSecs,
-    required this.phaseEnd,
+    required this.countdown,
     required this.onStop,
   });
 
@@ -863,16 +715,10 @@ class _ExerciseTimerPanel extends StatelessWidget {
     final working = phase == _ExPhase.work;
     final color   = working ? const Color(0xFF43A047) : Colors.white70;
 
-    // Derived from wall-clock so the number and the bar always agree,
-    // regardless of timer-tick jitter.
-    final remainingMs = phaseEnd == null
-        ? 0
-        : phaseEnd!.difference(DateTime.now()).inMilliseconds;
-    final safeRem  = remainingMs < 0 ? 0 : remainingMs;
-    final secs     = (safeRem / 1000).ceil();
-    final progress = phaseSecs > 0
-        ? 1.0 - (safeRem / (phaseSecs * 1000)).clamp(0.0, 1.0)
-        : 0.0;
+    // Both come off the same wall-clock reading, so the number and the bar
+    // always agree regardless of tick jitter.
+    final secs     = countdown.remainingSecs;
+    final progress = 1.0 - countdown.progress.clamp(0.0, 1.0);
 
     // The whole panel is a stop target — on a failed hold you want to hit it
     // without aiming.
@@ -1049,155 +895,4 @@ class _RestTimerWidget extends StatelessWidget {
     final s = secs % 60;
     return m > 0 ? (s == 0 ? '${m}m' : '${m}m ${s}s') : '${s}s';
   }
-}
-
-// ── Stepper row with tap-to-type ──────────────────────────────────────────────
-
-class _StepperRow extends StatefulWidget {
-  final String label;
-  final String value;
-  final String editValue;
-  final TextInputType keyboardType;
-  final VoidCallback onDecrement;
-  final VoidCallback onIncrement;
-  final void Function(String) onTyped;
-
-  const _StepperRow({
-    required this.label,
-    required this.value,
-    required this.editValue,
-    required this.keyboardType,
-    required this.onDecrement,
-    required this.onIncrement,
-    required this.onTyped,
-  });
-
-  @override
-  State<_StepperRow> createState() => _StepperRowState();
-}
-
-class _StepperRowState extends State<_StepperRow> {
-  bool _editing = false;
-  late final TextEditingController _ctrl;
-  late final FocusNode _focus;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl  = TextEditingController();
-    _focus = FocusNode()..addListener(_onFocusChange);
-  }
-
-  @override
-  void dispose() {
-    _focus.removeListener(_onFocusChange);
-    _ctrl.dispose();
-    _focus.dispose();
-    super.dispose();
-  }
-
-  void _onFocusChange() {
-    if (!_focus.hasFocus && _editing) _commit();
-  }
-
-  void _startEdit() {
-    _ctrl.text = widget.editValue;
-    _ctrl.selection =
-        TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
-    setState(() => _editing = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focus.requestFocus();
-    });
-  }
-
-  void _commit() {
-    if (!_editing) return;
-    setState(() => _editing = false);
-    widget.onTyped(_ctrl.text);
-  }
-
-  void _stepAndCommit(VoidCallback step) {
-    if (_editing) _commit();
-    step();
-  }
-
-  @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.label,
-              style: TextStyle(
-                  fontSize: 12,
-                  letterSpacing: 1.2,
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _StepBtn(
-                  label: '−',
-                  onTap: () => _stepAndCommit(widget.onDecrement)),
-              Expanded(
-                child: _editing
-                    ? TextField(
-                        controller: _ctrl,
-                        focusNode: _focus,
-                        keyboardType: widget.keyboardType,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            fontSize: 32, fontWeight: FontWeight.w600),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                          isDense: true,
-                        ),
-                        onSubmitted: (_) => _commit(),
-                      )
-                    : GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _startEdit,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Text(widget.value,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-              ),
-              _StepBtn(
-                  label: '+',
-                  onTap: () => _stepAndCommit(widget.onIncrement)),
-            ],
-          ),
-        ],
-      );
-}
-
-// ── Step button ───────────────────────────────────────────────────────────────
-
-class _StepBtn extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  const _StepBtn({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => Material(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: SizedBox(
-            width: 60,
-            height: 52,
-            child: Center(
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 26, fontWeight: FontWeight.w300)),
-            ),
-          ),
-        ),
-      );
 }

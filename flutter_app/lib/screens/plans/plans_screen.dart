@@ -1,12 +1,11 @@
 import 'dart:convert';
-import 'dart:io' as io;
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
+import '../../utils/pick_text_file.dart';
+import '../../utils/undo_snackbar.dart';
 
 class PlansScreen extends ConsumerStatefulWidget {
   const PlansScreen({super.key});
@@ -46,7 +45,15 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
                   onDelete: () => _showDeleteDialog(
                       context, ref, '"${w.name}"',
                       'All exercises in this workout will be removed.',
-                      () => ref.deleteWorkout(w.id)),
+                      () async {
+                    final deleted = await ref.deleteWorkout(w.id);
+                    return deleted == null
+                        ? null
+                        : (
+                            message: 'Deleted "${w.name}"',
+                            undo: () => ref.restoreWorkout(deleted)
+                          );
+                  }),
                 )),
 
           const SizedBox(height: 24),
@@ -70,7 +77,15 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
                   onDelete: () => _showDeleteDialog(
                       context, ref, '"${p.name}"',
                       'All workout assignments in this plan will be removed.',
-                      () => ref.deletePlan(p.id)),
+                      () async {
+                    final deleted = await ref.deletePlan(p.id);
+                    return deleted == null
+                        ? null
+                        : (
+                            message: 'Deleted "${p.name}"',
+                            undo: () => ref.restorePlan(deleted)
+                          );
+                  }),
                 )),
         ],
       ),
@@ -135,25 +150,14 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   Future<void> _importPlan() async {
     final messenger = ScaffoldMessenger.of(context);
 
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-      withData: kIsWeb,
-      withReadStream: false,
-    );
-    if (result == null || !mounted) return;
-
-    String jsonStr;
+    final String? jsonStr;
     try {
-      if (kIsWeb) {
-        jsonStr = utf8.decode(result.files.single.bytes!);
-      } else {
-        jsonStr = await io.File(result.files.single.path!).readAsString();
-      }
+      jsonStr = await pickTextFile(extension: 'json');
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not read file: $e')));
       return;
     }
+    if (jsonStr == null || !mounted) return;
 
     // If a plan with this name already exists, confirm before clobbering
     // its existing schedule.
@@ -232,8 +236,15 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
     Navigator.pop(context);
   }
 
-  void _showDeleteDialog(BuildContext context, WidgetRef ref, String label,
-      String detail, VoidCallback onDelete) {
+  /// [onDelete] performs the deletion and returns what to say and how to take
+  /// it back, or null if there was nothing to delete.
+  void _showDeleteDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String label,
+    String detail,
+    Future<({String message, VoidCallback undo})?> Function() onDelete,
+  ) {
     showDialog(
       context: context,
       useRootNavigator: false,
@@ -245,9 +256,14 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel')),
           TextButton(
-            onPressed: () {
-              onDelete();
-              Navigator.pop(context);
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(context);
+              final result = await onDelete();
+              navigator.pop();
+              if (result == null) return;
+              showUndoSnackBar(messenger,
+                  message: result.message, onUndo: result.undo);
             },
             child: Text('Delete',
                 style:

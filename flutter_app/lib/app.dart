@@ -7,6 +7,7 @@ import 'screens/exercises/edit_exercise_screen.dart';
 import 'screens/detail/exercise_detail_screen.dart';
 import 'screens/import/import_screen.dart';
 import 'screens/plans/plans_screen.dart';
+import 'screens/settings/settings_screen.dart';
 import 'screens/plans/plan_detail_screen.dart';
 import 'screens/plans/workout_detail_screen.dart';
 import 'screens/plans/workout_session_screen.dart';
@@ -71,6 +72,10 @@ final router = GoRouter(
     GoRoute(
       path: '/inspirations',
       builder: (_, __) => const InspirationScreen(),
+    ),
+    GoRoute(
+      path: '/settings',
+      builder: (_, __) => const SettingsScreen(),
     ),
   ],
 );

@@ -36,15 +36,19 @@ Run tests:
 
 ```bash
 flutter test                           # all tests
-flutter test test/widget_test.dart     # single test file
+flutter test test/backup_test.dart     # single test file
 ```
+
+Widget tests run in fake time, where a real database never answers: wrap drift
+calls in `tester.runAsync`, and advance the clock a millisecond before the tree
+is torn down so drift's stream-close timer can run.
 
 ## Architecture
 
 ### Stack
 
 - **State management:** Riverpod (providers + StateNotifier for transient UI state)
-- **Database:** Drift (SQLite) with code generation — schema version 10
+- **Database:** Drift (SQLite) with code generation — schema version 16, foreign keys enforced
 - **Routing:** go_router (URL-based, important for web)
 - **UI:** Material 3 with custom dark themes (4 accent colors)
 
@@ -54,9 +58,9 @@ flutter test test/widget_test.dart     # single test file
 |-----------|---------|
 | `database/` | Drift database class, table definitions (`tables.dart`), migrations, JSON export/import |
 | `providers/` | Riverpod providers: `dbProvider` singleton, stream providers for reactive data, `TrackNotifier` for stepper state, `DbMutations` extension for writes |
-| `screens/` | UI organized by feature: `home/`, `exercises/`, `detail/` (Track/History/Graph tabs), `plans/`, `import/` |
+| `screens/` | UI organized by feature: `home/`, `exercises/`, `detail/` (Track/History/Graph tabs, edit-set sheet, shared set inputs), `plans/`, `import/`, `settings/`, `hangboard/`, `inspiration/` |
 | `theme/` | Material 3 theme builder and accent color definitions |
-| `utils/` | Date formatting, climbing grade scales (Font/V-scale), display formatters |
+| `utils/` | Date formatting, climbing grade scales (Font/V-scale), display formatters, `PhaseCountdown` (shared by all three timers), body-weight lookup, file picking, undo snackbar |
 
 ### Data flow
 
@@ -68,9 +72,27 @@ Tables are defined in `database/tables.dart`. Key entities: `ExerciseCategories`
 
 Migrations are incremental in `database.dart` — each `if (from < N)` block handles one schema version. When adding columns or tables, bump `schemaVersion` and add a new migration block.
 
+Foreign keys are enforced (`PRAGMA foreign_keys = ON` in `beforeOpen`), so a delete must clear its children. The delete methods return a snapshot (`DeletedCategory`, `DeletedWorkout`, `DeletedPlan`, or the removed `WorkoutSet`) that the matching `restore*` method puts back — that is how undo works.
+
+After changing the schema, dump it so future migrations can be verified against this version:
+
+```bash
+dart run drift_dev schema dump lib/database/database.dart drift_schemas/
+dart run drift_dev schema generate drift_schemas/ test/generated_migrations/
+```
+
+`test/schema_test.dart` checks that a migrated database ends up with the same schema as a fresh install.
+
+### Pinned dependencies
+
+Two holds in `pubspec.yaml`, both worth revisiting when the Flutter SDK or the toolchain moves:
+
+- `drift` below 2.34.1 — newer versions break `drift_dev`'s schema verifier, and the `drift_dev` release that fixes it needs a newer analyzer than this Flutter SDK allows. Lift both together.
+- `jni` overridden to 1.0.0 — it comes in transitively via `path_provider_android` and is Android-only, but its C sources are still compiled for the Linux desktop build, where 1.0.1+ fails to compile.
+
 ### Routes
 
-Defined in `app.dart`. Shell route with bottom nav (Home `/`, Exercises `/exercises`, Plans `/plans`). Detail routes: `/exercise/:id/:date`, `/workouts/:id`, `/plans/:id`, `/import`.
+Defined in `app.dart`. Shell route with bottom nav (Home `/`, Exercises `/exercises`, Plans `/plans`, Timer `/hangboard`). Detail routes: `/exercise/:id/:date`, `/exercise/:id/edit`, `/workouts/:id`, `/workout-session/:id/:date`, `/plans/:id`, `/hangboard-session/:exerciseId`, `/import`, `/inspirations`, `/settings`.
 
 ## CI/CD
 
