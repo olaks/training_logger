@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../database/database.dart';
 import '../../../providers/app_providers.dart';
+import '../../../utils/body_weight.dart';
 import '../../../utils/format_utils.dart';
 import '../../../utils/grades.dart';
 
@@ -15,6 +16,7 @@ class GraphTab extends ConsumerWidget {
     final setsAsync  = ref.watch(setsForCategoryProvider(categoryId));
     final catAsync   = ref.watch(categoryByIdProvider(categoryId));
     final isClimbing = catAsync.value?.exerciseType == 1;
+    final bodyWeights = ref.watch(bodyWeightsProvider).value ?? const [];
 
     return setsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -26,7 +28,11 @@ class GraphTab extends ConsumerWidget {
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.35))),
           );
         }
-        return _Graph(sets: sets, isClimbing: isClimbing);
+        return _Graph(
+          sets: sets,
+          isClimbing: isClimbing,
+          bodyWeights: BodyWeightLookup(bodyWeights),
+        );
       },
     );
   }
@@ -35,13 +41,18 @@ class GraphTab extends ConsumerWidget {
 class _Graph extends StatefulWidget {
   final List<WorkoutSet> sets;
   final bool isClimbing;
-  const _Graph({required this.sets, required this.isClimbing});
+  final BodyWeightLookup bodyWeights;
+  const _Graph({
+    required this.sets,
+    required this.isClimbing,
+    required this.bodyWeights,
+  });
 
   @override
   State<_Graph> createState() => _GraphState();
 }
 
-enum _Metric { weight, oneRM, volume, reps, time, grade }
+enum _Metric { weight, percentBw, oneRM, volume, reps, time, grade }
 
 enum _Range { month, threeMonths, year, all }
 
@@ -49,6 +60,14 @@ class _GraphState extends State<_Graph> {
   _Metric _metric = _Metric.weight;
   _Range _range = _Range.all;
   List<String> _gradeScale = fontGrades;
+  bool _showBodyWeight = false;
+
+  /// Body weight is in kg, so it can only share the axis with metrics that
+  /// are also in kg.
+  bool get _bodyWeightOverlayFits =>
+      !widget.isClimbing &&
+      !widget.bodyWeights.isEmpty &&
+      (_metric == _Metric.weight || _metric == _Metric.oneRM);
 
   String _rangeLabel(_Range r) => switch (r) {
         _Range.month       => '1M',
@@ -144,6 +163,14 @@ class _GraphState extends State<_Graph> {
           value = eligible
               .map((s) => _epley(s.weightKg!, s.reps!))
               .reduce((a, b) => a > b ? a : b);
+        case _Metric.percentBw:
+          final bw = widget.bodyWeights.on(d);
+          final loads = daySets
+              .where((s) => (s.weightKg ?? 0) != 0)
+              .map((s) => relativeLoadPercent(bw, s.weightKg!))
+              .whereType<double>();
+          if (loads.isEmpty) continue;
+          value = loads.reduce((a, b) => a > b ? a : b);
         case _Metric.grade:
           final idxs = daySets
               .where((s) => s.grade != null)
@@ -160,6 +187,7 @@ class _GraphState extends State<_Graph> {
 
   String _metricLabel(_Metric m) => switch (m) {
         _Metric.weight => 'Max Weight',
+        _Metric.percentBw => '% Body Weight',
         _Metric.oneRM  => 'Est. 1RM',
         _Metric.volume => 'Volume',
         _Metric.reps   => 'Total Reps',
@@ -169,6 +197,8 @@ class _GraphState extends State<_Graph> {
 
   bool _metricAvailable(_Metric m) => switch (m) {
         _Metric.weight => widget.sets.any((s) => (s.weightKg ?? 0) != 0),
+        _Metric.percentBw => !widget.bodyWeights.isEmpty &&
+            widget.sets.any((s) => (s.weightKg ?? 0) != 0),
         _Metric.oneRM  => widget.sets
             .any((s) => (s.weightKg ?? 0) > 0 && (s.reps ?? 0) > 0),
         _Metric.volume => widget.sets
@@ -180,11 +210,28 @@ class _GraphState extends State<_Graph> {
 
   String _formatValue(double v) => switch (_metric) {
         _Metric.time  => formatTime(v.toInt()),
+        _Metric.percentBw => '${v.toStringAsFixed(1)}%',
         _Metric.reps  => '${v.toInt()} reps',
         _Metric.weight => '${formatWeight(v)} kg',
         _Metric.oneRM  => '${formatWeight(v)} kg',
         _Metric.volume => '${formatWeight(v)} kg·reps',
         _Metric.grade  => _gradeScale[v.toInt().clamp(0, _gradeScale.length - 1)],
+      };
+
+  String _axisLabel(double val) => switch (_metric) {
+        _Metric.time      => formatTime(val.toInt()),
+        _Metric.percentBw => '${val.round()}%',
+        _ => val % 1 == 0 ? val.toInt().toString() : val.toStringAsFixed(1),
+      };
+
+  /// One line of explanation under the chips, for the metrics that are
+  /// derived rather than logged.
+  String? get _subtitle => switch (_metric) {
+        _Metric.oneRM  => 'Epley formula · best set per session',
+        _Metric.volume => 'Sum of weight × reps across all sets',
+        _Metric.percentBw =>
+          '(body weight + added) ÷ body weight · nearest logged weigh-in',
+        _ => null,
       };
 
   @override
@@ -198,8 +245,20 @@ class _GraphState extends State<_Graph> {
         .map((e) => FlSpot(e.key.toDouble(), e.value.value))
         .toList();
 
-    final minY  = spots.isEmpty ? 0.0 : spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
-    final maxY  = spots.isEmpty ? 1.0 : spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    // Body weight rides the same kg axis as the metric it accompanies, so the
+    // two lines stay directly comparable.
+    final showBw = _showBodyWeight && _bodyWeightOverlayFits;
+    final bwSpots = <FlSpot>[];
+    if (showBw) {
+      for (var i = 0; i < points.length; i++) {
+        final kg = widget.bodyWeights.on(points[i].date);
+        if (kg != null) bwSpots.add(FlSpot(i.toDouble(), kg));
+      }
+    }
+
+    final allY  = [...spots.map((s) => s.y), ...bwSpots.map((s) => s.y)];
+    final minY  = allY.isEmpty ? 0.0 : allY.reduce((a, b) => a < b ? a : b);
+    final maxY  = allY.isEmpty ? 1.0 : allY.reduce((a, b) => a > b ? a : b);
     final range = (maxY - minY).clamp(1.0, double.infinity);
 
     // For grade axis: snap to integer ticks, show grade strings
@@ -257,12 +316,26 @@ class _GraphState extends State<_Graph> {
             }).toList(),
           ),
 
-          if (_metric == _Metric.oneRM || _metric == _Metric.volume) ...[
+          if (_bodyWeightOverlayFits) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilterChip(
+                label: const Text('Body weight',
+                    style: TextStyle(fontSize: 12)),
+                selected: _showBodyWeight,
+                onSelected: (v) => setState(() => _showBodyWeight = v),
+                selectedColor: primary.withValues(alpha: 0.25),
+                avatar: Icon(Icons.show_chart,
+                    size: 16, color: Colors.white.withValues(alpha: 0.5)),
+              ),
+            ),
+          ],
+
+          if (_subtitle != null) ...[
             const SizedBox(height: 6),
             Text(
-              _metric == _Metric.oneRM
-                  ? 'Epley formula · best set per session'
-                  : 'Sum of weight × reps across all sets',
+              _subtitle!,
               style: TextStyle(
                   fontSize: 11, color: Colors.white.withValues(alpha: 0.35)),
             ),
@@ -315,11 +388,7 @@ class _GraphState extends State<_Graph> {
                                       Colors.white.withValues(alpha: 0.45)));
                         }
                         return Text(
-                          _metric == _Metric.time
-                              ? formatTime(val.toInt())
-                              : val % 1 == 0
-                                  ? val.toInt().toString()
-                                  : val.toStringAsFixed(1),
+                          _axisLabel(val),
                           style: TextStyle(
                               fontSize: 10,
                               color: Colors.white.withValues(alpha: 0.45)),
@@ -374,6 +443,15 @@ class _GraphState extends State<_Graph> {
                       color: primary.withValues(alpha: 0.08),
                     ),
                   ),
+                  if (bwSpots.isNotEmpty)
+                    LineChartBarData(
+                      spots:    bwSpots,
+                      isCurved: false,
+                      color:    Colors.white.withValues(alpha: 0.35),
+                      barWidth: 1.5,
+                      dashArray: const [5, 4],
+                      dotData:  const FlDotData(show: false),
+                    ),
                 ],
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
@@ -381,6 +459,14 @@ class _GraphState extends State<_Graph> {
                     getTooltipItems: (touchedSpots) =>
                         touchedSpots.map((s) {
                       final i  = s.x.toInt();
+                      if (s.barIndex == 1) {
+                        return LineTooltipItem(
+                          '${formatWeight(s.y)} kg body weight',
+                          TextStyle(
+                              color: Colors.white.withValues(alpha: 0.55),
+                              fontSize: 11),
+                        );
+                      }
                       final pt = points[i];
                       return LineTooltipItem(
                         '${pt.date.substring(5)}\n',
