@@ -1,4 +1,3 @@
-import 'dart:async';
 
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
@@ -9,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
 import '../../utils/beeper.dart';
+import '../../utils/phase_countdown.dart';
 import '../../utils/format_utils.dart';
 
 // ── Timer phases ─────────────────────────────────────────────────────────────
@@ -37,18 +37,15 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   final _weightCtrl = TextEditingController(text: '0');
 
   // ── Timer state ──────────────────────────────────────────────────────────
-  // Countdown is anchored to wall-clock time so OS scheduling jitter and
-  // platform-channel work (audio, haptics) can't make it drift.
+  // The countdown itself lives in PhaseCountdown; this tracks which phase of
+  // the session it is running and where in the sets and reps we are.
   _Phase _phase = _Phase.idle;
-  DateTime? _phaseEnd;          // wall-clock time the current phase ends
-  DateTime? _pausedAt;          // non-null while paused; freezes the display
-  int _phaseDurationSecs = 0;   // total seconds for current phase (progress)
-  int _lastBeepedSecond = -1;   // edge-trigger for the 3/2/1 tick beeps
+  late final PhaseCountdown _countdown;
   int _currentSet = 1;
   int _currentRep = 1;
   bool _isLeftHand = false;
-  bool _paused = false;
-  Timer? _timer;
+
+  bool get _paused => _countdown.isPaused;
 
   // ── Exercise to log against (standalone mode) ────────────────────────────
   int? _selectedCategoryId;
@@ -63,11 +60,16 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   void initState() {
     super.initState();
     _beeper = Beeper();
+    _countdown = PhaseCountdown(
+      onChanged: () => setState(() {}),
+      onElapsed: (_) => _advance(),
+      onFinalSeconds: _cueFinalSecond,
+    );
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _countdown.dispose();
     WakelockPlus.disable();
     _beeper.dispose();
     _weightCtrl.dispose();
@@ -80,49 +82,29 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
     _currentSet = 1;
     _currentRep = 1;
     _isLeftHand = false;
-    _paused = false;
-    _pausedAt = null;
     _setWeights.clear();
     _setWeights[1] = double.tryParse(_weightCtrl.text) ?? 0;
     WakelockPlus.enable();
     _enterPhase(_Phase.getReady, 5);
-    _timer = Timer.periodic(
-        const Duration(milliseconds: 100), (_) => _tick());
   }
 
   void _enterPhase(_Phase phase, int seconds) {
-    _phase = phase;
-    _phaseDurationSecs = seconds;
-    _phaseEnd = DateTime.now().add(Duration(seconds: seconds));
-    _lastBeepedSecond = -1;
-    setState(() {});
+    setState(() => _phase = phase);
+    _countdown.start(seconds);
   }
 
-  void _tick() {
-    if (_paused || _phaseEnd == null) return;
-
-    final remainingMs = _phaseEnd!.difference(DateTime.now()).inMilliseconds;
-
-    if (remainingMs <= 0) {
-      _advance();
-      return;
-    }
-
-    final secsLeft = (remainingMs / 1000).ceil();
-
-    if (secsLeft != _lastBeepedSecond &&
-        secsLeft >= 1 &&
-        secsLeft <= 3 &&
-        (_phase == _Phase.getReady ||
-            _phase == _Phase.rest ||
-            _phase == _Phase.switchRest ||
-            _phase == _Phase.setRest)) {
-      _beeper.tick();
-      HapticFeedback.lightImpact();
-      _lastBeepedSecond = secsLeft;
-    }
-
-    setState(() {});
+  /// Counts the last three seconds in — but only into a hold, never out of
+  /// one: a beep partway through a hang is a distraction.
+  void _cueFinalSecond(int secsLeft) {
+    const counted = {
+      _Phase.getReady,
+      _Phase.rest,
+      _Phase.switchRest,
+      _Phase.setRest,
+    };
+    if (!counted.contains(_phase)) return;
+    _beeper.tick();
+    HapticFeedback.lightImpact();
   }
 
   void _advance() {
@@ -154,7 +136,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
               _beeper.low();
               _enterPhase(_Phase.setRest, _setRestSecs);
             } else {
-              _timer?.cancel();
+              _countdown.stop();
               WakelockPlus.disable();
               _beeper.done();
               HapticFeedback.heavyImpact();
@@ -178,30 +160,13 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
         double.tryParse(_weightCtrl.text) ?? 0;
   }
 
-  void _togglePause() {
-    setState(() {
-      if (_paused) {
-        if (_pausedAt != null && _phaseEnd != null) {
-          _phaseEnd =
-              _phaseEnd!.add(DateTime.now().difference(_pausedAt!));
-        }
-        _pausedAt = null;
-        _paused = false;
-      } else {
-        _pausedAt = DateTime.now();
-        _paused = true;
-      }
-    });
-  }
+  void _togglePause() =>
+      _paused ? _countdown.resume() : _countdown.pause();
 
   void _stop() {
-    _timer?.cancel();
+    _countdown.stop();
     WakelockPlus.disable();
-    setState(() {
-      _phase = _Phase.idle;
-      _phaseEnd = null;
-      _pausedAt = null;
-    });
+    setState(() => _phase = _Phase.idle);
   }
 
   void _skipSetRest() {
@@ -440,17 +405,10 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
         ? (_isLeftHand ? 'LEFT HAND' : 'RIGHT HAND')
         : null;
 
-    // Derive countdown + progress from wall-clock so they always match
-    // regardless of timer-tick jitter.
-    final nowRef    = _pausedAt ?? DateTime.now();
-    final remaining = _phaseEnd == null
-        ? 0
-        : _phaseEnd!.difference(nowRef).inMilliseconds;
-    final safeRem   = remaining < 0 ? 0 : remaining;
-    final secsDisplay = (safeRem / 1000).ceil();
-    final progress = _phaseDurationSecs > 0
-        ? 1.0 - (safeRem / (_phaseDurationSecs * 1000)).clamp(0.0, 1.0)
-        : 0.0;
+    // Both come off the same wall-clock reading, so the number and the bar
+    // always agree regardless of tick jitter.
+    final secsDisplay = _countdown.remainingSecs;
+    final progress = 1.0 - _countdown.progress.clamp(0.0, 1.0);
 
     return Column(
       children: [
