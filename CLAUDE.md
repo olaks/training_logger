@@ -89,6 +89,9 @@ Two holds in `pubspec.yaml`, both worth revisiting when the Flutter SDK or the t
 
 - `drift` below 2.34.1 — newer versions break `drift_dev`'s schema verifier, and the `drift_dev` release that fixes it needs a newer analyzer than this Flutter SDK allows. Lift both together.
 - `jni` overridden to 1.0.0 — it comes in transitively via `path_provider_android` and is Android-only, but its C sources are still compiled for the Linux desktop build, where 1.0.1+ fails to compile.
+- `file_picker`, `share_plus` and `wakelock_plus` held on the win32 5 line — file_picker 12 and share_plus 13 need win32 6, which forces wakelock_plus 1.6+, whose Android sources don't compile ("Unresolved reference 'ToggleMessage'"). Move all three together.
+
+A stale Gradle cache can survive a dependency change and fail the APK build with a missing plugin class; `flutter clean` clears it.
 
 ### Routes
 
