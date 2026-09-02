@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
+import '../../utils/format_utils.dart';
 import '../../utils/undo_snackbar.dart';
 
 class WorkoutDetailScreen extends ConsumerStatefulWidget {
@@ -211,23 +212,45 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                   ),
           ),
 
-          // ── Add exercises button ──────────────────────────────────────
+          // ── Add exercises / start ─────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: OutlinedButton.icon(
-              onPressed: () =>
-                  _showAddExercisesSheet(context, exercises),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add exercises'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white70,
-                side: const BorderSide(color: Colors.white24),
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        _showAddExercisesSheet(context, exercises),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add exercises'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: const BorderSide(color: Colors.white24),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    // A workout doesn't need to be scheduled to be trained —
+                    // this starts it today, wherever it came from.
+                    onPressed: exercises.isEmpty ? null : _startToday,
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: const Text('START'),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  void _startToday() {
+    _flushNotes();
+    context.push(
+        '/workout-session/${widget.workoutId}/${dateStrFrom(DateTime.now())}');
   }
 
   static String _formatTarget(int? sets, int? reps) {

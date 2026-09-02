@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
+import '../../utils/format_utils.dart';
 import '../../utils/pick_text_file.dart';
 import '../../utils/undo_snackbar.dart';
 
@@ -38,6 +39,8 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
             ...workouts.map((w) => _ItemTile(
                   title: w.name,
                   onTap: () => context.push('/workouts/${w.id}'),
+                  onStart: () => context.push(
+                      '/workout-session/${w.id}/${dateStrFrom(DateTime.now())}'),
                   onRename: () => _showRenameDialog(
                       context, ref, w.name,
                       (name) => ref.renameWorkout(w.id, name)),
@@ -334,30 +337,48 @@ class _ItemTile extends StatelessWidget {
   final VoidCallback onRename;
   final VoidCallback onDelete;
   final VoidCallback? onDuplicate;
+  /// Workouts can be trained straight from the list; plans are schedules and
+  /// have nothing to start.
+  final VoidCallback? onStart;
   const _ItemTile(
       {required this.title,
       required this.onTap,
       required this.onRename,
       required this.onDelete,
-      this.onDuplicate});
+      this.onDuplicate,
+      this.onStart});
 
   @override
   Widget build(BuildContext context) => ListTile(
         title: Text(title),
-        trailing: PopupMenuButton<_Action>(
-          icon: Icon(Icons.more_vert,
-              color: Colors.white.withValues(alpha: 0.35), size: 20),
-          onSelected: (a) => switch (a) {
-            _Action.rename    => onRename(),
-            _Action.duplicate => onDuplicate?.call(),
-            _Action.delete    => onDelete(),
-          },
-          itemBuilder: (_) => [
-            const PopupMenuItem(value: _Action.rename, child: Text('Rename')),
-            if (onDuplicate != null)
-              const PopupMenuItem(
-                  value: _Action.duplicate, child: Text('Duplicate')),
-            const PopupMenuItem(value: _Action.delete, child: Text('Delete')),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onStart != null)
+              IconButton(
+                tooltip: 'Start workout',
+                onPressed: onStart,
+                icon: Icon(Icons.play_arrow,
+                    color: Theme.of(context).colorScheme.primary),
+              ),
+            PopupMenuButton<_Action>(
+              icon: Icon(Icons.more_vert,
+                  color: Colors.white.withValues(alpha: 0.35), size: 20),
+              onSelected: (a) => switch (a) {
+                _Action.rename    => onRename(),
+                _Action.duplicate => onDuplicate?.call(),
+                _Action.delete    => onDelete(),
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                    value: _Action.rename, child: Text('Rename')),
+                if (onDuplicate != null)
+                  const PopupMenuItem(
+                      value: _Action.duplicate, child: Text('Duplicate')),
+                const PopupMenuItem(
+                    value: _Action.delete, child: Text('Delete')),
+              ],
+            ),
           ],
         ),
         onTap: onTap,
