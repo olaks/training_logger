@@ -50,9 +50,29 @@ class Beeper {
     // the hangboard timer completely silent. mediaPlayer mode loads the source
     // once and supports seek-to-zero replays.
     p.setReleaseMode(ReleaseMode.stop);
-    p.setSourceBytes(bytes);
+    // Context before source: applying a context later makes the native player
+    // reset and re-prepare what it already loaded.
+    p.setAudioContext(_mixingContext).then((_) => p.setSourceBytes(bytes));
     return p;
   }
+
+  /// Beeps ride alongside whatever else is playing instead of taking over.
+  ///
+  /// The plugin defaults to [AndroidAudioFocus.gain] — a permanent focus
+  /// request, which a music player reads as "you have lost focus for good" and
+  /// stops on. [AndroidAudioFocus.none] skips the focus request entirely, so
+  /// the beep just mixes in. iOS needs the matching opt-in: the default
+  /// `playback` category interrupts other audio unless `mixWithOthers` is set.
+  ///
+  /// Usage stays [AndroidUsageType.media] so the beeps follow the same volume
+  /// slider as the music they play over.
+  static final AudioContext _mixingContext = AudioContext(
+    android: const AudioContextAndroid(audioFocus: AndroidAudioFocus.none),
+    iOS: AudioContextIOS(
+      category: AVAudioSessionCategory.playback,
+      options: const {AVAudioSessionOptions.mixWithOthers},
+    ),
+  );
 }
 
 /// Generates a mono 16-bit 44100 Hz WAV containing a sine wave.
