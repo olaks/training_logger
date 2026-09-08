@@ -58,9 +58,9 @@ is torn down so drift's stream-close timer can run.
 |-----------|---------|
 | `database/` | Drift database class, table definitions (`tables.dart`), migrations, JSON export/import |
 | `providers/` | Riverpod providers: `dbProvider` singleton, stream providers for reactive data, `TrackNotifier` for stepper state, `DbMutations` extension for writes |
-| `screens/` | UI organized by feature: `home/`, `exercises/`, `detail/` (Track/History/Graph tabs, edit-set sheet, shared set inputs), `plans/`, `import/`, `settings/`, `hangboard/`, `inspiration/` |
+| `screens/` | UI organized by feature: `home/`, `exercises/`, `detail/` (Track/History/Graph tabs, edit-set sheet, shared set inputs), `plans/`, `import/`, `settings/`, `hangboard/`, `inspiration/`, `load/` (ACWR card, charts, method explainer) |
 | `theme/` | Material 3 theme builder and accent color definitions |
-| `utils/` | Date formatting, climbing grade scales (Font/V-scale), display formatters, `PhaseCountdown` (shared by all three timers), body-weight lookup, file picking, undo snackbar |
+| `utils/` | Date formatting, climbing grade scales (Font/V-scale), display formatters, `PhaseCountdown` (shared by all three timers), body-weight lookup, `training_load.dart` (load metrics + ACWR), file picking, undo snackbar |
 
 ### Data flow
 
@@ -69,6 +69,20 @@ Providers expose Drift streams → UI widgets `watch()` providers and rebuild re
 ### Database
 
 Tables are defined in `database/tables.dart`. Key entities: `ExerciseCategories` (the exercise library, with `exerciseType` 0=standard/1=climbing), `WorkoutSets` (logged sets with weight/reps/time/rpe/grade), `Workouts`/`WorkoutExercises` (reusable templates), `Plans`/`PlanWorkouts` (weekly scheduling), `DayNotes`, `BodyWeights`.
+
+### Training load / ACWR
+
+`utils/training_load.dart` holds the whole model as plain functions over rows —
+no Flutter, no widget tree — so it is unit-testable. A set reduces to
+rep-equivalents plus a per-rep kilogram figure, which a `LoadMetric` (volume,
+RPE-weighted volume, or session RPE) turns into a daily load. `acwrSeries` walks
+every calendar day from the first logged one to today, filling rest days with
+zero, and produces the 7-day acute and 28-day chronic windows by either rolling
+average or EWMA.
+
+The metric and averaging choice live in `providers/load_settings_provider.dart`,
+persisted through `SharedPreferences` and seeded in `main()` the same way the
+theme is. Anything reading the series watches `loadSeriesProvider`.
 
 Migrations are incremental in `database.dart` — each `if (from < N)` block handles one schema version. When adding columns or tables, bump `schemaVersion` and add a new migration block.
 
@@ -95,7 +109,7 @@ A stale Gradle cache can survive a dependency change and fail the APK build with
 
 ### Routes
 
-Defined in `app.dart`. Shell route with bottom nav (Home `/`, Exercises `/exercises`, Plans `/plans`, Timer `/hangboard`). Detail routes: `/exercise/:id/:date`, `/exercise/:id/edit`, `/workouts/:id`, `/workout-session/:id/:date`, `/plans/:id`, `/hangboard-session/:exerciseId`, `/import`, `/inspirations`, `/settings`.
+Defined in `app.dart`. Shell route with bottom nav (Home `/`, Exercises `/exercises`, Plans `/plans`, Timer `/hangboard`). Detail routes: `/exercise/:id/:date`, `/exercise/:id/edit`, `/workouts/:id`, `/workout-session/:id/:date`, `/plans/:id`, `/hangboard-session/:exerciseId`, `/import`, `/inspirations`, `/load`, `/load/method`, `/settings`.
 
 ## CI/CD
 

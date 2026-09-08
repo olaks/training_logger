@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'providers/backup_provider.dart';
+import 'providers/load_settings_provider.dart';
 import 'providers/theme_provider.dart';
 
 void main() async {
@@ -16,6 +17,9 @@ void main() async {
         prefsProvider.overrideWithValue(prefs),
         themeIndexProvider.overrideWith(
           (ref) => ThemeNotifier(savedIndex, prefs),
+        ),
+        loadSettingsProvider.overrideWith(
+          (ref) => LoadSettingsNotifier(LoadSettings.fromPrefs(prefs), prefs),
         ),
       ],
       child: const TrainingLoggerApp(),

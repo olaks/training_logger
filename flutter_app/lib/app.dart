@@ -13,6 +13,8 @@ import 'screens/plans/workout_detail_screen.dart';
 import 'screens/plans/workout_session_screen.dart';
 import 'screens/hangboard/hangboard_screen.dart';
 import 'screens/inspiration/inspiration_screen.dart';
+import 'screens/load/training_load_screen.dart';
+import 'screens/load/load_method_screen.dart';
 import 'theme/app_theme.dart';
 import 'providers/theme_provider.dart';
 
@@ -68,6 +70,14 @@ final router = GoRouter(
     GoRoute(
       path: '/import',
       builder: (_, __) => const ImportScreen(),
+    ),
+    GoRoute(
+      path: '/load',
+      builder: (_, __) => const TrainingLoadScreen(),
+    ),
+    GoRoute(
+      path: '/load/method',
+      builder: (_, __) => const LoadMethodScreen(),
     ),
     GoRoute(
       path: '/inspirations',

@@ -7,6 +7,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../database/database.dart';
 import '../utils/beeper.dart';
 import '../utils/phase_countdown.dart';
+import '../utils/training_load.dart';
+import 'load_settings_provider.dart';
 
 // ── Database singleton ─────────────────────────────────────────────────────
 
@@ -31,6 +33,9 @@ final setsForDayProvider =
 final setsForCategoryProvider =
     StreamProvider.family<List<WorkoutSet>, int>((ref, categoryId) =>
         ref.watch(dbProvider).watchSetsForCategory(categoryId));
+
+final allSetsProvider = StreamProvider<List<WorkoutSet>>((ref) =>
+    ref.watch(dbProvider).watchAllSets());
 
 final categoryByIdProvider =
     StreamProvider.family<ExerciseCategory?, int>((ref, id) =>
@@ -93,6 +98,28 @@ final bodyWeightForDateProvider =
 final inspirationsProvider =
     StreamProvider.family<List<Inspiration>, int?>((ref, categoryId) =>
         ref.watch(dbProvider).watchInspirations(categoryId: categoryId));
+
+// ── Training load / ACWR ───────────────────────────────────────────────────
+
+/// The day-by-day load series, rebuilt whenever a set, exercise type,
+/// weigh-in or load setting changes.
+///
+/// `DateTime.now()` is read at build time, so the series ends on today. It is
+/// not a ticking clock: the window rolls forward when the app next rebuilds
+/// this provider, which for a day-granularity metric is soon enough.
+final loadSeriesProvider = Provider<LoadSeries>((ref) {
+  final sets = ref.watch(allSetsProvider).value;
+  if (sets == null) return LoadSeries.empty;
+  final settings = ref.watch(loadSettingsProvider);
+  return buildLoadSeries(
+    sets,
+    ref.watch(categoriesProvider).value ?? const [],
+    ref.watch(bodyWeightsProvider).value ?? const [],
+    today: DateTime.now(),
+    metric: settings.metric,
+    method: settings.method,
+  );
+});
 
 // ── Selected date (home screen) ────────────────────────────────────────────
 

@@ -364,6 +364,16 @@ class AppDatabase extends _$AppDatabase {
             ]))
           .watch();
 
+  /// Every logged set, oldest first — the whole history, which is what a
+  /// rolling training-load window has to walk.
+  Stream<List<WorkoutSet>> watchAllSets() =>
+      (select(workoutSets)
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.dateStr),
+              (t) => OrderingTerm.asc(t.timestamp),
+            ]))
+          .watch();
+
   Stream<List<String>> watchWorkoutDates() => customSelect(
         'SELECT DISTINCT date_str FROM workout_sets ORDER BY date_str ASC',
         readsFrom: {workoutSets},

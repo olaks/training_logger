@@ -7,6 +7,7 @@ import '../../database/database.dart';
 import '../../providers/app_providers.dart';
 import '../../providers/backup_provider.dart';
 import '../../utils/format_utils.dart';
+import '../load/load_summary_card.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -58,6 +59,13 @@ class HomeScreen extends ConsumerWidget {
           const Divider(height: 1, thickness: 0.5),
 
           if (woDates.isNotEmpty) const _BackupNudge(),
+
+          // Training load sits above the day's own contents: it is context for
+          // what you are about to do, not a record of what you did.
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 4, 12, 0),
+            child: LoadSummaryCard(),
+          ),
 
           Expanded(
             child: setsAsync.when(
