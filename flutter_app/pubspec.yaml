@@ -1,7 +1,7 @@
 name: training_logger
 description: Climbing training logger — Android, iOS, Web.
 publish_to: 'none'
-version: 1.5.0+16
+version: 1.5.1+17
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
