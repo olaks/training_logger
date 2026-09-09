@@ -10,6 +10,7 @@ import '../../providers/app_providers.dart';
 import '../../utils/beeper.dart';
 import '../../utils/phase_countdown.dart';
 import '../../utils/format_utils.dart';
+import '../detail/widgets/set_inputs.dart' show rpeLabel;
 
 // ── Timer phases ─────────────────────────────────────────────────────────────
 
@@ -50,8 +51,12 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
   // ── Exercise to log against (standalone mode) ────────────────────────────
   int? _selectedCategoryId;
 
-  // ── Weight per set ───────────────────────────────────────────────────────
+  // ── Weight and effort per set ────────────────────────────────────────────
   final Map<int, double> _setWeights = {};
+  final Map<int, int> _setRpes = {};
+
+  /// Current RPE, carried from set to set until changed. 0 = not recorded.
+  int _rpe = 0;
 
   // ── Audio ────────────────────────────────────────────────────────────────
   late final Beeper _beeper;
@@ -83,7 +88,9 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
     _currentRep = 1;
     _isLeftHand = false;
     _setWeights.clear();
+    _setRpes.clear();
     _setWeights[1] = double.tryParse(_weightCtrl.text) ?? 0;
+    _setRpes[1] = _rpe;
     WakelockPlus.enable();
     _enterPhase(_Phase.getReady, 5);
   }
@@ -117,7 +124,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
         _isLeftHand = true;
         _startWork();
       case _Phase.setRest:
-        _recordSetWeight();
+        _recordSet();
         _currentSet++;
         _currentRep = 1;
         _startWork();
@@ -131,7 +138,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
             _beeper.low();
             _enterPhase(_Phase.rest, _restSecs);
           } else {
-            _recordSetWeight();
+            _recordSet();
             if (_currentSet < _sets) {
               _beeper.low();
               _enterPhase(_Phase.setRest, _setRestSecs);
@@ -155,9 +162,13 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
     _enterPhase(_Phase.work, _workSecs);
   }
 
-  void _recordSetWeight() {
+  /// Snapshots what is currently in the inputs onto the set that just
+  /// finished. Called both when the set ends and again when its rest ends, so
+  /// a weight or RPE typed during the rest lands on the set it belongs to.
+  void _recordSet() {
     _setWeights[_currentSet] =
         double.tryParse(_weightCtrl.text) ?? 0;
+    _setRpes[_currentSet] = _rpe;
   }
 
   void _togglePause() =>
@@ -171,7 +182,7 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
 
   void _skipSetRest() {
     if (_phase == _Phase.setRest) {
-      _recordSetWeight();
+      _recordSet();
       _currentSet++;
       _currentRep = 1;
       _startWork();
@@ -201,6 +212,9 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
           weightKg: Value(entry.value),
           reps: Value(_reps),
           timeSecs: Value(_workSecs),
+          rpe: Value((_setRpes[entry.key] ?? 0) == 0
+              ? null
+              : _setRpes[entry.key]),
         ));
       }
 
@@ -374,6 +388,32 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
     );
   }
 
+  /// Compact 0–10 RPE picker; 0 shows as '—' and saves as no RPE at all.
+  Widget _rpeStepper(int value, void Function(int) onChanged) {
+    Widget btn(IconData icon, int delta) => IconButton(
+          icon: Icon(icon, size: 22),
+          color: Colors.white54,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          onPressed: () => onChanged((value + delta).clamp(0, 10)),
+        );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        btn(Icons.remove_circle_outline, -1),
+        SizedBox(
+          width: 36,
+          child: Text(value == 0 ? '—' : '$value',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.w600)),
+        ),
+        btn(Icons.add_circle_outline, 1),
+      ],
+    );
+  }
+
   static String _fmtDuration(int secs) {
     final m = secs ~/ 60;
     final s = secs % 60;
@@ -496,6 +536,22 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('RPE:',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6))),
+              const SizedBox(width: 12),
+              _rpeStepper(_rpe, (v) => setState(() => _rpe = v)),
+            ],
+          ),
+          Text(
+            _rpe == 0 ? 'not set' : rpeLabel(_rpe),
+            style: TextStyle(
+                fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+          ),
           const SizedBox(height: 12),
           TextButton(
             onPressed: _skipSetRest,
@@ -561,7 +617,31 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
         ),
         const SizedBox(height: 24),
 
-        // Weight per set (editable before save)
+        // Weight and RPE per set (editable before save)
+        Row(
+          children: [
+            const Spacer(),
+            SizedBox(
+              width: 116,
+              child: Text('RPE',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 1.2,
+                      color: Colors.white.withValues(alpha: 0.4))),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 80,
+              child: Text('WEIGHT',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 1.2,
+                      color: Colors.white.withValues(alpha: 0.4))),
+            ),
+          ],
+        ),
         ...List.generate(_sets, (i) {
           final set = i + 1;
           final w = _setWeights[set] ?? 0;
@@ -574,6 +654,9 @@ class _HangboardScreenState extends ConsumerState<HangboardScreen> {
                         fontSize: 15,
                         color: Colors.white.withValues(alpha: 0.7))),
                 const Spacer(),
+                _rpeStepper(_setRpes[set] ?? 0,
+                    (v) => setState(() => _setRpes[set] = v)),
+                const SizedBox(width: 8),
                 SizedBox(
                   width: 80,
                   child: _DoneSetWeightField(
