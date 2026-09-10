@@ -190,6 +190,8 @@ class HomeScreen extends ConsumerWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('Saved "$name"'),
+      // Without this the bar never times out — see [showUndoSnackBar].
+      persist: false,
       action: SnackBarAction(
         label: 'OPEN',
         onPressed: () => context.push('/workouts/$id'),
