@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/format_utils.dart';
 
@@ -38,14 +37,14 @@ class BackupStatus {
   }
 }
 
-class BackupNotifier extends StateNotifier<BackupStatus> {
-  final SharedPreferences _prefs;
+class BackupNotifier extends Notifier<BackupStatus> {
+  SharedPreferences get _prefs => ref.read(prefsProvider);
 
-  BackupNotifier(this._prefs)
-      : super(BackupStatus(
-          lastBackup: _prefs.getString(_kLastBackupKey),
-          snoozedOn:  _prefs.getString(_kSnoozeKey),
-        ));
+  @override
+  BackupStatus build() => BackupStatus(
+        lastBackup: _prefs.getString(_kLastBackupKey),
+        snoozedOn:  _prefs.getString(_kSnoozeKey),
+      );
 
   Future<void> recordBackup([DateTime? now]) async {
     final today = dateStrFrom(now ?? DateTime.now());
@@ -67,5 +66,4 @@ final prefsProvider = Provider<SharedPreferences>(
     (ref) => throw UnimplementedError('prefsProvider must be overridden'));
 
 final backupProvider =
-    StateNotifierProvider<BackupNotifier, BackupStatus>(
-        (ref) => BackupNotifier(ref.watch(prefsProvider)));
+    NotifierProvider<BackupNotifier, BackupStatus>(BackupNotifier.new);

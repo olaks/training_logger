@@ -67,7 +67,15 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
     final desc  = _descCtrl.text.trim();
 
     if (name != _initialName) {
-      await ref.renameCategory(widget.categoryId, name);
+      try {
+        await ref.renameCategory(widget.categoryId, name);
+      } on DuplicateNameException catch (e) {
+        // The check above reads a cached list; the database has the last word.
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
+        return;
+      }
     }
     final newGroup = group.isEmpty ? null : group;
     if (newGroup != (_initialGroup?.isEmpty == true ? null : _initialGroup)) {
@@ -117,7 +125,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
         children: [
           Center(
             child: _ImagePicker(
-              data: cat.imageData,
+              data: ref.watch(categoryImageProvider(widget.categoryId)).value,
               onPicked: (bytes) =>
                   ref.saveCategoryImage(widget.categoryId, bytes),
             ),

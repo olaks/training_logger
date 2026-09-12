@@ -173,10 +173,7 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
                       }
                       final cat = item as ExerciseCategory;
                       return ListTile(
-                        leading: GestureDetector(
-                          onTap: () => _pickImage(context, cat.id, cat.imageData),
-                          child: _ImageAvatar(data: cat.imageData),
-                        ),
+                        leading: _ImageAvatar(categoryId: cat.id),
                         title: Text(cat.name),
                         trailing: PopupMenuButton<_ExAction>(
                           icon: Icon(Icons.more_vert,
@@ -214,60 +211,6 @@ class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _pickImage(
-      BuildContext context, int categoryId, Uint8List? current) async {
-    final action = await showModalBottomSheet<_ImageAction>(
-      context: context,
-      useRootNavigator: false,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Choose from gallery'),
-              onTap: () => Navigator.pop(context, _ImageAction.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Take a photo'),
-              onTap: () => Navigator.pop(context, _ImageAction.camera),
-            ),
-            if (current != null)
-              ListTile(
-                leading: Icon(Icons.delete_outline,
-                    color: Theme.of(context).colorScheme.error),
-                title: Text('Remove photo',
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.error)),
-                onTap: () => Navigator.pop(context, _ImageAction.remove),
-              ),
-          ],
-        ),
-      ),
-    );
-
-    if (!context.mounted || action == null) return;
-
-    if (action == _ImageAction.remove) {
-      await ref.saveCategoryImage(categoryId, null);
-      return;
-    }
-
-    final source = action == _ImageAction.gallery
-        ? ImageSource.gallery
-        : ImageSource.camera;
-    final xFile = await ImagePicker().pickImage(
-      source: source,
-      maxWidth: 512,
-      maxHeight: 512,
-      imageQuality: 80,
-    );
-    if (xFile == null) return;
-    final bytes = await xFile.readAsBytes();
-    await ref.saveCategoryImage(categoryId, bytes);
   }
 
   void _showHelpSheet(BuildContext context) {
@@ -710,25 +653,87 @@ enum _ExAction { edit, addToWorkout, delete }
 
 enum _ImageAction { gallery, camera, remove }
 
-class _ImageAvatar extends StatelessWidget {
-  final Uint8List? data;
-  const _ImageAvatar({required this.data});
+/// Offers the gallery/camera/remove sheet and writes the result.
+Future<void> _pickCategoryImage(
+    WidgetRef ref, BuildContext context, int categoryId,
+    Uint8List? current) async {
+  final action = await showModalBottomSheet<_ImageAction>(
+    context: context,
+    useRootNavigator: false,
+    builder: (_) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.photo_library),
+            title: const Text('Choose from gallery'),
+            onTap: () => Navigator.pop(context, _ImageAction.gallery),
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt),
+            title: const Text('Take a photo'),
+            onTap: () => Navigator.pop(context, _ImageAction.camera),
+          ),
+          if (current != null)
+            ListTile(
+              leading: Icon(Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error),
+              title: Text('Remove photo',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.error)),
+              onTap: () => Navigator.pop(context, _ImageAction.remove),
+            ),
+        ],
+      ),
+    ),
+  );
+
+  if (!context.mounted || action == null) return;
+
+  if (action == _ImageAction.remove) {
+    await ref.saveCategoryImage(categoryId, null);
+    return;
+  }
+
+  final source = action == _ImageAction.gallery
+      ? ImageSource.gallery
+      : ImageSource.camera;
+  final xFile = await ImagePicker().pickImage(
+    source: source,
+    maxWidth: 512,
+    maxHeight: 512,
+    imageQuality: 80,
+  );
+  if (xFile == null) return;
+  final bytes = await xFile.readAsBytes();
+  await ref.saveCategoryImage(categoryId, bytes);
+}
+
+/// The thumbnail in the exercise list, which is the only thing on the row
+/// that needs the photo — so it is the only thing that reads it.
+class _ImageAvatar extends ConsumerWidget {
+  final int categoryId;
+  const _ImageAvatar({required this.categoryId});
 
   @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        width: 46,
-        height: 46,
-        child: data != null
-            ? Image.memory(data!, fit: BoxFit.cover)
-            : Container(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: Icon(Icons.fitness_center,
-                    size: 22,
-                    color: Colors.white.withValues(alpha:0.3)),
-              ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final data = ref.watch(categoryImageProvider(categoryId)).value;
+    return GestureDetector(
+      onTap: () => _pickCategoryImage(ref, context, categoryId, data),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: data != null
+              ? Image.memory(data, fit: BoxFit.cover)
+              : Container(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: Icon(Icons.fitness_center,
+                      size: 22,
+                      color: Colors.white.withValues(alpha:0.3)),
+                ),
+        ),
       ),
     );
   }

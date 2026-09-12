@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
@@ -95,6 +96,55 @@ void main() {
       final untouched = await db.insertOrGetCategory('Squat');
       expect(await db.categoryDeletionImpact(untouched),
           (sets: 0, workouts: 0));
+    });
+  });
+
+  group('exercise photos', () {
+    test('a deleted exercise takes its photo, and an undo brings it back',
+        () async {
+      final bench = await db.insertOrGetCategory('Bench');
+      await db.setCategoryImage(bench, Uint8List.fromList([4, 5, 6]));
+
+      final deleted = await db.deleteCategory(bench);
+      expect(await countOf('exercise_images'), 0);
+
+      await db.restoreCategory(deleted!);
+      final restored = (await db.watchAllCategories().first)
+          .firstWhere((c) => c.name == 'Bench');
+      expect(await db.getCategoryImage(restored.id), [4, 5, 6]);
+    });
+
+    test('clearing a photo removes the row rather than storing nothing',
+        () async {
+      final bench = await db.insertOrGetCategory('Bench');
+      await db.setCategoryImage(bench, Uint8List.fromList([1]));
+      await db.setCategoryImage(bench, null);
+
+      expect(await db.getCategoryImage(bench), isNull);
+      expect(await countOf('exercise_images'), 0);
+    });
+  });
+
+  group('renameCategory', () {
+    test('refuses a name another exercise already answers to', () async {
+      final bench = await db.insertOrGetCategory('Bench');
+      await db.insertOrGetCategory('Squat');
+
+      expect(() => db.renameCategory(bench, 'squat'),
+          throwsA(isA<DuplicateNameException>()),
+          reason: 'two exercises of the same name make a backup ambiguous');
+      expect((await db.watchAllCategories().first).map((c) => c.name),
+          containsAll(['Bench', 'Squat']));
+    });
+
+    test('lets an exercise keep its own name', () async {
+      final bench = await db.insertOrGetCategory('Bench');
+      await db.renameCategory(bench, 'Bench Press');
+      await db.renameCategory(bench, 'Bench Press');
+
+      final names = (await db.watchAllCategories().first).map((c) => c.name);
+      expect(names, contains('Bench Press'));
+      expect(names, isNot(contains('Bench')));
     });
   });
 

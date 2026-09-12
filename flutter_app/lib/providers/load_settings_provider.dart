@@ -1,4 +1,4 @@
-import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/training_load.dart';
 
@@ -37,12 +37,17 @@ class LoadSettings {
   }
 }
 
-class LoadSettingsNotifier extends StateNotifier<LoadSettings> {
+class LoadSettingsNotifier extends Notifier<LoadSettings> {
+  final LoadSettings _initial;
+
   /// Null in tests and anywhere the app has not been started through `main` —
   /// the settings still work, they just do not outlive the session.
   final SharedPreferences? _prefs;
 
-  LoadSettingsNotifier(super.initial, this._prefs);
+  LoadSettingsNotifier(this._initial, this._prefs);
+
+  @override
+  LoadSettings build() => _initial;
 
   void setMetric(LoadMetric metric) {
     state = state.copyWith(metric: metric);
@@ -57,5 +62,5 @@ class LoadSettingsNotifier extends StateNotifier<LoadSettings> {
 
 // Overridden in main() with the persisted values.
 final loadSettingsProvider =
-    StateNotifierProvider<LoadSettingsNotifier, LoadSettings>(
-        (ref) => LoadSettingsNotifier(const LoadSettings(), null));
+    NotifierProvider<LoadSettingsNotifier, LoadSettings>(
+        () => LoadSettingsNotifier(const LoadSettings(), null));

@@ -8,6 +8,8 @@ class Workouts extends Table {
   TextColumn get notes => text().withDefault(const Constant(''))();
 }
 
+@TableIndex(name: 'idx_we_workout', columns: {#workoutId, #sortOrder})
+@TableIndex(name: 'idx_we_category', columns: {#categoryId})
 class WorkoutExercises extends Table {
   IntColumn get id         => integer().autoIncrement()();
   IntColumn get workoutId  => integer().references(Workouts, #id)();
@@ -24,6 +26,8 @@ class Plans extends Table {
   TextColumn get name => text()();
 }
 
+@TableIndex(name: 'idx_pw_plan', columns: {#planId})
+@TableIndex(name: 'idx_pw_workout', columns: {#workoutId})
 class PlanWorkouts extends Table {
   IntColumn  get id        => integer().autoIncrement()();
   IntColumn  get planId    => integer().references(Plans, #id)();
@@ -39,11 +43,30 @@ class ExerciseCategories extends Table {
   TextColumn get name         => text()();
   TextColumn get groupName    => text().nullable()();
   TextColumn get description  => text().nullable()();
-  BlobColumn get imageData    => blob().nullable()();
   // 0 = standard (weight/reps/time), 1 = climbing (grade)
   IntColumn  get exerciseType => integer().withDefault(const Constant(0))();
 }
 
+/// Exercise photos, kept out of [ExerciseCategories] on purpose.
+///
+/// A category row is read by nearly every screen — the day view, the load
+/// series, every exercise picker — and none of them draw the picture. Holding
+/// the blob on the row meant each of those reads dragged every photo out of
+/// SQLite and into memory. In its own table the bytes are fetched only by the
+/// two widgets that actually show them.
+class ExerciseImages extends Table {
+  IntColumn  get categoryId => integer().references(ExerciseCategories, #id)();
+  BlobColumn get data       => blob()();
+
+  @override
+  Set<Column> get primaryKey => {categoryId};
+}
+
+// A set is looked up two ways: everything on one day (the day view), and
+// everything for one exercise (history, graph, prefill). Both orderings are
+// carried by the index so neither has to sort the table.
+@TableIndex(name: 'idx_sets_date', columns: {#dateStr, #timestamp})
+@TableIndex(name: 'idx_sets_category', columns: {#categoryId, #dateStr})
 class WorkoutSets extends Table {
   IntColumn  get id         => integer().autoIncrement()();
   IntColumn  get categoryId => integer().references(ExerciseCategories, #id)();
@@ -80,6 +103,7 @@ class BodyWeights extends Table {
 
 // ── Inspirations (saved YouTube/web videos, optionally tied to an exercise) ───
 
+@TableIndex(name: 'idx_inspirations_category', columns: {#categoryId})
 class Inspirations extends Table {
   IntColumn  get id         => integer().autoIncrement()();
   TextColumn get title      => text()();

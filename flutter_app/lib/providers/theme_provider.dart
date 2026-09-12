@@ -1,11 +1,15 @@
-import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _kThemeKey = 'theme_index';
 
-class ThemeNotifier extends StateNotifier<int> {
+class ThemeNotifier extends Notifier<int> {
+  final int _initial;
   final SharedPreferences _prefs;
-  ThemeNotifier(super.initial, this._prefs);
+  ThemeNotifier(this._initial, this._prefs);
+
+  @override
+  int build() => _initial;
 
   void setTheme(int index) {
     state = index;
@@ -14,5 +18,5 @@ class ThemeNotifier extends StateNotifier<int> {
 }
 
 // Overridden in main() with the persisted value.
-final themeIndexProvider =
-    StateNotifierProvider<ThemeNotifier, int>((ref) => throw UnimplementedError());
+final themeIndexProvider = NotifierProvider<ThemeNotifier, int>(
+    () => throw UnimplementedError('themeIndexProvider must be overridden'));

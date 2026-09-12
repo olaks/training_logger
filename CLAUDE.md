@@ -47,8 +47,8 @@ is torn down so drift's stream-close timer can run.
 
 ### Stack
 
-- **State management:** Riverpod (providers + StateNotifier for transient UI state)
-- **Database:** Drift (SQLite) with code generation — schema version 16, foreign keys enforced
+- **State management:** Riverpod 3 (providers + `Notifier` for transient UI state)
+- **Database:** Drift (SQLite) with code generation — schema version 17, foreign keys enforced
 - **Routing:** go_router (URL-based, important for web)
 - **UI:** Material 3 with custom dark themes (4 accent colors)
 
@@ -66,9 +66,32 @@ is torn down so drift's stream-close timer can run.
 
 Providers expose Drift streams → UI widgets `watch()` providers and rebuild reactively. Writes go through `DbMutations` extension methods on `WidgetRef`. Each exercise's Track tab gets its own `TrackNotifier` (keyed by categoryId via `autoDispose.family`).
 
+The home screen's day lives in `SelectedDateNotifier`, which takes its clock as
+a parameter so a test can walk it past midnight; the app shell rolls a stale
+"today" forward on resume.
+
 ### Database
 
-Tables are defined in `database/tables.dart`. Key entities: `ExerciseCategories` (the exercise library, with `exerciseType` 0=standard/1=climbing), `WorkoutSets` (logged sets with weight/reps/time/rpe/grade), `Workouts`/`WorkoutExercises` (reusable templates), `Plans`/`PlanWorkouts` (weekly scheduling), `DayNotes`, `BodyWeights`.
+Tables are defined in `database/tables.dart`. Key entities: `ExerciseCategories` (the exercise library, with `exerciseType` 0=standard/1=climbing), `ExerciseImages` (exercise photos, one row per exercise), `WorkoutSets` (logged sets with weight/reps/time/rpe/grade), `Workouts`/`WorkoutExercises` (reusable templates), `Plans`/`PlanWorkouts` (weekly scheduling), `DayNotes`, `BodyWeights`.
+
+Photos live in their own table on purpose: a category row is read by almost
+every screen and the load series, and none of them draw the picture. Fetch
+bytes through `categoryImageProvider(id)`, which is the only thing that should
+read them.
+
+Indexes are declared with `@TableIndex` on the table classes, so a fresh
+install gets them from `createAll` and an upgrade has to create them in the
+migration — `test/schema_test.dart` checks the two agree.
+
+Names (exercises, workouts, plans) are matched case-insensitively and are not
+unique in the schema, so a lookup by name returns the first match rather than
+assuming there is exactly one. `renameCategory` throws `DuplicateNameException`
+rather than creating a second exercise of the same name, because duplicates are
+what make a backup import ambiguous.
+
+`importFromJson` builds its "already here" lookups once up front rather than
+querying per row — a full history is thousands of rows, and they all import
+inside one transaction.
 
 ### Training load / ACWR
 

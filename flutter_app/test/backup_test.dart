@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -49,6 +51,8 @@ void main() {
 
     final plan = await db.insertPlan('Winter');
     await db.assignWorkoutToPlan(plan, workout, weekday: 2);
+
+    await db.setCategoryImage(hang, Uint8List.fromList([9, 8, 7]));
 
     await db.saveDayNote('2026-01-01', 'Felt strong');
     await db.saveBodyWeight('2026-01-01', 71.5);
@@ -103,6 +107,9 @@ void main() {
         'Felt strong');
     expect((await restored.watchBodyWeights().first).single.kg, 71.5);
 
+    expect(await restored.getCategoryImage(hang.id), [9, 8, 7],
+        reason: 'the exercise photo travels with the backup');
+
     final links = await restored.watchInspirations().first;
     expect(links.single.title, 'Hangboard basics');
     expect(links.single.notes, 'good protocol');
@@ -151,5 +158,39 @@ void main() {
     await restored.importFromJson(json);
 
     expect(await restored.watchAllCategories().first, isNotEmpty);
+  });
+
+  test('an exercise logged under a different capitalisation merges into the '
+      'one already here', () async {
+    await seed(source);
+    final json = await source.exportToJson();
+
+    final restored = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(restored.close);
+    // Same exercise, typed differently — a case-sensitive match used to fork
+    // its history into a second exercise of nearly the same name.
+    final existing = await restored.insertOrGetCategory('edge lift 18 MM');
+    await restored.importFromJson(json);
+
+    final names = (await restored.watchAllCategories().first)
+        .map((c) => c.name.toLowerCase())
+        .where((n) => n == 'edge lift 18 mm');
+    expect(names, hasLength(1));
+    expect(await restored.watchSetsForCategory(existing).first, hasLength(1),
+        reason: 'the imported set lands on the exercise already here');
+  });
+
+  test('a backup still imports when two exercises share a name', () async {
+    await seed(source);
+    final json = await source.exportToJson();
+
+    final restored = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(restored.close);
+    // Only reachable by writing straight to the table — which is what the
+    // schema allows, and what the import has to survive.
+    await restored.insertCategory('Edge Lift 18 mm');
+    await restored.insertCategory('Edge Lift 18 mm');
+
+    expect(await restored.importFromJson(json), 2);
   });
 }

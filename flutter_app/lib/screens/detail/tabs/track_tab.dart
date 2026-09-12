@@ -191,7 +191,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
     final cat        = ref.watch(categoryByIdProvider(widget.categoryId)).value;
     final isClimbing = cat?.exerciseType == 1;
     final isHangboard = cat?.exerciseType == 2;
-    final imageData  = cat?.imageData;
+    final imageData  = ref.watch(categoryImageProvider(widget.categoryId)).value;
 
     // For hangboard exercises, show a simplified view with timer launch
     if (isHangboard) {

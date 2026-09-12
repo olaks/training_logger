@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:drift/drift.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../database/database.dart';
 import '../utils/beeper.dart';
@@ -40,6 +39,12 @@ final allSetsProvider = StreamProvider<List<WorkoutSet>>((ref) =>
 final categoryByIdProvider =
     StreamProvider.family<ExerciseCategory?, int>((ref, id) =>
         ref.watch(dbProvider).watchCategoryById(id));
+
+/// The photo for one exercise. Separate from [categoryByIdProvider] so the
+/// bytes are read only where they are drawn — see [ExerciseImages].
+final categoryImageProvider =
+    StreamProvider.autoDispose.family<Uint8List?, int>((ref, id) =>
+        ref.watch(dbProvider).watchCategoryImage(id));
 
 // ── Workouts ───────────────────────────────────────────────────────────────
 
@@ -123,7 +128,51 @@ final loadSeriesProvider = Provider<LoadSeries>((ref) {
 
 // ── Selected date (home screen) ────────────────────────────────────────────
 
-final selectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
+/// The day the home screen is showing.
+///
+/// Starts on today and, if the app is left open across midnight, rolls forward
+/// when it next comes back to the foreground — but only while today is what
+/// was being shown. A day deliberately opened in the past stays where it was
+/// put; a stale "today" is how a set ends up logged against yesterday.
+class SelectedDateNotifier extends Notifier<DateTime> {
+  /// The clock, so a test can move it past midnight.
+  final DateTime Function() _now;
+
+  /// What today was when the shown date was last chosen.
+  late DateTime _todayWhenChosen;
+
+  SelectedDateNotifier({DateTime Function()? now}) : _now = now ?? DateTime.now;
+
+  DateTime _startOfToday() {
+    final now = _now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  @override
+  DateTime build() {
+    _todayWhenChosen = _startOfToday();
+    return _todayWhenChosen;
+  }
+
+  void select(DateTime date) {
+    _todayWhenChosen = _startOfToday();
+    state = DateTime(date.year, date.month, date.day);
+  }
+
+  void shiftDays(int days) =>
+      select(DateTime(state.year, state.month, state.day + days));
+
+  void rollOverIfStale() {
+    final today = _startOfToday();
+    if (today == _todayWhenChosen) return;
+    final wasShowingToday = state == _todayWhenChosen;
+    _todayWhenChosen = today;
+    if (wasShowingToday) state = today;
+  }
+}
+
+final selectedDateProvider = NotifierProvider<SelectedDateNotifier, DateTime>(
+    SelectedDateNotifier.new);
 
 // ── TRACK tab stepper state ────────────────────────────────────────────────
 
@@ -164,8 +213,9 @@ class TrackState {
   );
 }
 
-class TrackNotifier extends StateNotifier<TrackState> {
-  TrackNotifier() : super(const TrackState());
+class TrackNotifier extends Notifier<TrackState> {
+  @override
+  TrackState build() => const TrackState();
 
   void incrementWeight() => state = state.copyWith(weightKg: (state.weightKg + 1).clamp(-500, 999).toDouble());
   void decrementWeight() => state = state.copyWith(weightKg: (state.weightKg - 1).clamp(-500, 999).toDouble());
@@ -193,9 +243,9 @@ class TrackNotifier extends StateNotifier<TrackState> {
 }
 
 // keyed by categoryId so each exercise gets its own stepper state
-final trackProvider = StateNotifierProvider.autoDispose
+final trackProvider = NotifierProvider.autoDispose
     .family<TrackNotifier, TrackState, int>(
-  (ref, _) => TrackNotifier(),
+  (_) => TrackNotifier(),
 );
 
 // ── Rest timer (global, survives navigation) ─────────────────────────────
@@ -207,7 +257,7 @@ class RestTimerState {
   const RestTimerState({this.active = false, this.remaining = 0, this.restSecs = 180});
 }
 
-class RestTimerNotifier extends StateNotifier<RestTimerState> {
+class RestTimerNotifier extends Notifier<RestTimerState> {
   /// How long the finished panel stays up before it dismisses itself.
   static const _completedHoldSecs = 3;
 
@@ -219,13 +269,19 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
   Timer? _dismissTimer;
   Beeper? _beeper;
 
+  /// Whether the screen is currently being held awake. Tracked rather than
+  /// derived from [state], because the teardown that has to release it runs
+  /// after the state is gone.
+  bool _wakelockHeld = false;
+
   /// Sound, haptics and the wakelock all need platform plugins; tests turn
   /// them off to exercise the countdown itself.
   final bool _withFeedback;
 
-  RestTimerNotifier({bool withFeedback = true})
-      : _withFeedback = withFeedback,
-        super(const RestTimerState()) {
+  RestTimerNotifier({bool withFeedback = true}) : _withFeedback = withFeedback;
+
+  @override
+  RestTimerState build() {
     _countdown = PhaseCountdown(
       onChanged: _publish,
       onElapsed: _finish,
@@ -234,6 +290,8 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
         if (_withFeedback) HapticFeedback.lightImpact();
       },
     );
+    ref.onDispose(_teardown);
+    return const RestTimerState();
   }
 
   void start() => _run(state.restSecs);
@@ -245,6 +303,7 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
     if (_withFeedback) {
       _beeper ??= Beeper();
       WakelockPlus.enable();
+      _wakelockHeld = true;
     }
     _countdown.start(secs);
     state = RestTimerState(active: true, remaining: secs, restSecs: secs);
@@ -258,7 +317,9 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
   }
 
   void _releaseWakelock() {
-    if (_withFeedback) WakelockPlus.disable();
+    if (!_wakelockHeld) return;
+    _wakelockHeld = false;
+    WakelockPlus.disable();
   }
 
   /// Ticks come ten times a second; only whole seconds are worth publishing.
@@ -285,18 +346,16 @@ class RestTimerNotifier extends StateNotifier<RestTimerState> {
     });
   }
 
-  @override
-  void dispose() {
+  void _teardown() {
     _dismissTimer?.cancel();
     _countdown.dispose();
     _beeper?.dispose();
-    if (state.active) _releaseWakelock();
-    super.dispose();
+    _releaseWakelock();
   }
 }
 
-final restTimerProvider = StateNotifierProvider<RestTimerNotifier, RestTimerState>(
-    (ref) => RestTimerNotifier());
+final restTimerProvider = NotifierProvider<RestTimerNotifier, RestTimerState>(
+    RestTimerNotifier.new);
 
 // ── Database mutation helpers ──────────────────────────────────────────────
 
@@ -384,7 +443,7 @@ extension DbMutations on WidgetRef {
       );
 
   Future<void> saveCategoryImage(int id, Uint8List? data) =>
-      db.updateCategoryImage(id, data);
+      db.setCategoryImage(id, data);
 
   Future<void> setExerciseType(int id, int type) => db.setExerciseType(id, type);
 

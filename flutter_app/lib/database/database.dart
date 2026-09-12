@@ -6,7 +6,7 @@ import '../utils/format_utils.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Workouts, WorkoutExercises, Plans, PlanWorkouts, ExerciseCategories, WorkoutSets, DayNotes, BodyWeights, Inspirations])
+@DriftDatabase(tables: [Workouts, WorkoutExercises, Plans, PlanWorkouts, ExerciseCategories, ExerciseImages, WorkoutSets, DayNotes, BodyWeights, Inspirations])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(
     name: 'training_logger',
@@ -20,7 +20,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 17;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -30,7 +30,11 @@ class AppDatabase extends _$AppDatabase {
     },
     onUpgrade: (m, from, to) async {
       if (from < 2) {
-        await m.addColumn(exerciseCategories, exerciseCategories.imageData);
+        // Raw SQL because the column is gone from the current schema: v17
+        // moves exercise photos into their own table, and a database this old
+        // still has to pass through the version that had them here.
+        await customStatement(
+            'ALTER TABLE exercise_categories ADD COLUMN image_data BLOB');
       }
       if (from < 3) {
         await m.addColumn(exerciseCategories, exerciseCategories.groupName);
@@ -131,6 +135,36 @@ class AppDatabase extends _$AppDatabase {
         // foreign keys start being enforced in beforeOpen.
         await _purgeOrphans();
       }
+      if (from < 17) {
+        // Exercise photos move to their own table: see [ExerciseImages].
+        await m.createTable(exerciseImages);
+        if (await _hasColumn('exercise_categories', 'image_data')) {
+          await customStatement(
+              'INSERT INTO exercise_images (category_id, data) '
+              'SELECT id, image_data FROM exercise_categories '
+              'WHERE image_data IS NOT NULL');
+          // Recreates the table from the current definition, copying the
+          // columns that survive — which is how a column is dropped portably.
+          await m.alterTable(TableMigration(exerciseCategories));
+        }
+
+        // The schema shipped without a single index, so every lookup by day,
+        // by exercise, or through a foreign key scanned the whole table.
+        for (final index in [
+          idxSetsDate,
+          idxSetsCategory,
+          idxWeWorkout,
+          idxWeCategory,
+          idxPwPlan,
+          idxPwWorkout,
+          idxInspirationsCategory,
+        ]) {
+          // Dropped first so the index always ends up matching the definition
+          // above, whatever an interrupted earlier run may have left behind.
+          await customStatement('DROP INDEX IF EXISTS ${index.entityName}');
+          await m.createIndex(index);
+        }
+      }
     },
     beforeOpen: (details) async {
       // sqlite3 ignores foreign keys unless asked. Without this, a delete that
@@ -140,6 +174,16 @@ class AppDatabase extends _$AppDatabase {
       await customStatement('PRAGMA foreign_keys = ON');
     },
   );
+
+  /// Whether a column is present, for migration steps that have to cope with
+  /// a database that already went through part of the change.
+  Future<bool> _hasColumn(String table, String column) async {
+    final rows = await customSelect(
+      "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+      variables: [Variable.withString(table), Variable.withString(column)],
+    ).get();
+    return rows.isNotEmpty;
+  }
 
   /// Deletes rows whose parent is gone, so foreign key enforcement has a
   /// consistent database to start from.
@@ -247,19 +291,35 @@ class AppDatabase extends _$AppDatabase {
   /// Returns existing category id if name matches (case-insensitive),
   /// otherwise inserts a new one.
   Future<int> insertOrGetCategory(String name, {String? groupName, String? description}) async {
-    final existing = await (select(exerciseCategories)
-          ..where((t) => t.name.like(name)))
-        .get();
-    final match = existing
-        .where((c) => c.name.toLowerCase() == name.toLowerCase())
-        .firstOrNull;
+    final match = (await _categoriesNamed(name)).firstOrNull;
     if (match != null) return match.id;
     return insertCategory(name, groupName: groupName, description: description);
   }
 
-  Future<int> renameCategory(int id, String name) =>
-      (update(exerciseCategories)..where((t) => t.id.equals(id)))
-          .write(ExerciseCategoriesCompanion(name: Value(name)));
+  /// Exercises matching [name], ignoring case. Names are not unique in the
+  /// schema, so this returns a list rather than assuming one row: a lookup
+  /// that assumed uniqueness used to throw on a library holding two exercises
+  /// of the same name, which a rename can produce.
+  Future<List<ExerciseCategory>> _categoriesNamed(String name) async {
+    // `like` is the case-insensitive prefilter SQLite gives us; `%` and `_`
+    // in a name make it over-match, so the exact comparison happens in Dart.
+    final candidates =
+        await (select(exerciseCategories)..where((t) => t.name.like(name))).get();
+    final lower = name.toLowerCase();
+    return candidates.where((c) => c.name.toLowerCase() == lower).toList();
+  }
+
+  /// Renames an exercise, refusing a name another exercise already answers to.
+  ///
+  /// The edit screen checks this too, but it checks against a cached list;
+  /// the constraint belongs where the write happens, because a duplicate name
+  /// is what makes a later backup import ambiguous.
+  Future<int> renameCategory(int id, String name) async {
+    final clash = (await _categoriesNamed(name)).where((c) => c.id != id);
+    if (clash.isNotEmpty) throw DuplicateNameException(name);
+    return (update(exerciseCategories)..where((t) => t.id.equals(id)))
+        .write(ExerciseCategoriesCompanion(name: Value(name)));
+  }
 
   Future<int> updateCategoryGroup(int id, String? groupName) =>
       (update(exerciseCategories)..where((t) => t.id.equals(id)))
@@ -304,7 +364,10 @@ class AppDatabase extends _$AppDatabase {
         final linked = await (select(inspirations)
               ..where((t) => t.categoryId.equals(id)))
             .get();
+        final image = await getCategoryImage(id);
 
+        await (delete(exerciseImages)..where((t) => t.categoryId.equals(id)))
+            .go();
         await (delete(workoutSets)..where((t) => t.categoryId.equals(id))).go();
         await (delete(workoutExercises)..where((t) => t.categoryId.equals(id)))
             .go();
@@ -318,6 +381,7 @@ class AppDatabase extends _$AppDatabase {
           sets: sets,
           memberships: members,
           unlinkedInspirationIds: linked.map((i) => i.id).toList(),
+          image: image,
         );
       });
 
@@ -326,6 +390,9 @@ class AppDatabase extends _$AppDatabase {
   Future<void> restoreCategory(DeletedCategory deleted) => transaction(() async {
         await into(exerciseCategories)
             .insert(deleted.category.toCompanion(false));
+        if (deleted.image != null) {
+          await setCategoryImage(deleted.category.id, deleted.image);
+        }
         for (final s in deleted.sets) {
           await into(workoutSets).insert(s.toCompanion(false));
         }
@@ -339,9 +406,39 @@ class AppDatabase extends _$AppDatabase {
         }
       });
 
-  Future<int> updateCategoryImage(int id, Uint8List? data) =>
-      (update(exerciseCategories)..where((t) => t.id.equals(id)))
-          .write(ExerciseCategoriesCompanion(imageData: Value(data)));
+  // ── Exercise images ───────────────────────────────────────────────────────
+
+  /// The photo for one exercise, or null if it has none. Watched only by the
+  /// two widgets that draw it — see [ExerciseImages] for why it is separate.
+  Stream<Uint8List?> watchCategoryImage(int id) =>
+      (select(exerciseImages)..where((t) => t.categoryId.equals(id)))
+          .watchSingleOrNull()
+          .map((row) => row?.data);
+
+  Future<Uint8List?> getCategoryImage(int id) async {
+    final row = await (select(exerciseImages)
+          ..where((t) => t.categoryId.equals(id)))
+        .getSingleOrNull();
+    return row?.data;
+  }
+
+  /// Every photo at once, keyed by exercise. Only the backup export needs
+  /// this; screens fetch one at a time.
+  Future<Map<int, Uint8List>> getAllCategoryImages() async {
+    final rows = await select(exerciseImages).get();
+    return {for (final r in rows) r.categoryId: r.data};
+  }
+
+  /// Writes or clears an exercise photo. Null removes the row rather than
+  /// storing an empty blob.
+  Future<void> setCategoryImage(int id, Uint8List? data) async {
+    if (data == null) {
+      await (delete(exerciseImages)..where((t) => t.categoryId.equals(id))).go();
+      return;
+    }
+    await into(exerciseImages).insertOnConflictUpdate(
+        ExerciseImagesCompanion.insert(categoryId: Value(id), data: data));
+  }
 
   Future<int> setExerciseType(int id, int type) =>
       (update(exerciseCategories)..where((t) => t.id.equals(id)))
@@ -590,9 +687,10 @@ class AppDatabase extends _$AppDatabase {
     late int planId;
     await transaction(() async {
       // ── Plan ──────────────────────────────────────────────────────────
-      final existingPlan = await (select(plans)
+      final existingPlan = (await (select(plans)
             ..where((t) => t.name.equals(planName)))
-          .getSingleOrNull();
+          .get())
+          .firstOrNull;
       if (existingPlan == null) {
         planId = await into(plans).insert(PlansCompanion.insert(name: planName));
       } else {
@@ -608,9 +706,10 @@ class AppDatabase extends _$AppDatabase {
         final name  = w['name'] as String;
         final notes = (w['notes'] as String?) ?? '';
 
-        final existingW = await (select(workouts)
+        final existingW = (await (select(workouts)
               ..where((t) => t.name.equals(name)))
-            .getSingleOrNull();
+            .get())
+            .firstOrNull;
 
         int wId;
         if (existingW != null) {
@@ -629,11 +728,7 @@ class AppDatabase extends _$AppDatabase {
             if (catIdByName.containsKey(exName)) {
               catId = catIdByName[exName]!;
             } else {
-              final existingCat = await (select(exerciseCategories)
-                    ..where((t) => t.name.equals(exName)))
-                  .getSingleOrNull();
-              catId = existingCat?.id ??
-                  await insertCategory(exName, groupName: group);
+              catId = await insertOrGetCategory(exName, groupName: group);
               catIdByName[exName] = catId;
             }
 
@@ -660,9 +755,10 @@ class AppDatabase extends _$AppDatabase {
         if (woId == null) {
           // Fallback for hand-edited JSON that references a workout
           // already in the library but not listed under "workouts".
-          final existing = await (select(workouts)
+          final existing = (await (select(workouts)
                 ..where((t) => t.name.equals(woName)))
-              .getSingleOrNull();
+              .get())
+              .firstOrNull;
           if (existing == null) continue;
           woId = existing.id;
           workoutIdByName[woName] = woId;
@@ -684,6 +780,7 @@ class AppDatabase extends _$AppDatabase {
   Future<String> exportToJson() async {
     final cats    = await select(exerciseCategories).get();
     final allSets = await select(workoutSets).get();
+    final images  = await getAllCategoryImages();
 
     final setsByCategory = <int, List<WorkoutSet>>{};
     for (final s in allSets) {
@@ -709,7 +806,7 @@ class AppDatabase extends _$AppDatabase {
         'name': cat.name,
         if (cat.groupName   != null) 'group':        cat.groupName,
         if (cat.description != null) 'description':  cat.description,
-        if (cat.imageData   != null) 'image':        base64.encode(cat.imageData!),
+        if (images[cat.id]  != null) 'image':        base64.encode(images[cat.id]!),
         if (cat.exerciseType != 0)   'exerciseType': cat.exerciseType,
         'sets': sets,
       };
@@ -783,38 +880,73 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// Merges a backup into the current database, returning how many sets were
+  /// added.
+  ///
+  /// Everything is matched by name, and nothing already present is touched —
+  /// importing the same file twice adds nothing the second time. The lookups
+  /// that decide "already present" are all built once up front: doing them per
+  /// row meant a query per set, which on a full history was thousands of round
+  /// trips inside a single transaction.
   Future<int> importFromJson(String jsonStr) async {
     final data      = jsonDecode(jsonStr) as Map<String, dynamic>;
     final exercises = (data['exercises'] as List).cast<Map<String, dynamic>>();
     int inserted    = 0;
 
-    // Map of exercise name → catId (populated during exercise import)
+    // Map of lower-cased exercise name → catId. Matching ignores case, so a
+    // backup written as "Pull Up" merges into an existing "pull up" instead of
+    // forking its history into a second exercise.
     final catIdByName = <String, int>{};
 
     await transaction(() async {
+      // ── What is already here ──────────────────────────────────────────
+      final existingCats = await select(exerciseCategories).get();
+      final catByName = <String, ExerciseCategory>{};
+      for (final c in existingCats) {
+        catByName.putIfAbsent(c.name.toLowerCase(), () => c);
+      }
+      final withImages = (await (selectOnly(exerciseImages)
+                ..addColumns([exerciseImages.categoryId]))
+              .get())
+          .map((r) => r.read(exerciseImages.categoryId)!)
+          .toSet();
+      // (categoryId, timestamp) identifies a logged set for de-duplication.
+      final existingSets = (await (selectOnly(workoutSets)
+                ..addColumns([workoutSets.categoryId, workoutSets.timestamp]))
+              .get())
+          .map((r) => (
+                r.read(workoutSets.categoryId)!,
+                r.read(workoutSets.timestamp)!
+              ))
+          .toSet();
+
       // ── Exercises + sets ──────────────────────────────────────────────
+      final newSets = <WorkoutSetsCompanion>[];
       for (final ex in exercises) {
         final name        = ex['name']        as String;
+        final key         = name.toLowerCase();
         final group       = ex['group']       as String?;
         final description = ex['description'] as String?;
         final imageB64    = ex['image']       as String?;
         final exType      = (ex['exerciseType'] as int?) ?? 0;
 
         int catId;
-        final existing = await (select(exerciseCategories)
-              ..where((t) => t.name.equals(name)))
-            .getSingleOrNull();
+        final existing = catByName[key];
 
         if (existing == null) {
-          catId = await insertCategory(name, groupName: group, description: description);
+          catId = await insertCategory(name,
+              groupName: group, description: description);
           if (imageB64 != null) {
-            await updateCategoryImage(catId, base64.decode(imageB64));
+            await setCategoryImage(catId, base64.decode(imageB64));
+            withImages.add(catId);
           }
           if (exType != 0) {
             await setExerciseType(catId, exType);
           }
         } else {
           catId = existing.id;
+          // Only fills gaps: an exercise already carrying a group, a
+          // description or a photo keeps the one it has.
           final patch = ExerciseCategoriesCompanion(
             groupName: existing.groupName == null && group != null
                 ? Value(group)
@@ -822,29 +954,24 @@ class AppDatabase extends _$AppDatabase {
             description: existing.description == null && description != null
                 ? Value(description)
                 : const Value.absent(),
-            imageData: existing.imageData == null && imageB64 != null
-                ? Value(base64.decode(imageB64))
-                : const Value.absent(),
           );
-          if (patch.groupName.present ||
-              patch.description.present ||
-              patch.imageData.present) {
+          if (patch.groupName.present || patch.description.present) {
             await (update(exerciseCategories)
                   ..where((t) => t.id.equals(catId)))
                 .write(patch);
           }
+          if (imageB64 != null && !withImages.contains(catId)) {
+            await setCategoryImage(catId, base64.decode(imageB64));
+            withImages.add(catId);
+          }
         }
-        catIdByName[name] = catId;
+        catIdByName[key] = catId;
 
         for (final s in (ex['sets'] as List).cast<Map<String, dynamic>>()) {
           final ts = s['timestamp'] as int;
-          final dup = await (select(workoutSets)
-                ..where((t) =>
-                    t.categoryId.equals(catId) & t.timestamp.equals(ts)))
-              .getSingleOrNull();
-          if (dup != null) continue;
+          if (!existingSets.add((catId, ts))) continue;
 
-          await into(workoutSets).insert(WorkoutSetsCompanion.insert(
+          newSets.add(WorkoutSetsCompanion.insert(
             categoryId: catId,
             dateStr:    s['date'] as String,
             timestamp:  ts,
@@ -859,41 +986,41 @@ class AppDatabase extends _$AppDatabase {
           inserted++;
         }
       }
+      if (newSets.isNotEmpty) {
+        await batch((b) => b.insertAll(workoutSets, newSets));
+      }
 
       // ── Workouts ──────────────────────────────────────────────────────
       final workoutsData = (data['workouts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       final workoutIdByName = <String, int>{};
+      for (final w in await select(workouts).get()) {
+        workoutIdByName.putIfAbsent(w.name.toLowerCase(), () => w.id);
+      }
+      // (workoutId, categoryId, sortOrder) is what makes a membership the one
+      // already in the workout rather than a second copy of the exercise.
+      final existingMembers = (await select(workoutExercises).get())
+          .map((we) => (we.workoutId, we.categoryId, we.sortOrder))
+          .toSet();
+
       for (final w in workoutsData) {
         final name  = w['name'] as String;
+        final key   = name.toLowerCase();
         final notes = (w['notes'] as String?) ?? '';
 
-        // Skip if workout with this name already exists
-        final existing = await (select(workouts)
-              ..where((t) => t.name.equals(name)))
-            .getSingleOrNull();
-        int wId;
-        if (existing != null) {
-          wId = existing.id;
-        } else {
+        var wId = workoutIdByName[key];
+        if (wId == null) {
           wId = await into(workouts).insert(
               WorkoutsCompanion.insert(name: name, notes: Value(notes)));
+          workoutIdByName[key] = wId;
         }
-        workoutIdByName[name] = wId;
 
         final exList = (w['exercises'] as List?)?.cast<Map<String, dynamic>>() ?? [];
         for (final we in exList) {
-          final exName = we['name'] as String;
-          final catId  = catIdByName[exName];
+          final catId = catIdByName[(we['name'] as String).toLowerCase()];
           if (catId == null) continue;
 
           final sortOrder = (we['sortOrder'] as num?)?.toInt() ?? 0;
-          final existingWe = await (select(workoutExercises)
-                ..where((t) =>
-                    t.workoutId.equals(wId) &
-                    t.categoryId.equals(catId) &
-                    t.sortOrder.equals(sortOrder)))
-              .get();
-          if (existingWe.isNotEmpty) continue;
+          if (!existingMembers.add((wId, catId, sortOrder))) continue;
 
           await into(workoutExercises).insert(
             WorkoutExercisesCompanion.insert(
@@ -901,7 +1028,7 @@ class AppDatabase extends _$AppDatabase {
               categoryId: catId,
               targetSets: Value((we['targetSets'] as num?)?.toInt()),
               targetReps: Value((we['targetReps'] as num?)?.toInt()),
-              sortOrder:  Value((we['sortOrder']  as num?)?.toInt() ?? 0),
+              sortOrder:  Value(sortOrder),
             ),
           );
         }
@@ -909,86 +1036,75 @@ class AppDatabase extends _$AppDatabase {
 
       // ── Plans ─────────────────────────────────────────────────────────
       final plansData = (data['plans'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final planIdByName = <String, int>{};
+      for (final p in await select(plans).get()) {
+        planIdByName.putIfAbsent(p.name.toLowerCase(), () => p.id);
+      }
+      final existingAssignments = (await select(planWorkouts).get())
+          .map((pw) => (pw.planId, pw.workoutId))
+          .toSet();
+
       for (final p in plansData) {
         final name = p['name'] as String;
+        final key  = name.toLowerCase();
 
-        final existing = await (select(plans)
-              ..where((t) => t.name.equals(name)))
-            .getSingleOrNull();
-        int planId;
-        if (existing != null) {
-          planId = existing.id;
-        } else {
+        var planId = planIdByName[key];
+        if (planId == null) {
           planId = await into(plans).insert(PlansCompanion.insert(name: name));
+          planIdByName[key] = planId;
         }
 
         final assignments = (p['assignments'] as List?)?.cast<Map<String, dynamic>>() ?? [];
         for (final a in assignments) {
-          final woName = a['workout'] as String;
-          final woId   = workoutIdByName[woName];
+          final woId = workoutIdByName[(a['workout'] as String).toLowerCase()];
           if (woId == null) continue;
-
-          final weekday = (a['weekday'] as num?)?.toInt();
-          final dateStr = a['date'] as String?;
-
-          // Check for duplicate assignment
-          final dup = await (select(planWorkouts)
-                ..where((t) =>
-                    t.planId.equals(planId) & t.workoutId.equals(woId)))
-              .getSingleOrNull();
-          if (dup != null) continue;
+          if (!existingAssignments.add((planId, woId))) continue;
 
           await into(planWorkouts).insert(PlanWorkoutsCompanion.insert(
             planId:    planId,
             workoutId: woId,
-            weekday:   Value(weekday),
-            dateStr:   Value(dateStr),
+            weekday:   Value((a['weekday'] as num?)?.toInt()),
+            dateStr:   Value(a['date'] as String?),
           ));
         }
       }
 
       // ── Day notes ─────────────────────────────────────────────────────
       final notesData = (data['dayNotes'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final notedDays = (await select(dayNotes).get()).map((n) => n.dateStr).toSet();
       for (final n in notesData) {
         final dateStr = n['date'] as String;
         final note    = n['note'] as String;
-        if (note.isEmpty) continue;
-        final existing = await (select(dayNotes)
-              ..where((t) => t.dateStr.equals(dateStr)))
-            .getSingleOrNull();
-        if (existing != null) continue;
+        if (note.isEmpty || !notedDays.add(dateStr)) continue;
         await saveDayNote(dateStr, note);
       }
 
       // ── Body weights ──────────────────────────────────────────────────
       final weightsData = (data['bodyWeights'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final weighedDays =
+          (await select(bodyWeights).get()).map((b) => b.dateStr).toSet();
       for (final b in weightsData) {
         final dateStr = b['date'] as String;
-        final kg      = (b['kg'] as num).toDouble();
-        final existing = await (select(bodyWeights)
-              ..where((t) => t.dateStr.equals(dateStr)))
-            .getSingleOrNull();
-        if (existing != null) continue;
-        await saveBodyWeight(dateStr, kg);
+        if (!weighedDays.add(dateStr)) continue;
+        await saveBodyWeight(dateStr, (b['kg'] as num).toDouble());
       }
 
       // ── Inspirations ──────────────────────────────────────────────────
       // Absent from exports before version 3; older files just skip this.
       final linksData =
           (data['inspirations'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final existingLinks =
+          (await select(inspirations).get()).map((i) => (i.url, i.title)).toSet();
       for (final i in linksData) {
         final url   = i['url'] as String;
         final title = i['title'] as String;
-        final dup = await (select(inspirations)
-              ..where((t) => t.url.equals(url) & t.title.equals(title)))
-            .getSingleOrNull();
-        if (dup != null) continue;
+        if (!existingLinks.add((url, title))) continue;
 
         await insertInspiration(
           title:      title,
           url:        url,
           notes:      i['notes'] as String?,
-          categoryId: catIdByName[i['exercise'] as String? ?? ''],
+          categoryId: catIdByName[(i['exercise'] as String? ?? '').toLowerCase()],
           addedAt:    (i['addedAt'] as num?)?.toInt(),
         );
       }
@@ -1038,9 +1154,7 @@ class AppDatabase extends _$AppDatabase {
         if (weightKg == null && reps == null && timeSecs == null) continue;
 
         if (!cache.containsKey(exerciseName)) {
-          final existing = await (select(exerciseCategories)
-                ..where((t) => t.name.equals(exerciseName)))
-              .getSingleOrNull();
+          final existing = (await _categoriesNamed(exerciseName)).firstOrNull;
           if (existing != null) {
             cache[exerciseName] = existing.id;
             if (existing.groupName == null && groupName != null) {
@@ -1465,12 +1579,25 @@ class DeletedCategory {
   final List<WorkoutExercise> memberships;
   final List<int> unlinkedInspirationIds;
 
+  /// The exercise photo, so an undo puts that back too.
+  final Uint8List? image;
+
   const DeletedCategory({
     required this.category,
     required this.sets,
     required this.memberships,
     required this.unlinkedInspirationIds,
+    this.image,
   });
+}
+
+/// Thrown when a name that has to stay distinguishable is already taken.
+class DuplicateNameException implements Exception {
+  final String name;
+  const DuplicateNameException(this.name);
+
+  @override
+  String toString() => '"$name" already exists';
 }
 
 /// Everything removed by [AppDatabase.deleteWorkout].

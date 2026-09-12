@@ -246,12 +246,6 @@ class $ExerciseCategoriesTable extends ExerciseCategories
   late final GeneratedColumn<String> description = GeneratedColumn<String>(
       'description', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _imageDataMeta =
-      const VerificationMeta('imageData');
-  @override
-  late final GeneratedColumn<Uint8List> imageData = GeneratedColumn<Uint8List>(
-      'image_data', aliasedName, true,
-      type: DriftSqlType.blob, requiredDuringInsert: false);
   static const VerificationMeta _exerciseTypeMeta =
       const VerificationMeta('exerciseType');
   @override
@@ -262,7 +256,7 @@ class $ExerciseCategoriesTable extends ExerciseCategories
       defaultValue: const Constant(0));
   @override
   List<GeneratedColumn> get $columns =>
-      [id, name, groupName, description, imageData, exerciseType];
+      [id, name, groupName, description, exerciseType];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -292,10 +286,6 @@ class $ExerciseCategoriesTable extends ExerciseCategories
           description.isAcceptableOrUnknown(
               data['description']!, _descriptionMeta));
     }
-    if (data.containsKey('image_data')) {
-      context.handle(_imageDataMeta,
-          imageData.isAcceptableOrUnknown(data['image_data']!, _imageDataMeta));
-    }
     if (data.containsKey('exercise_type')) {
       context.handle(
           _exerciseTypeMeta,
@@ -319,8 +309,6 @@ class $ExerciseCategoriesTable extends ExerciseCategories
           .read(DriftSqlType.string, data['${effectivePrefix}group_name']),
       description: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}description']),
-      imageData: attachedDatabase.typeMapping
-          .read(DriftSqlType.blob, data['${effectivePrefix}image_data']),
       exerciseType: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}exercise_type'])!,
     );
@@ -338,14 +326,12 @@ class ExerciseCategory extends DataClass
   final String name;
   final String? groupName;
   final String? description;
-  final Uint8List? imageData;
   final int exerciseType;
   const ExerciseCategory(
       {required this.id,
       required this.name,
       this.groupName,
       this.description,
-      this.imageData,
       required this.exerciseType});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -357,9 +343,6 @@ class ExerciseCategory extends DataClass
     }
     if (!nullToAbsent || description != null) {
       map['description'] = Variable<String>(description);
-    }
-    if (!nullToAbsent || imageData != null) {
-      map['image_data'] = Variable<Uint8List>(imageData);
     }
     map['exercise_type'] = Variable<int>(exerciseType);
     return map;
@@ -375,9 +358,6 @@ class ExerciseCategory extends DataClass
       description: description == null && nullToAbsent
           ? const Value.absent()
           : Value(description),
-      imageData: imageData == null && nullToAbsent
-          ? const Value.absent()
-          : Value(imageData),
       exerciseType: Value(exerciseType),
     );
   }
@@ -390,7 +370,6 @@ class ExerciseCategory extends DataClass
       name: serializer.fromJson<String>(json['name']),
       groupName: serializer.fromJson<String?>(json['groupName']),
       description: serializer.fromJson<String?>(json['description']),
-      imageData: serializer.fromJson<Uint8List?>(json['imageData']),
       exerciseType: serializer.fromJson<int>(json['exerciseType']),
     );
   }
@@ -402,7 +381,6 @@ class ExerciseCategory extends DataClass
       'name': serializer.toJson<String>(name),
       'groupName': serializer.toJson<String?>(groupName),
       'description': serializer.toJson<String?>(description),
-      'imageData': serializer.toJson<Uint8List?>(imageData),
       'exerciseType': serializer.toJson<int>(exerciseType),
     };
   }
@@ -412,14 +390,12 @@ class ExerciseCategory extends DataClass
           String? name,
           Value<String?> groupName = const Value.absent(),
           Value<String?> description = const Value.absent(),
-          Value<Uint8List?> imageData = const Value.absent(),
           int? exerciseType}) =>
       ExerciseCategory(
         id: id ?? this.id,
         name: name ?? this.name,
         groupName: groupName.present ? groupName.value : this.groupName,
         description: description.present ? description.value : this.description,
-        imageData: imageData.present ? imageData.value : this.imageData,
         exerciseType: exerciseType ?? this.exerciseType,
       );
   ExerciseCategory copyWithCompanion(ExerciseCategoriesCompanion data) {
@@ -429,7 +405,6 @@ class ExerciseCategory extends DataClass
       groupName: data.groupName.present ? data.groupName.value : this.groupName,
       description:
           data.description.present ? data.description.value : this.description,
-      imageData: data.imageData.present ? data.imageData.value : this.imageData,
       exerciseType: data.exerciseType.present
           ? data.exerciseType.value
           : this.exerciseType,
@@ -443,15 +418,14 @@ class ExerciseCategory extends DataClass
           ..write('name: $name, ')
           ..write('groupName: $groupName, ')
           ..write('description: $description, ')
-          ..write('imageData: $imageData, ')
           ..write('exerciseType: $exerciseType')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, groupName, description,
-      $driftBlobEquality.hash(imageData), exerciseType);
+  int get hashCode =>
+      Object.hash(id, name, groupName, description, exerciseType);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -460,7 +434,6 @@ class ExerciseCategory extends DataClass
           other.name == this.name &&
           other.groupName == this.groupName &&
           other.description == this.description &&
-          $driftBlobEquality.equals(other.imageData, this.imageData) &&
           other.exerciseType == this.exerciseType);
 }
 
@@ -469,14 +442,12 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
   final Value<String> name;
   final Value<String?> groupName;
   final Value<String?> description;
-  final Value<Uint8List?> imageData;
   final Value<int> exerciseType;
   const ExerciseCategoriesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.groupName = const Value.absent(),
     this.description = const Value.absent(),
-    this.imageData = const Value.absent(),
     this.exerciseType = const Value.absent(),
   });
   ExerciseCategoriesCompanion.insert({
@@ -484,7 +455,6 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
     required String name,
     this.groupName = const Value.absent(),
     this.description = const Value.absent(),
-    this.imageData = const Value.absent(),
     this.exerciseType = const Value.absent(),
   }) : name = Value(name);
   static Insertable<ExerciseCategory> custom({
@@ -492,7 +462,6 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
     Expression<String>? name,
     Expression<String>? groupName,
     Expression<String>? description,
-    Expression<Uint8List>? imageData,
     Expression<int>? exerciseType,
   }) {
     return RawValuesInsertable({
@@ -500,7 +469,6 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
       if (name != null) 'name': name,
       if (groupName != null) 'group_name': groupName,
       if (description != null) 'description': description,
-      if (imageData != null) 'image_data': imageData,
       if (exerciseType != null) 'exercise_type': exerciseType,
     });
   }
@@ -510,14 +478,12 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
       Value<String>? name,
       Value<String?>? groupName,
       Value<String?>? description,
-      Value<Uint8List?>? imageData,
       Value<int>? exerciseType}) {
     return ExerciseCategoriesCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
       groupName: groupName ?? this.groupName,
       description: description ?? this.description,
-      imageData: imageData ?? this.imageData,
       exerciseType: exerciseType ?? this.exerciseType,
     );
   }
@@ -537,9 +503,6 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
     if (description.present) {
       map['description'] = Variable<String>(description.value);
     }
-    if (imageData.present) {
-      map['image_data'] = Variable<Uint8List>(imageData.value);
-    }
     if (exerciseType.present) {
       map['exercise_type'] = Variable<int>(exerciseType.value);
     }
@@ -553,7 +516,6 @@ class ExerciseCategoriesCompanion extends UpdateCompanion<ExerciseCategory> {
           ..write('name: $name, ')
           ..write('groupName: $groupName, ')
           ..write('description: $description, ')
-          ..write('imageData: $imageData, ')
           ..write('exerciseType: $exerciseType')
           ..write(')'))
         .toString();
@@ -1390,6 +1352,190 @@ class PlanWorkoutsCompanion extends UpdateCompanion<PlanWorkout> {
           ..write('workoutId: $workoutId, ')
           ..write('dateStr: $dateStr, ')
           ..write('weekday: $weekday')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ExerciseImagesTable extends ExerciseImages
+    with TableInfo<$ExerciseImagesTable, ExerciseImage> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ExerciseImagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _categoryIdMeta =
+      const VerificationMeta('categoryId');
+  @override
+  late final GeneratedColumn<int> categoryId = GeneratedColumn<int>(
+      'category_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES exercise_categories (id)'));
+  static const VerificationMeta _dataMeta = const VerificationMeta('data');
+  @override
+  late final GeneratedColumn<Uint8List> data = GeneratedColumn<Uint8List>(
+      'data', aliasedName, false,
+      type: DriftSqlType.blob, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [categoryId, data];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'exercise_images';
+  @override
+  VerificationContext validateIntegrity(Insertable<ExerciseImage> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('category_id')) {
+      context.handle(
+          _categoryIdMeta,
+          categoryId.isAcceptableOrUnknown(
+              data['category_id']!, _categoryIdMeta));
+    }
+    if (data.containsKey('data')) {
+      context.handle(
+          _dataMeta, this.data.isAcceptableOrUnknown(data['data']!, _dataMeta));
+    } else if (isInserting) {
+      context.missing(_dataMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {categoryId};
+  @override
+  ExerciseImage map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ExerciseImage(
+      categoryId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}category_id'])!,
+      data: attachedDatabase.typeMapping
+          .read(DriftSqlType.blob, data['${effectivePrefix}data'])!,
+    );
+  }
+
+  @override
+  $ExerciseImagesTable createAlias(String alias) {
+    return $ExerciseImagesTable(attachedDatabase, alias);
+  }
+}
+
+class ExerciseImage extends DataClass implements Insertable<ExerciseImage> {
+  final int categoryId;
+  final Uint8List data;
+  const ExerciseImage({required this.categoryId, required this.data});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['category_id'] = Variable<int>(categoryId);
+    map['data'] = Variable<Uint8List>(data);
+    return map;
+  }
+
+  ExerciseImagesCompanion toCompanion(bool nullToAbsent) {
+    return ExerciseImagesCompanion(
+      categoryId: Value(categoryId),
+      data: Value(data),
+    );
+  }
+
+  factory ExerciseImage.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ExerciseImage(
+      categoryId: serializer.fromJson<int>(json['categoryId']),
+      data: serializer.fromJson<Uint8List>(json['data']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'categoryId': serializer.toJson<int>(categoryId),
+      'data': serializer.toJson<Uint8List>(data),
+    };
+  }
+
+  ExerciseImage copyWith({int? categoryId, Uint8List? data}) => ExerciseImage(
+        categoryId: categoryId ?? this.categoryId,
+        data: data ?? this.data,
+      );
+  ExerciseImage copyWithCompanion(ExerciseImagesCompanion data) {
+    return ExerciseImage(
+      categoryId:
+          data.categoryId.present ? data.categoryId.value : this.categoryId,
+      data: data.data.present ? data.data.value : this.data,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExerciseImage(')
+          ..write('categoryId: $categoryId, ')
+          ..write('data: $data')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(categoryId, $driftBlobEquality.hash(data));
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExerciseImage &&
+          other.categoryId == this.categoryId &&
+          $driftBlobEquality.equals(other.data, this.data));
+}
+
+class ExerciseImagesCompanion extends UpdateCompanion<ExerciseImage> {
+  final Value<int> categoryId;
+  final Value<Uint8List> data;
+  const ExerciseImagesCompanion({
+    this.categoryId = const Value.absent(),
+    this.data = const Value.absent(),
+  });
+  ExerciseImagesCompanion.insert({
+    this.categoryId = const Value.absent(),
+    required Uint8List data,
+  }) : data = Value(data);
+  static Insertable<ExerciseImage> custom({
+    Expression<int>? categoryId,
+    Expression<Uint8List>? data,
+  }) {
+    return RawValuesInsertable({
+      if (categoryId != null) 'category_id': categoryId,
+      if (data != null) 'data': data,
+    });
+  }
+
+  ExerciseImagesCompanion copyWith(
+      {Value<int>? categoryId, Value<Uint8List>? data}) {
+    return ExerciseImagesCompanion(
+      categoryId: categoryId ?? this.categoryId,
+      data: data ?? this.data,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (categoryId.present) {
+      map['category_id'] = Variable<int>(categoryId.value);
+    }
+    if (data.present) {
+      map['data'] = Variable<Uint8List>(data.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExerciseImagesCompanion(')
+          ..write('categoryId: $categoryId, ')
+          ..write('data: $data')
           ..write(')'))
         .toString();
   }
@@ -2663,10 +2809,25 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $WorkoutExercisesTable(this);
   late final $PlansTable plans = $PlansTable(this);
   late final $PlanWorkoutsTable planWorkouts = $PlanWorkoutsTable(this);
+  late final $ExerciseImagesTable exerciseImages = $ExerciseImagesTable(this);
   late final $WorkoutSetsTable workoutSets = $WorkoutSetsTable(this);
   late final $DayNotesTable dayNotes = $DayNotesTable(this);
   late final $BodyWeightsTable bodyWeights = $BodyWeightsTable(this);
   late final $InspirationsTable inspirations = $InspirationsTable(this);
+  late final Index idxWeWorkout = Index('idx_we_workout',
+      'CREATE INDEX idx_we_workout ON workout_exercises (workout_id, sort_order)');
+  late final Index idxWeCategory = Index('idx_we_category',
+      'CREATE INDEX idx_we_category ON workout_exercises (category_id)');
+  late final Index idxPwPlan = Index(
+      'idx_pw_plan', 'CREATE INDEX idx_pw_plan ON plan_workouts (plan_id)');
+  late final Index idxPwWorkout = Index('idx_pw_workout',
+      'CREATE INDEX idx_pw_workout ON plan_workouts (workout_id)');
+  late final Index idxSetsDate = Index('idx_sets_date',
+      'CREATE INDEX idx_sets_date ON workout_sets (date_str, timestamp)');
+  late final Index idxSetsCategory = Index('idx_sets_category',
+      'CREATE INDEX idx_sets_category ON workout_sets (category_id, date_str)');
+  late final Index idxInspirationsCategory = Index('idx_inspirations_category',
+      'CREATE INDEX idx_inspirations_category ON inspirations (category_id)');
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2677,10 +2838,18 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         workoutExercises,
         plans,
         planWorkouts,
+        exerciseImages,
         workoutSets,
         dayNotes,
         bodyWeights,
-        inspirations
+        inspirations,
+        idxWeWorkout,
+        idxWeCategory,
+        idxPwPlan,
+        idxPwWorkout,
+        idxSetsDate,
+        idxSetsCategory,
+        idxInspirationsCategory
       ];
 }
 
@@ -2702,8 +2871,7 @@ final class $$WorkoutsTableReferences
   static MultiTypedResultKey<$WorkoutExercisesTable, List<WorkoutExercise>>
       _workoutExercisesRefsTable(_$AppDatabase db) =>
           MultiTypedResultKey.fromTable(db.workoutExercises,
-              aliasName: $_aliasNameGenerator(
-                  db.workouts.id, db.workoutExercises.workoutId));
+              aliasName: 'workouts__id__workout_exercises__workout_id');
 
   $$WorkoutExercisesTableProcessedTableManager get workoutExercisesRefs {
     final manager =
@@ -2717,10 +2885,9 @@ final class $$WorkoutsTableReferences
   }
 
   static MultiTypedResultKey<$PlanWorkoutsTable, List<PlanWorkout>>
-      _planWorkoutsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
-          db.planWorkouts,
-          aliasName:
-              $_aliasNameGenerator(db.workouts.id, db.planWorkouts.workoutId));
+      _planWorkoutsRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.planWorkouts,
+              aliasName: 'workouts__id__plan_workouts__workout_id');
 
   $$PlanWorkoutsTableProcessedTableManager get planWorkoutsRefs {
     final manager = $$PlanWorkoutsTableTableManager($_db, $_db.planWorkouts)
@@ -2982,7 +3149,6 @@ typedef $$ExerciseCategoriesTableCreateCompanionBuilder
   required String name,
   Value<String?> groupName,
   Value<String?> description,
-  Value<Uint8List?> imageData,
   Value<int> exerciseType,
 });
 typedef $$ExerciseCategoriesTableUpdateCompanionBuilder
@@ -2991,7 +3157,6 @@ typedef $$ExerciseCategoriesTableUpdateCompanionBuilder
   Value<String> name,
   Value<String?> groupName,
   Value<String?> description,
-  Value<Uint8List?> imageData,
   Value<int> exerciseType,
 });
 
@@ -3003,8 +3168,8 @@ final class $$ExerciseCategoriesTableReferences extends BaseReferences<
   static MultiTypedResultKey<$WorkoutExercisesTable, List<WorkoutExercise>>
       _workoutExercisesRefsTable(_$AppDatabase db) =>
           MultiTypedResultKey.fromTable(db.workoutExercises,
-              aliasName: $_aliasNameGenerator(
-                  db.exerciseCategories.id, db.workoutExercises.categoryId));
+              aliasName:
+                  'exercise_categories__id__workout_exercises__category_id');
 
   $$WorkoutExercisesTableProcessedTableManager get workoutExercisesRefs {
     final manager =
@@ -3017,11 +3182,25 @@ final class $$ExerciseCategoriesTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: cache));
   }
 
+  static MultiTypedResultKey<$ExerciseImagesTable, List<ExerciseImage>>
+      _exerciseImagesRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.exerciseImages,
+              aliasName:
+                  'exercise_categories__id__exercise_images__category_id');
+
+  $$ExerciseImagesTableProcessedTableManager get exerciseImagesRefs {
+    final manager = $$ExerciseImagesTableTableManager($_db, $_db.exerciseImages)
+        .filter((f) => f.categoryId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_exerciseImagesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
   static MultiTypedResultKey<$WorkoutSetsTable, List<WorkoutSet>>
       _workoutSetsRefsTable(_$AppDatabase db) =>
           MultiTypedResultKey.fromTable(db.workoutSets,
-              aliasName: $_aliasNameGenerator(
-                  db.exerciseCategories.id, db.workoutSets.categoryId));
+              aliasName: 'exercise_categories__id__workout_sets__category_id');
 
   $$WorkoutSetsTableProcessedTableManager get workoutSetsRefs {
     final manager = $$WorkoutSetsTableTableManager($_db, $_db.workoutSets)
@@ -3035,8 +3214,7 @@ final class $$ExerciseCategoriesTableReferences extends BaseReferences<
   static MultiTypedResultKey<$InspirationsTable, List<Inspiration>>
       _inspirationsRefsTable(_$AppDatabase db) =>
           MultiTypedResultKey.fromTable(db.inspirations,
-              aliasName: $_aliasNameGenerator(
-                  db.exerciseCategories.id, db.inspirations.categoryId));
+              aliasName: 'exercise_categories__id__inspirations__category_id');
 
   $$InspirationsTableProcessedTableManager get inspirationsRefs {
     final manager = $$InspirationsTableTableManager($_db, $_db.inspirations)
@@ -3069,9 +3247,6 @@ class $$ExerciseCategoriesTableFilterComposer
   ColumnFilters<String> get description => $composableBuilder(
       column: $table.description, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<Uint8List> get imageData => $composableBuilder(
-      column: $table.imageData, builder: (column) => ColumnFilters(column));
-
   ColumnFilters<int> get exerciseType => $composableBuilder(
       column: $table.exerciseType, builder: (column) => ColumnFilters(column));
 
@@ -3088,6 +3263,27 @@ class $$ExerciseCategoriesTableFilterComposer
             $$WorkoutExercisesTableFilterComposer(
               $db: $db,
               $table: $db.workoutExercises,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> exerciseImagesRefs(
+      Expression<bool> Function($$ExerciseImagesTableFilterComposer f) f) {
+    final $$ExerciseImagesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.exerciseImages,
+        getReferencedColumn: (t) => t.categoryId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ExerciseImagesTableFilterComposer(
+              $db: $db,
+              $table: $db.exerciseImages,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -3160,9 +3356,6 @@ class $$ExerciseCategoriesTableOrderingComposer
   ColumnOrderings<String> get description => $composableBuilder(
       column: $table.description, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<Uint8List> get imageData => $composableBuilder(
-      column: $table.imageData, builder: (column) => ColumnOrderings(column));
-
   ColumnOrderings<int> get exerciseType => $composableBuilder(
       column: $table.exerciseType,
       builder: (column) => ColumnOrderings(column));
@@ -3189,9 +3382,6 @@ class $$ExerciseCategoriesTableAnnotationComposer
   GeneratedColumn<String> get description => $composableBuilder(
       column: $table.description, builder: (column) => column);
 
-  GeneratedColumn<Uint8List> get imageData =>
-      $composableBuilder(column: $table.imageData, builder: (column) => column);
-
   GeneratedColumn<int> get exerciseType => $composableBuilder(
       column: $table.exerciseType, builder: (column) => column);
 
@@ -3208,6 +3398,27 @@ class $$ExerciseCategoriesTableAnnotationComposer
             $$WorkoutExercisesTableAnnotationComposer(
               $db: $db,
               $table: $db.workoutExercises,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> exerciseImagesRefs<T extends Object>(
+      Expression<T> Function($$ExerciseImagesTableAnnotationComposer a) f) {
+    final $$ExerciseImagesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.exerciseImages,
+        getReferencedColumn: (t) => t.categoryId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ExerciseImagesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.exerciseImages,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -3272,6 +3483,7 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
     ExerciseCategory,
     PrefetchHooks Function(
         {bool workoutExercisesRefs,
+        bool exerciseImagesRefs,
         bool workoutSetsRefs,
         bool inspirationsRefs})> {
   $$ExerciseCategoriesTableTableManager(
@@ -3291,7 +3503,6 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
             Value<String> name = const Value.absent(),
             Value<String?> groupName = const Value.absent(),
             Value<String?> description = const Value.absent(),
-            Value<Uint8List?> imageData = const Value.absent(),
             Value<int> exerciseType = const Value.absent(),
           }) =>
               ExerciseCategoriesCompanion(
@@ -3299,7 +3510,6 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
             name: name,
             groupName: groupName,
             description: description,
-            imageData: imageData,
             exerciseType: exerciseType,
           ),
           createCompanionCallback: ({
@@ -3307,7 +3517,6 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
             required String name,
             Value<String?> groupName = const Value.absent(),
             Value<String?> description = const Value.absent(),
-            Value<Uint8List?> imageData = const Value.absent(),
             Value<int> exerciseType = const Value.absent(),
           }) =>
               ExerciseCategoriesCompanion.insert(
@@ -3315,7 +3524,6 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
             name: name,
             groupName: groupName,
             description: description,
-            imageData: imageData,
             exerciseType: exerciseType,
           ),
           withReferenceMapper: (p0) => p0
@@ -3326,12 +3534,14 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
               .toList(),
           prefetchHooksCallback: (
               {workoutExercisesRefs = false,
+              exerciseImagesRefs = false,
               workoutSetsRefs = false,
               inspirationsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (workoutExercisesRefs) db.workoutExercises,
+                if (exerciseImagesRefs) db.exerciseImages,
                 if (workoutSetsRefs) db.workoutSets,
                 if (inspirationsRefs) db.inspirations
               ],
@@ -3347,6 +3557,19 @@ class $$ExerciseCategoriesTableTableManager extends RootTableManager<
                         managerFromTypedResult: (p0) =>
                             $$ExerciseCategoriesTableReferences(db, table, p0)
                                 .workoutExercisesRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.categoryId == item.id),
+                        typedResults: items),
+                  if (exerciseImagesRefs)
+                    await $_getPrefetchedData<ExerciseCategory,
+                            $ExerciseCategoriesTable, ExerciseImage>(
+                        currentTable: table,
+                        referencedTable: $$ExerciseCategoriesTableReferences
+                            ._exerciseImagesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$ExerciseCategoriesTableReferences(db, table, p0)
+                                .exerciseImagesRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.categoryId == item.id),
@@ -3397,6 +3620,7 @@ typedef $$ExerciseCategoriesTableProcessedTableManager = ProcessedTableManager<
     ExerciseCategory,
     PrefetchHooks Function(
         {bool workoutExercisesRefs,
+        bool exerciseImagesRefs,
         bool workoutSetsRefs,
         bool inspirationsRefs})>;
 typedef $$WorkoutExercisesTableCreateCompanionBuilder
@@ -3424,8 +3648,7 @@ final class $$WorkoutExercisesTableReferences extends BaseReferences<
       super.$_db, super.$_table, super.$_typedResult);
 
   static $WorkoutsTable _workoutIdTable(_$AppDatabase db) =>
-      db.workouts.createAlias(
-          $_aliasNameGenerator(db.workoutExercises.workoutId, db.workouts.id));
+      db.workouts.createAlias('workout_exercises__workout_id__workouts__id');
 
   $$WorkoutsTableProcessedTableManager get workoutId {
     final $_column = $_itemColumn<int>('workout_id')!;
@@ -3438,9 +3661,9 @@ final class $$WorkoutExercisesTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: [item]));
   }
 
-  static $ExerciseCategoriesTable _categoryIdTable(_$AppDatabase db) =>
-      db.exerciseCategories.createAlias($_aliasNameGenerator(
-          db.workoutExercises.categoryId, db.exerciseCategories.id));
+  static $ExerciseCategoriesTable _categoryIdTable(_$AppDatabase db) => db
+      .exerciseCategories
+      .createAlias('workout_exercises__category_id__exercise_categories__id');
 
   $$ExerciseCategoriesTableProcessedTableManager get categoryId {
     final $_column = $_itemColumn<int>('category_id')!;
@@ -3779,9 +4002,9 @@ final class $$PlansTableReferences
   $$PlansTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$PlanWorkoutsTable, List<PlanWorkout>>
-      _planWorkoutsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
-          db.planWorkouts,
-          aliasName: $_aliasNameGenerator(db.plans.id, db.planWorkouts.planId));
+      _planWorkoutsRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.planWorkouts,
+              aliasName: 'plans__id__plan_workouts__plan_id');
 
   $$PlanWorkoutsTableProcessedTableManager get planWorkoutsRefs {
     final manager = $$PlanWorkoutsTableTableManager($_db, $_db.planWorkouts)
@@ -3983,8 +4206,8 @@ final class $$PlanWorkoutsTableReferences
     extends BaseReferences<_$AppDatabase, $PlanWorkoutsTable, PlanWorkout> {
   $$PlanWorkoutsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $PlansTable _planIdTable(_$AppDatabase db) => db.plans
-      .createAlias($_aliasNameGenerator(db.planWorkouts.planId, db.plans.id));
+  static $PlansTable _planIdTable(_$AppDatabase db) =>
+      db.plans.createAlias('plan_workouts__plan_id__plans__id');
 
   $$PlansTableProcessedTableManager get planId {
     final $_column = $_itemColumn<int>('plan_id')!;
@@ -3998,8 +4221,7 @@ final class $$PlanWorkoutsTableReferences
   }
 
   static $WorkoutsTable _workoutIdTable(_$AppDatabase db) =>
-      db.workouts.createAlias(
-          $_aliasNameGenerator(db.planWorkouts.workoutId, db.workouts.id));
+      db.workouts.createAlias('plan_workouts__workout_id__workouts__id');
 
   $$WorkoutsTableProcessedTableManager get workoutId {
     final $_column = $_itemColumn<int>('workout_id')!;
@@ -4306,6 +4528,234 @@ typedef $$PlanWorkoutsTableProcessedTableManager = ProcessedTableManager<
     (PlanWorkout, $$PlanWorkoutsTableReferences),
     PlanWorkout,
     PrefetchHooks Function({bool planId, bool workoutId})>;
+typedef $$ExerciseImagesTableCreateCompanionBuilder = ExerciseImagesCompanion
+    Function({
+  Value<int> categoryId,
+  required Uint8List data,
+});
+typedef $$ExerciseImagesTableUpdateCompanionBuilder = ExerciseImagesCompanion
+    Function({
+  Value<int> categoryId,
+  Value<Uint8List> data,
+});
+
+final class $$ExerciseImagesTableReferences
+    extends BaseReferences<_$AppDatabase, $ExerciseImagesTable, ExerciseImage> {
+  $$ExerciseImagesTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $ExerciseCategoriesTable _categoryIdTable(_$AppDatabase db) =>
+      db.exerciseCategories
+          .createAlias('exercise_images__category_id__exercise_categories__id');
+
+  $$ExerciseCategoriesTableProcessedTableManager get categoryId {
+    final $_column = $_itemColumn<int>('category_id')!;
+
+    final manager =
+        $$ExerciseCategoriesTableTableManager($_db, $_db.exerciseCategories)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_categoryIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$ExerciseImagesTableFilterComposer
+    extends Composer<_$AppDatabase, $ExerciseImagesTable> {
+  $$ExerciseImagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<Uint8List> get data => $composableBuilder(
+      column: $table.data, builder: (column) => ColumnFilters(column));
+
+  $$ExerciseCategoriesTableFilterComposer get categoryId {
+    final $$ExerciseCategoriesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.categoryId,
+        referencedTable: $db.exerciseCategories,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ExerciseCategoriesTableFilterComposer(
+              $db: $db,
+              $table: $db.exerciseCategories,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$ExerciseImagesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ExerciseImagesTable> {
+  $$ExerciseImagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<Uint8List> get data => $composableBuilder(
+      column: $table.data, builder: (column) => ColumnOrderings(column));
+
+  $$ExerciseCategoriesTableOrderingComposer get categoryId {
+    final $$ExerciseCategoriesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.categoryId,
+        referencedTable: $db.exerciseCategories,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ExerciseCategoriesTableOrderingComposer(
+              $db: $db,
+              $table: $db.exerciseCategories,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$ExerciseImagesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ExerciseImagesTable> {
+  $$ExerciseImagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<Uint8List> get data =>
+      $composableBuilder(column: $table.data, builder: (column) => column);
+
+  $$ExerciseCategoriesTableAnnotationComposer get categoryId {
+    final $$ExerciseCategoriesTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.categoryId,
+            referencedTable: $db.exerciseCategories,
+            getReferencedColumn: (t) => t.id,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$ExerciseCategoriesTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.exerciseCategories,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return composer;
+  }
+}
+
+class $$ExerciseImagesTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $ExerciseImagesTable,
+    ExerciseImage,
+    $$ExerciseImagesTableFilterComposer,
+    $$ExerciseImagesTableOrderingComposer,
+    $$ExerciseImagesTableAnnotationComposer,
+    $$ExerciseImagesTableCreateCompanionBuilder,
+    $$ExerciseImagesTableUpdateCompanionBuilder,
+    (ExerciseImage, $$ExerciseImagesTableReferences),
+    ExerciseImage,
+    PrefetchHooks Function({bool categoryId})> {
+  $$ExerciseImagesTableTableManager(
+      _$AppDatabase db, $ExerciseImagesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ExerciseImagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ExerciseImagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ExerciseImagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> categoryId = const Value.absent(),
+            Value<Uint8List> data = const Value.absent(),
+          }) =>
+              ExerciseImagesCompanion(
+            categoryId: categoryId,
+            data: data,
+          ),
+          createCompanionCallback: ({
+            Value<int> categoryId = const Value.absent(),
+            required Uint8List data,
+          }) =>
+              ExerciseImagesCompanion.insert(
+            categoryId: categoryId,
+            data: data,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$ExerciseImagesTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({categoryId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (categoryId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.categoryId,
+                    referencedTable:
+                        $$ExerciseImagesTableReferences._categoryIdTable(db),
+                    referencedColumn:
+                        $$ExerciseImagesTableReferences._categoryIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$ExerciseImagesTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $ExerciseImagesTable,
+    ExerciseImage,
+    $$ExerciseImagesTableFilterComposer,
+    $$ExerciseImagesTableOrderingComposer,
+    $$ExerciseImagesTableAnnotationComposer,
+    $$ExerciseImagesTableCreateCompanionBuilder,
+    $$ExerciseImagesTableUpdateCompanionBuilder,
+    (ExerciseImage, $$ExerciseImagesTableReferences),
+    ExerciseImage,
+    PrefetchHooks Function({bool categoryId})>;
 typedef $$WorkoutSetsTableCreateCompanionBuilder = WorkoutSetsCompanion
     Function({
   Value<int> id,
@@ -4340,8 +4790,8 @@ final class $$WorkoutSetsTableReferences
   $$WorkoutSetsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $ExerciseCategoriesTable _categoryIdTable(_$AppDatabase db) =>
-      db.exerciseCategories.createAlias($_aliasNameGenerator(
-          db.workoutSets.categoryId, db.exerciseCategories.id));
+      db.exerciseCategories
+          .createAlias('workout_sets__category_id__exercise_categories__id');
 
   $$ExerciseCategoriesTableProcessedTableManager get categoryId {
     final $_column = $_itemColumn<int>('category_id')!;
@@ -4933,8 +5383,8 @@ final class $$InspirationsTableReferences
   $$InspirationsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $ExerciseCategoriesTable _categoryIdTable(_$AppDatabase db) =>
-      db.exerciseCategories.createAlias($_aliasNameGenerator(
-          db.inspirations.categoryId, db.exerciseCategories.id));
+      db.exerciseCategories
+          .createAlias('inspirations__category_id__exercise_categories__id');
 
   $$ExerciseCategoriesTableProcessedTableManager? get categoryId {
     final $_column = $_itemColumn<int>('category_id');
@@ -5209,6 +5659,8 @@ class $AppDatabaseManager {
       $$PlansTableTableManager(_db, _db.plans);
   $$PlanWorkoutsTableTableManager get planWorkouts =>
       $$PlanWorkoutsTableTableManager(_db, _db.planWorkouts);
+  $$ExerciseImagesTableTableManager get exerciseImages =>
+      $$ExerciseImagesTableTableManager(_db, _db.exerciseImages);
   $$WorkoutSetsTableTableManager get workoutSets =>
       $$WorkoutSetsTableTableManager(_db, _db.workoutSets);
   $$DayNotesTableTableManager get dayNotes =>

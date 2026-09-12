@@ -1,13 +1,20 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:training_logger/providers/app_providers.dart';
 
 /// The countdown runs on real time, so these use short durations and real
 /// waits. Feedback (sound, haptics, wakelock) is off — it needs plugins.
 void main() {
+  late ProviderContainer container;
   late RestTimerNotifier timer;
 
-  setUp(() => timer = RestTimerNotifier(withFeedback: false));
-  tearDown(() => timer.dispose());
+  setUp(() {
+    container = ProviderContainer(overrides: [
+      restTimerProvider.overrideWith(() => RestTimerNotifier(withFeedback: false)),
+    ]);
+    timer = container.read(restTimerProvider.notifier);
+  });
+  tearDown(() => container.dispose());
 
   test('starts at the chosen duration and counts down in whole seconds',
       () async {

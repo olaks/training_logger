@@ -41,10 +41,10 @@ class HomeScreen extends ConsumerWidget {
             bottom: false,
             child: _DayNavBar(
               selected: selected,
-              onPrev: () => ref.read(selectedDateProvider.notifier).state =
-                  selected.subtract(const Duration(days: 1)),
-              onNext: () => ref.read(selectedDateProvider.notifier).state =
-                  selected.add(const Duration(days: 1)),
+              onPrev: () =>
+                  ref.read(selectedDateProvider.notifier).shiftDays(-1),
+              onNext: () =>
+                  ref.read(selectedDateProvider.notifier).shiftDays(1),
               onCalendar: () => _openCalendar(context, ref, selected, woDates),
               onInspirations: () => context.push('/inspirations'),
               onSaveAsWorkout: loggedCatIds.isEmpty
@@ -272,7 +272,7 @@ class HomeScreen extends ConsumerWidget {
         selected:     selected,
         workoutDates: woDates.toSet(),
         onSelected: (date) {
-          ref.read(selectedDateProvider.notifier).state = date;
+          ref.read(selectedDateProvider.notifier).select(date);
           Navigator.of(context).pop();
         },
       ),

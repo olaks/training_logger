@@ -16,10 +16,10 @@ void main() async {
       overrides: [
         prefsProvider.overrideWithValue(prefs),
         themeIndexProvider.overrideWith(
-          (ref) => ThemeNotifier(savedIndex, prefs),
+          () => ThemeNotifier(savedIndex, prefs),
         ),
         loadSettingsProvider.overrideWith(
-          (ref) => LoadSettingsNotifier(LoadSettings.fromPrefs(prefs), prefs),
+          () => LoadSettingsNotifier(LoadSettings.fromPrefs(prefs), prefs),
         ),
       ],
       child: const TrainingLoggerApp(),

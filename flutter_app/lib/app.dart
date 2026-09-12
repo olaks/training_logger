@@ -16,6 +16,7 @@ import 'screens/inspiration/inspiration_screen.dart';
 import 'screens/load/training_load_screen.dart';
 import 'screens/load/load_method_screen.dart';
 import 'theme/app_theme.dart';
+import 'providers/app_providers.dart';
 import 'providers/theme_provider.dart';
 
 final router = GoRouter(
@@ -105,9 +106,32 @@ class TrainingLoggerApp extends ConsumerWidget {
   }
 }
 
-class _AppShell extends StatelessWidget {
+class _AppShell extends ConsumerStatefulWidget {
   final Widget child;
   const _AppShell({required this.child});
+
+  @override
+  ConsumerState<_AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<_AppShell> {
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    // Phones sit open overnight. Coming back to the app on a new day should
+    // land on that day, not on the one that was open when it was put down.
+    _lifecycle = AppLifecycleListener(
+      onResume: () => ref.read(selectedDateProvider.notifier).rollOverIfStale(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +144,7 @@ class _AppShell extends StatelessWidget {
                 ? 3
                 : 0;
     return Scaffold(
-      body: child,
+      body: widget.child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (i) {
