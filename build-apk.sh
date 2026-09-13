@@ -25,8 +25,8 @@ bsdtar -a -cf "$LINUX_ZIP" --options zip:compression=deflate -C build/linux/x64/
 echo "Linux bundle built: flutter_app/$LINUX_ZIP"
 echo ""
 
-read -rp "Upload to GitHub release 'latest'? [y/N] " answer
-if [[ "$answer" =~ ^[Yy]$ ]]; then
-  gh release upload latest "$APK" "$LINUX_ZIP" --clobber --repo olaks/training_logger
-  echo "Uploaded."
-fi
+# Builds only. Publishing goes through release.sh, which tags a version and
+# attaches these artifacts to that tag's GitHub release — there used to be a
+# rolling "latest" release to upload to here, and it only ever meant the
+# download page could disagree with itself about which build was current.
+echo "Nothing published. Run ./release.sh to cut a versioned release."
