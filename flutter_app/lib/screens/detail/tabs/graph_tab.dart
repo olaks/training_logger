@@ -61,6 +61,7 @@ class _GraphState extends State<_Graph> {
   _Range _range = _Range.all;
   List<String> _gradeScale = fontGrades;
   bool _showBodyWeight = false;
+  bool _showClimbVolume = true;
 
   /// Body weight is in kg, so it can only share the axis with metrics that
   /// are also in kg.
@@ -68,6 +69,18 @@ class _GraphState extends State<_Graph> {
       !widget.isClimbing &&
       !widget.bodyWeights.isEmpty &&
       (_metric == _Metric.weight || _metric == _Metric.oneRM);
+
+  /// Climbs logged per session date. A climb counts whatever its grade — a
+  /// grade outside the detected scale is still a climb pulled — so this is
+  /// volume, not a second reading of difficulty.
+  Map<String, int> _climbCounts() {
+    final counts = <String, int>{};
+    for (final s in _rangedSets) {
+      if (s.grade == null) continue;
+      counts[s.dateStr] = (counts[s.dateStr] ?? 0) + 1;
+    }
+    return counts;
+  }
 
   String _rangeLabel(_Range r) => switch (r) {
         _Range.month       => '1M',
@@ -225,12 +238,17 @@ class _GraphState extends State<_Graph> {
       };
 
   /// One line of explanation under the chips, for the metrics that are
-  /// derived rather than logged.
-  String? get _subtitle => switch (_metric) {
+  /// derived rather than logged. [peakClimbs] is the busiest session in view
+  /// when the climb-volume overlay is on, and zero when it is not — the
+  /// shaded area has no axis, so its scale is stated here instead.
+  String? _subtitle(int peakClimbs) => switch (_metric) {
         _Metric.oneRM  => 'Epley formula · best set per session',
         _Metric.volume => 'Sum of weight × reps across all sets',
         _Metric.percentBw =>
           '(body weight + added) ÷ body weight · nearest logged weigh-in',
+        _Metric.grade when peakClimbs > 0 =>
+          'Hardest grade per session · shaded area: climbs logged, '
+              'peak $peakClimbs',
         _ => null,
       };
 
@@ -263,6 +281,81 @@ class _GraphState extends State<_Graph> {
 
     // For grade axis: snap to integer ticks, show grade strings
     final isGrade = _metric == _Metric.grade;
+
+    final axisMin =
+        isGrade ? (minY - 1).clamp(0.0, double.infinity) : minY - range * 0.1;
+    final axisMax = isGrade ? maxY + 1 : maxY + range * 0.15;
+
+    // How much climbing a session held, under the line that says how hard it
+    // was. The count gets no axis of its own — the busiest session in view
+    // fills the plot, the subtitle names that peak and the tooltip carries
+    // every number — so the grade keeps the axis that has to stay readable.
+    final climbCounts =
+        isGrade && widget.isClimbing ? _climbCounts() : const <String, int>{};
+    final peakClimbs = climbCounts.values.fold(0, (m, c) => c > m ? c : m);
+    final showClimbs = _showClimbVolume && peakClimbs > 0;
+    final climbSpots = <FlSpot>[];
+    if (showClimbs) {
+      final scale = (axisMax - axisMin) * 0.7 / peakClimbs;
+      for (var i = 0; i < points.length; i++) {
+        climbSpots.add(FlSpot(i.toDouble(),
+            axisMin + (climbCounts[points[i].date] ?? 0) * scale));
+      }
+    }
+
+    // Built in paint order, so the shaded volume sits under the metric line.
+    final bars = <LineChartBarData>[];
+    final climbBar = showClimbs ? bars.length : -1;
+    if (showClimbs) {
+      bars.add(LineChartBarData(
+        spots:    climbSpots,
+        isCurved: false,
+        // Stepped, so each session reads as a column of its own rather than a
+        // second trend line sloping between sessions.
+        isStepLineChart: true,
+        lineChartStepData: const LineChartStepData(stepDirection: 0.5),
+        color:    Colors.white.withValues(alpha: 0.22),
+        barWidth: 1,
+        dotData:  const FlDotData(show: false),
+        belowBarData: BarAreaData(
+          show: true,
+          color: Colors.white.withValues(alpha: 0.07),
+        ),
+      ));
+    }
+    bars.add(LineChartBarData(
+      spots:    spots,
+      isCurved: false,
+      color:    primary,
+      barWidth: 2.5,
+      dotData: FlDotData(
+        getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+          radius: 4,
+          color: primary,
+          strokeWidth: 2,
+          strokeColor: Colors.black.withValues(alpha: 0.5),
+        ),
+      ),
+      belowBarData: BarAreaData(
+        // Two translucent fills stacked read as mud, and the climb area is
+        // the one carrying information, so the metric keeps only its line.
+        show: !showClimbs,
+        color: primary.withValues(alpha: 0.08),
+      ),
+    ));
+    final bwBar = bwSpots.isNotEmpty ? bars.length : -1;
+    if (bwSpots.isNotEmpty) {
+      bars.add(LineChartBarData(
+        spots:    bwSpots,
+        isCurved: false,
+        color:    Colors.white.withValues(alpha: 0.35),
+        barWidth: 1.5,
+        dashArray: const [5, 4],
+        dotData:  const FlDotData(show: false),
+      ));
+    }
+
+    final subtitle = _subtitle(showClimbs ? peakClimbs : 0);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 16, 16, 12),
@@ -332,10 +425,25 @@ class _GraphState extends State<_Graph> {
             ),
           ],
 
-          if (_subtitle != null) ...[
+          if (peakClimbs > 0) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilterChip(
+                label: const Text('Climbs', style: TextStyle(fontSize: 12)),
+                selected: _showClimbVolume,
+                onSelected: (v) => setState(() => _showClimbVolume = v),
+                selectedColor: primary.withValues(alpha: 0.25),
+                avatar: Icon(Icons.area_chart,
+                    size: 16, color: Colors.white.withValues(alpha: 0.5)),
+              ),
+            ),
+          ],
+
+          if (subtitle != null) ...[
             const SizedBox(height: 6),
             Text(
-              _subtitle!,
+              subtitle,
               style: TextStyle(
                   fontSize: 11, color: Colors.white.withValues(alpha: 0.35)),
             ),
@@ -354,10 +462,8 @@ class _GraphState extends State<_Graph> {
           Expanded(
             child: LineChart(
               LineChartData(
-                minY: isGrade
-                    ? (minY - 1).clamp(0, double.infinity)
-                    : minY - range * 0.1,
-                maxY: isGrade ? maxY + 1 : maxY + range * 0.15,
+                minY: axisMin,
+                maxY: axisMax,
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
@@ -423,43 +529,33 @@ class _GraphState extends State<_Graph> {
                   topTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false)),
                 ),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots:    spots,
-                    isCurved: false,
-                    color:    primary,
-                    barWidth: 2.5,
-                    dotData: FlDotData(
-                      getDotPainter: (_, __, ___, ____) =>
-                          FlDotCirclePainter(
-                        radius: 4,
-                        color: primary,
-                        strokeWidth: 2,
-                        strokeColor: Colors.black.withValues(alpha: 0.5),
-                      ),
-                    ),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: primary.withValues(alpha: 0.08),
-                    ),
-                  ),
-                  if (bwSpots.isNotEmpty)
-                    LineChartBarData(
-                      spots:    bwSpots,
-                      isCurved: false,
-                      color:    Colors.white.withValues(alpha: 0.35),
-                      barWidth: 1.5,
-                      dashArray: const [5, 4],
-                      dotData:  const FlDotData(show: false),
-                    ),
-                ],
+                lineBarsData: bars,
                 lineTouchData: LineTouchData(
+                  // The volume area is context for the touched session, not a
+                  // series to be pointed at: its count rides the metric's
+                  // tooltip, so it gets neither dot nor tooltip line.
+                  getTouchedSpotIndicator: (bar, spotIndexes) {
+                    final isClimbArea =
+                        climbBar >= 0 && identical(bar, bars[climbBar]);
+                    return spotIndexes
+                        .map((_) => isClimbArea
+                            ? null
+                            : TouchedSpotIndicatorData(
+                                FlLine(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.15),
+                                    strokeWidth: 1),
+                                const FlDotData(show: true),
+                              ))
+                        .toList();
+                  },
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipColor: (_) => const Color(0xFF2C2C2E),
                     getTooltipItems: (touchedSpots) =>
                         touchedSpots.map((s) {
                       final i  = s.x.toInt();
-                      if (s.barIndex == 1) {
+                      if (s.barIndex == climbBar) return null;
+                      if (s.barIndex == bwBar) {
                         return LineTooltipItem(
                           '${formatWeight(s.y)} kg body weight',
                           TextStyle(
@@ -486,6 +582,15 @@ class _GraphState extends State<_Graph> {
                               text: ' est.',
                               style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.45),
+                                  fontWeight: FontWeight.normal,
+                                  fontSize: 11),
+                            ),
+                          if (showClimbs)
+                            TextSpan(
+                              text: '\n${climbCounts[pt.date] ?? 0} '
+                                  '${(climbCounts[pt.date] ?? 0) == 1 ? 'climb' : 'climbs'}',
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
                                   fontWeight: FontWeight.normal,
                                   fontSize: 11),
                             ),
