@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Runs scripts/check.sh when the commit touches the app. Enabled per clone with
+#   git config core.hooksPath .githooks
+# Skip once with `git commit --no-verify`.
+set -euo pipefail
+if git diff --cached --name-only | grep -q '^flutter_app/'; then
+  exec "$(git rev-parse --show-toplevel)/scripts/check.sh"
+fi

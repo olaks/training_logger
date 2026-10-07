@@ -39,9 +39,14 @@ flutter test                           # all tests
 flutter test test/backup_test.dart     # single test file
 ```
 
-Widget tests run in fake time, where a real database never answers: wrap drift
-calls in `tester.runAsync`, and advance the clock a millisecond before the tree
-is torn down so drift's stream-close timer can run.
+`scripts/check.sh` runs `flutter analyze` and the tests; the pre-commit hook in
+`.githooks/` runs it (enable per clone: `git config core.hooksPath .githooks`).
+Review rules live in `CODING_STANDARDS.md`.
+
+Widget tests run in fake time, where a drift stream (`watch…().first`) never
+completes: read streams inside `tester.runAsync` (one-shot queries and writes
+complete without it), and advance the clock a millisecond before the tree is
+torn down so drift's stream-close timer can run.
 
 ## Architecture
 
@@ -83,16 +88,6 @@ Indexes are declared with `@TableIndex` on the table classes, so a fresh
 install gets them from `createAll` and an upgrade has to create them in the
 migration — `test/schema_test.dart` checks the two agree.
 
-Names (exercises, workouts, plans) are matched case-insensitively and are not
-unique in the schema, so a lookup by name returns the first match rather than
-assuming there is exactly one. `renameCategory` throws `DuplicateNameException`
-rather than creating a second exercise of the same name, because duplicates are
-what make a backup import ambiguous.
-
-`importFromJson` builds its "already here" lookups once up front rather than
-querying per row — a full history is thousands of rows, and they all import
-inside one transaction.
-
 ### Periodized plans
 
 A plan with rows in `PlanPhases` is periodized: it runs its phases in order,
@@ -125,7 +120,7 @@ theme is. Anything reading the series watches `loadSeriesProvider`.
 
 Migrations are incremental in `database.dart` — each `if (from < N)` block handles one schema version. When adding columns or tables, bump `schemaVersion` and add a new migration block.
 
-Foreign keys are enforced (`PRAGMA foreign_keys = ON` in `beforeOpen`), so a delete must clear its children. The delete methods return a snapshot (`DeletedCategory`, `DeletedWorkout`, `DeletedPlan`, or the removed `WorkoutSet`) that the matching `restore*` method puts back — that is how undo works.
+Foreign keys are enforced (`PRAGMA foreign_keys = ON` in `beforeOpen`). Undo works by each delete returning a snapshot that the matching `restore*` puts back.
 
 After changing the schema, dump it so future migrations can be verified against this version:
 
@@ -149,10 +144,6 @@ A stale Gradle cache can survive a dependency change and fail the APK build with
 ### Routes
 
 Defined in `app.dart`. Shell route with bottom nav (Home `/`, Exercises `/exercises`, Plans `/plans`, Timer `/hangboard`). Detail routes: `/exercise/:id/:date`, `/exercise/:id/edit`, `/workouts/:id`, `/workout-session/:id/:date`, `/plans/:id`, `/hangboard-session/:exerciseId`, `/import`, `/inspirations`, `/load`, `/load/method`, `/settings`.
-
-## CI/CD
-
-GitHub Actions (`.github/workflows/build.yml`) runs on push to main: builds APK, Linux bundle, and web (deployed to GitHub Pages). Creates a `latest` GitHub release with the APK and Linux zip. No test step in CI.
 
 ## Web deployment note
 

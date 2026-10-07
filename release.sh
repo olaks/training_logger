@@ -30,14 +30,11 @@ fi
 
 NOTES="${1:-Release $TAG}"
 
-# CI no longer runs on push, so this is the only gate left before a build
-# goes out. Skip it with SKIP_CHECKS=1 when re-cutting a release that has
-# already been checked.
+# CI no longer runs on push; this and the pre-commit hook are the gates
+# before a build goes out. Skip it with SKIP_CHECKS=1 when re-cutting a
+# release that has already been checked.
 if [[ "${SKIP_CHECKS:-0}" != "1" ]]; then
-  echo "Analysing..."
-  flutter analyze
-  echo "Running tests..."
-  flutter test
+  "$ROOT/scripts/check.sh"
 fi
 
 echo "Building release APK..."
