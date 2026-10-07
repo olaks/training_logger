@@ -208,6 +208,81 @@ void main() {
     });
   });
 
+  group('editing a phase mid-plan', () {
+    test('shortening a phase below the weeks done finishes it', () {
+      final log = Log()..passes(10, [a, b], 5);
+      final state =
+          resolvePlan([phase(10, passes: 4)], {10: [a, b]}, log.events);
+
+      expect(state.phaseComplete, isTrue);
+      expect(state.pass, 4);
+    });
+
+    test('lengthening a phase gives it more weeks to go', () {
+      final log = Log()..passes(10, [a, b], 3);
+      final state =
+          resolvePlan([phase(10, passes: 12)], {10: [a, b]}, log.events);
+
+      expect((state.pass, state.totalPasses), (4, 12));
+    });
+
+    test('changing the deload rule moves the deloads still to come', () {
+      final log = Log()..passes(10, [a, b], 2);
+
+      final every4 = resolvePlan(
+          [phase(10, deloadEvery: 4)], {10: [a, b]}, log.events);
+      expect(every4.passesUntilDeload, 1);
+
+      final every5 = resolvePlan(
+          [phase(10, deloadEvery: 5)], {10: [a, b]}, log.events);
+      expect(every5.passesUntilDeload, 2);
+    });
+
+    test('a later phase can be edited without touching the current one', () {
+      final log = Log()..passes(10, [a, b], 2);
+      final before = resolvePlan([phase(10), phase(20, order: 1)],
+          {10: [a, b], 20: [c]}, log.events);
+      final after = resolvePlan(
+          [phase(10), phase(20, passes: 3, deloadEvery: 2, order: 1)],
+          {10: [a, b], 20: [c, d]}, log.events);
+
+      expect((after.phase?.id, after.pass), (before.phase?.id, before.pass));
+      expect(after.remaining, before.remaining);
+    });
+  });
+
+  group('session counts', () {
+    test('a phase counts the sessions done and skipped in it', () {
+      final log = Log()
+        ..passes(10, [a, b], 2)
+        ..done(10, [a])
+        ..skip(10, b)
+        ..done(10, [a]);
+      final state = resolvePlan([phase(10)], {10: [a, b]}, log.events);
+
+      expect((state.sessionsDone, state.sessionsSkipped), (6, 1));
+    });
+
+    test('a session repeated in its week still counts as done', () {
+      final log = Log()..done(10, [a, a]);
+      final state = resolvePlan([phase(10)], {10: [a, b]}, log.events);
+
+      expect(state.sessionsDone, 2);
+      expect(state.remaining, [b]);
+    });
+
+    test('only the current phase is counted', () {
+      final log = Log()
+        ..passes(10, [a], 3)
+        ..advance(10)
+        ..done(20, [b]);
+      final state = resolvePlan(
+          [phase(10), phase(20, order: 1)], {10: [a], 20: [b, c]}, log.events);
+
+      expect(state.sessionsDone, 1);
+    });
+  });
+
   group('editing a rotation mid-plan', () {
     test('adding a session keeps the weeks already done', () {
       final log = Log()

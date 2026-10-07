@@ -7,6 +7,7 @@ import '../../providers/app_providers.dart';
 import '../../utils/format_utils.dart';
 import '../../utils/pick_text_file.dart';
 import '../../utils/undo_snackbar.dart';
+import 'phases_section.dart';
 
 class PlansScreen extends ConsumerStatefulWidget {
   const PlansScreen({super.key});
@@ -65,8 +66,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
           // ── Training plans section ───────────────────────────────��─────
           _SectionHeader(
             title: 'TRAINING PLANS',
-            onAdd: () => _showCreateDialog(
-              context, ref, 'New Plan', ref.insertPlan),
+            onAdd: _newPlan,
             onImport: _importPlan,
           ),
           if (plans.isEmpty)
@@ -80,6 +80,8 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
                           ? null
                           : 'Paused',
                   onTap: () => context.push('/plans/${p.id}'),
+                  active: p.active,
+                  onActiveChanged: (v) => ref.setPlanActive(p.id, v),
                   onRename: () => _showRenameDialog(
                       context, ref, p.name,
                       (name) => ref.renamePlan(p.id, name)),
@@ -105,6 +107,56 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
     final s = running.state;
     if (s.planComplete) return 'Complete';
     return '${s.phase!.name} \u00b7 week ${s.pass}/${s.totalPasses}';
+  }
+
+  /// A plan either repeats by weekday or runs in phases; which one is the
+  /// first thing to settle, since a periodized plan starts from a phase.
+  Future<void> _newPlan() async {
+    final periodized = await showDialog<bool>(
+      context: context,
+      useRootNavigator: false,
+      builder: (dialogCtx) => SimpleDialog(
+        title: const Text('New plan'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const ListTile(
+              leading: Icon(Icons.view_week_outlined),
+              title: Text('Weekly plan'),
+              subtitle: Text('The same workouts on the same weekdays'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const ListTile(
+              leading: Icon(Icons.timeline),
+              title: Text('Periodized plan'),
+              subtitle: Text('Phases of weeks, each with its own sessions '
+                  'and target RPEs'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (periodized == null || !mounted) return;
+    if (!periodized) {
+      _showCreateDialog(context, ref, 'New Plan', ref.insertPlan);
+      return;
+    }
+
+    final name = await showDialog<String>(
+      context: context,
+      useRootNavigator: false,
+      builder: (_) => const _NameDialog(title: 'New periodized plan'),
+    );
+    if (name == null || !mounted) return;
+    final phase = await showPhaseDialog(context, title: 'First phase');
+    if (phase == null) return;
+
+    final id = await ref.insertPlan(name);
+    await ref.insertPhase(id, phase.name,
+        lengthPasses: phase.weeks, deloadEvery: phase.deloadEvery);
+    if (mounted) context.push('/plans/$id');
   }
 
   Future<void> _showCreateWorkoutDialog() async {
@@ -346,6 +398,10 @@ class _EmptyHint extends StatelessWidget {
 class _ItemTile extends StatelessWidget {
   final String title;
   final String? subtitle;
+
+  /// Plans only: whether it runs, with a switch to start or pause it.
+  final bool? active;
+  final ValueChanged<bool>? onActiveChanged;
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onDelete;
@@ -356,6 +412,8 @@ class _ItemTile extends StatelessWidget {
   const _ItemTile(
       {required this.title,
       this.subtitle,
+      this.active,
+      this.onActiveChanged,
       required this.onTap,
       required this.onRename,
       required this.onDelete,
@@ -373,6 +431,8 @@ class _ItemTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (active != null)
+              Switch(value: active!, onChanged: onActiveChanged),
             if (onStart != null)
               IconButton(
                 tooltip: 'Start workout',
@@ -475,6 +535,49 @@ class _NewWorkoutDialogState extends State<_NewWorkoutDialog> {
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel')),
           TextButton(onPressed: _submit, child: const Text('Create')),
+        ],
+      );
+}
+
+// ── Name dialog ──────────────────────────────────────────────────────────────
+
+class _NameDialog extends StatefulWidget {
+  final String title;
+  const _NameDialog({required this.title});
+
+  @override
+  State<_NameDialog> createState() => _NameDialogState();
+}
+
+class _NameDialogState extends State<_NameDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final name = _ctrl.text.trim();
+    if (name.isNotEmpty) Navigator.pop(context, name);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.title),
+        content: TextField(
+          controller: _ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          textCapitalization: TextCapitalization.words,
+          onSubmitted: (_) => _save(),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(onPressed: _save, child: const Text('Next')),
         ],
       );
 }

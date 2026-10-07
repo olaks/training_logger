@@ -70,10 +70,20 @@ class PhasesSection extends ConsumerWidget {
           if (running != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(_progressLine(running),
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: running.isDeload ? Colors.amber : primary)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_progressLine(running),
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: running.isDeload ? Colors.amber : primary)),
+                  if (running.phase != null)
+                    Text(_countsLine(running),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.5))),
+                ],
+              ),
             ),
           for (var i = 0; i < phases.length; i++)
             _PhaseCard(
@@ -89,7 +99,12 @@ class PhasesSection extends ConsumerWidget {
                     (
                       id: s.id,
                       workoutId: s.workoutId,
-                      name: workoutName(s.workoutId)
+                      name: workoutName(s.workoutId),
+                      // Ticked once done or skipped in the week under way.
+                      doneThisWeek: i == currentIndex &&
+                          running != null &&
+                          !running.phaseComplete &&
+                          !running.remaining.contains(s.workoutId),
                     ),
               ],
               canMoveUp: i > 0,
@@ -128,12 +143,21 @@ class PhasesSection extends ConsumerWidget {
     return parts.join(' · ');
   }
 
+  static String _countsLine(PlanState s) {
+    final done =
+        s.sessionsDone == 1 ? '1 session done' : '${s.sessionsDone} sessions done';
+    final left = s.phaseComplete || s.remaining.isEmpty
+        ? null
+        : '${s.remaining.length} left this week';
+    return [
+      done,
+      if (s.sessionsSkipped > 0) '${s.sessionsSkipped} skipped',
+      if (left != null) left,
+    ].join(' \u00b7 ');
+  }
+
   Future<void> _addPhase(BuildContext context, WidgetRef ref) async {
-    final result = await showDialog<_PhaseFields>(
-      context: context,
-      useRootNavigator: false,
-      builder: (_) => const _PhaseDialog(title: 'New phase'),
-    );
+    final result = await showPhaseDialog(context, title: 'New phase');
     if (result == null) return;
     await ref.insertPhase(planId, result.name,
         lengthPasses: result.weeks, deloadEvery: result.deloadEvery);
@@ -141,16 +165,13 @@ class PhasesSection extends ConsumerWidget {
 
   Future<void> _editPhase(
       BuildContext context, WidgetRef ref, PlanPhase phase) async {
-    final result = await showDialog<_PhaseFields>(
-      context: context,
-      useRootNavigator: false,
-      builder: (_) => _PhaseDialog(
-        title: 'Edit phase',
-        initial: (
-          name: phase.name,
-          weeks: phase.lengthPasses,
-          deloadEvery: phase.deloadEvery,
-        ),
+    final result = await showPhaseDialog(
+      context,
+      title: 'Edit phase',
+      initial: (
+        name: phase.name,
+        weeks: phase.lengthPasses,
+        deloadEvery: phase.deloadEvery,
       ),
     );
     if (result == null) return;
@@ -189,7 +210,8 @@ class PhasesSection extends ConsumerWidget {
 class _PhaseCard extends StatelessWidget {
   final PlanPhase phase;
   final String? status;
-  final List<({int id, int workoutId, String name})> sessions;
+  final List<({int id, int workoutId, String name, bool doneThisWeek})>
+      sessions;
   final bool canMoveUp;
   final bool canMoveDown;
   final VoidCallback onEdit;
@@ -300,6 +322,9 @@ class _PhaseCard extends StatelessWidget {
               children: [
                 for (final s in sessions)
                   InputChip(
+                    avatar: s.doneThisWeek
+                        ? Icon(Icons.check, size: 16, color: primary)
+                        : null,
                     label: Text(s.name),
                     onPressed: () => onOpenWorkout(s.workoutId),
                     onDeleted: () => onRemoveSession(s.id),
@@ -336,11 +361,20 @@ enum _PhaseAction { edit, targets, moveUp, moveDown, delete }
 
 // ── Phase dialog ──────────────────────────────────────────────────────────────
 
-typedef _PhaseFields = ({String name, int weeks, int? deloadEvery});
+typedef PhaseFields = ({String name, int weeks, int? deloadEvery});
+
+/// Asks for a phase's name, length and deload rule; null if cancelled.
+Future<PhaseFields?> showPhaseDialog(BuildContext context,
+        {required String title, PhaseFields? initial}) =>
+    showDialog<PhaseFields>(
+      context: context,
+      useRootNavigator: false,
+      builder: (_) => _PhaseDialog(title: title, initial: initial),
+    );
 
 class _PhaseDialog extends StatefulWidget {
   final String title;
-  final _PhaseFields? initial;
+  final PhaseFields? initial;
   const _PhaseDialog({required this.title, this.initial});
 
   @override
@@ -364,7 +398,7 @@ class _PhaseDialogState extends State<_PhaseDialog> {
     super.dispose();
   }
 
-  _PhaseFields? get _fields {
+  PhaseFields? get _fields {
     final name = _name.text.trim();
     final weeks = int.tryParse(_weeks.text.trim());
     final every = int.tryParse(_every.text.trim());

@@ -31,6 +31,12 @@ class PlanState {
   /// Passes in [phase], including any deloads inserted by hand.
   final int totalPasses;
 
+  /// Sessions done and skipped in [phase] so far, every one logged — a
+  /// session repeated within its pass counts again here, though it does
+  /// nothing for the pass.
+  final int sessionsDone;
+  final int sessionsSkipped;
+
   /// Sessions of the current pass not yet done or skipped, in rotation order.
   final List<int> remaining;
 
@@ -51,6 +57,8 @@ class PlanState {
     required this.pass,
     required this.passesDone,
     required this.totalPasses,
+    required this.sessionsDone,
+    required this.sessionsSkipped,
     required this.remaining,
     required this.isDeload,
     required this.passesUntilDeload,
@@ -86,6 +94,8 @@ PlanState resolvePlan(
       pass: 0,
       passesDone: 0,
       totalPasses: 0,
+      sessionsDone: 0,
+      sessionsSkipped: 0,
       remaining: [],
       isDeload: false,
       passesUntilDeload: null,
@@ -104,12 +114,19 @@ PlanState resolvePlan(
       for (var p = every; p <= total; p += every) p,
   };
   var passesDone = 0;
+  var sessionsDone = 0;
+  var sessionsSkipped = 0;
   final covered = <int>{};
   var started = false;
   for (final e in log.where((e) => e.phaseId == current.id)) {
     switch (e.kind) {
       case PlanEventKind.done:
       case PlanEventKind.skip:
+        if (e.kind == PlanEventKind.done) {
+          sessionsDone++;
+        } else {
+          sessionsSkipped++;
+        }
         // Each session carries the pass it was recorded in, and whether it
         // finished that pass. Both stand whatever the rotation has become
         // since: a later stamp means every pass before it was finished, an
@@ -161,6 +178,8 @@ PlanState resolvePlan(
     pass: pass,
     passesDone: passesDone,
     totalPasses: total,
+    sessionsDone: sessionsDone,
+    sessionsSkipped: sessionsSkipped,
     remaining: [
       for (final w in rotation)
         if (!covered.contains(w)) w,
