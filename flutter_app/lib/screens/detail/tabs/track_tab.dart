@@ -9,6 +9,7 @@ import '../../../providers/app_providers.dart';
 import '../../../utils/beeper.dart';
 import '../../../utils/format_utils.dart';
 import '../../../utils/grades.dart';
+import '../../../utils/periodization.dart';
 import '../../../utils/phase_countdown.dart';
 import '../../../utils/undo_snackbar.dart';
 import '../edit_set_sheet.dart';
@@ -32,6 +33,7 @@ class _TrackTabState extends ConsumerState<TrackTab> {
   static const _getReadySecs = 5;
 
   bool _prefilled = false;
+  bool _rpePrefilled = false;
 
   // ── Timed-set timer ───────────────────────────────────────────────────────
   // Only used by standard exercises that have a TIME value set. The countdown
@@ -125,7 +127,8 @@ class _TrackTabState extends ConsumerState<TrackTab> {
     return v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
   }
 
-  static String _targetLabel(int? sets, int? reps, int done) {
+  static String _targetLabel(Target target, int done) {
+    final Target(:sets, :reps, :rpe) = target;
     final parts = <String>[];
     if (sets != null && reps != null) {
       parts.add('Target: $sets \u00d7 $reps reps');
@@ -134,6 +137,10 @@ class _TrackTabState extends ConsumerState<TrackTab> {
     } else if (reps != null) {
       parts.add('Target: $reps reps');
     }
+    if (rpe != null) {
+      parts.add(parts.isEmpty ? 'Target: RPE $rpe' : '@ RPE $rpe');
+    }
+    if (target.isDeload) parts.add('\u00b7 Deload');
     if (sets != null && done > 0) {
       parts.add(done >= sets
           ? '\u2014 complete'
@@ -222,14 +229,29 @@ class _TrackTabState extends ConsumerState<TrackTab> {
     final target = ref.watch(exerciseTargetProvider(
         (categoryId: widget.categoryId, dateStr: widget.dateStr))).value;
     final targetSets = target?.sets;
-    final targetReps = target?.reps;
+    final hasTarget  = target != null &&
+        (target.sets != null || target.reps != null || target.rpe != null);
+
+    // The plan's effort is where a new set starts — once, so the athlete's
+    // own adjustments stick. The first fill from history (below) re-applies
+    // it, whichever of the two streams arrives first.
+    if (!_rpePrefilled && target?.rpe != null) {
+      _rpePrefilled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) notifier.setRpe(target!.rpe!);
+      });
+    }
 
     // ── Pre-fill from last set ────────────────────────────────────────────
     if (!_prefilled && (todaySets.isNotEmpty || allSets.isNotEmpty)) {
       _prefilled = true;
       final source = todaySets.isNotEmpty ? todaySets.last : allSets.first;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _fillFrom(source, notifier, grades, isClimbing);
+        if (!mounted) return;
+        _fillFrom(source, notifier, grades, isClimbing);
+        final targetRpe = ref.read(exerciseTargetProvider(
+            (categoryId: widget.categoryId, dateStr: widget.dateStr))).value?.rpe;
+        if (targetRpe != null) notifier.setRpe(targetRpe);
       });
     }
 
@@ -350,21 +372,23 @@ class _TrackTabState extends ConsumerState<TrackTab> {
           ],
 
           // Target + logged sets
-          if (targetSets != null || targetReps != null || todaySets.isNotEmpty) ...[
+          if (hasTarget || todaySets.isNotEmpty) ...[
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 8),
-            if (targetSets != null || targetReps != null)
+            if (hasTarget)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
-                  _targetLabel(targetSets, targetReps, todaySets.length),
+                  _targetLabel(target, todaySets.length),
                   style: TextStyle(
                       fontSize: 12,
                       letterSpacing: 0.5,
-                      color: todaySets.length >= (targetSets ?? 0) && todaySets.isNotEmpty
-                          ? primary
-                          : Colors.white.withValues(alpha: 0.5)),
+                      color: target.isDeload
+                          ? Colors.amber
+                          : todaySets.length >= (targetSets ?? 0) && todaySets.isNotEmpty
+                              ? primary
+                              : Colors.white.withValues(alpha: 0.5)),
                 ),
               ),
             if (todaySets.isNotEmpty)

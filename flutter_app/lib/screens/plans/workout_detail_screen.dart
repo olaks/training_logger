@@ -162,11 +162,13 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                           widget.workoutId, ids);
                     },
                     itemBuilder: (_, i) {
-                      final (weId, cat, targetSets, targetReps, _) = exercises[i];
+                      final (weId, cat, targetSets, targetReps, targetRpe) =
+                          exercises[i];
                       final targetLabel =
-                          _formatTarget(targetSets, targetReps);
-                      final hasTarget =
-                          targetSets != null || targetReps != null;
+                          _formatTarget(targetSets, targetReps, targetRpe);
+                      final hasTarget = targetSets != null ||
+                          targetReps != null ||
+                          targetRpe != null;
                       return ListTile(
                         key: ValueKey(weId),
                         leading: ReorderableDragStartListener(
@@ -186,8 +188,8 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             GestureDetector(
-                              onTap: () => _showEditTargetDialog(
-                                  context, weId, targetSets, targetReps),
+                              onTap: () => _showEditTargetDialog(context,
+                                  weId, targetSets, targetReps, targetRpe),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8, vertical: 4),
@@ -261,19 +263,26 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
         '/workout-session/${widget.workoutId}/${dateStrFrom(DateTime.now())}');
   }
 
-  static String _formatTarget(int? sets, int? reps) {
-    if (sets != null && reps != null) return '$sets\u00d7$reps';
-    if (sets != null) return '$sets sets';
-    if (reps != null) return '\u00d7$reps';
-    return 'set target';
+  static String _formatTarget(int? sets, int? reps, int? rpe) {
+    final volume = sets != null && reps != null
+        ? '$sets\u00d7$reps'
+        : sets != null
+            ? '$sets sets'
+            : reps != null
+                ? '\u00d7$reps'
+                : null;
+    if (rpe == null) return volume ?? 'set target';
+    return volume == null ? 'RPE $rpe' : '$volume @ RPE $rpe';
   }
 
   void _showEditTargetDialog(BuildContext context, int weId,
-      int? currentSets, int? currentReps) {
+      int? currentSets, int? currentReps, int? currentRpe) {
     final setsCtrl = TextEditingController(
         text: currentSets?.toString() ?? '');
     final repsCtrl = TextEditingController(
         text: currentReps?.toString() ?? '');
+    final rpeCtrl = TextEditingController(
+        text: currentRpe?.toString() ?? '');
 
     void save(BuildContext dialogCtx) {
       final sets = setsCtrl.text.trim().isEmpty
@@ -282,7 +291,10 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
       final reps = repsCtrl.text.trim().isEmpty
           ? null
           : int.tryParse(repsCtrl.text.trim());
+      final rpe = int.tryParse(rpeCtrl.text.trim());
       ref.updateWorkoutTarget(weId, sets, reps);
+      ref.updateWorkoutTargetRpe(
+          weId, rpe != null && rpe >= 1 && rpe <= 10 ? rpe : null);
       Navigator.pop(dialogCtx);
     }
 
@@ -318,6 +330,23 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                 textAlign: TextAlign.center,
                 decoration: const InputDecoration(
                   labelText: 'Reps',
+                  hintText: '\u2014',
+                ),
+                onSubmitted: (_) => save(dialogCtx),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Text('@',
+                  style: TextStyle(fontSize: 20, color: Colors.white54)),
+            ),
+            Expanded(
+              child: TextField(
+                controller: rpeCtrl,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                decoration: const InputDecoration(
+                  labelText: 'RPE',
                   hintText: '\u2014',
                 ),
                 onSubmitted: (_) => save(dialogCtx),

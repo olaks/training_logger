@@ -464,6 +464,8 @@ extension DbMutations on WidgetRef {
   Future<int>  removeAllOfExerciseFromWorkout(int wId, int catId) => db.removeAllOfExerciseFromWorkout(wId, catId);
   Future<int>  updateWorkoutTarget(int weId, int? sets, int? reps) =>
       db.updateWorkoutTarget(weId, sets, reps);
+  Future<int>  updateWorkoutTargetRpe(int weId, int? rpe) =>
+      db.updateWorkoutTargetRpe(weId, rpe);
 
   // Inspirations
   Future<int> addInspiration({
