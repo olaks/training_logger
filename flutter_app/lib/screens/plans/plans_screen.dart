@@ -20,6 +20,7 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   Widget build(BuildContext context) {
     final workouts = ref.watch(allWorkoutsProvider).value ?? [];
     final plans    = ref.watch(allPlansProvider).value ?? [];
+    final running  = ref.watch(activePlanProvider).value;
 
     return Scaffold(
       appBar: AppBar(
@@ -73,6 +74,11 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
           else
             ...plans.map((p) => _ItemTile(
                   title: p.name,
+                  subtitle: running?.plan.id == p.id
+                      ? _runningLabel(running!)
+                      : p.active
+                          ? null
+                          : 'Paused',
                   onTap: () => context.push('/plans/${p.id}'),
                   onRename: () => _showRenameDialog(
                       context, ref, p.name,
@@ -93,6 +99,12 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
         ],
       ),
     );
+  }
+
+  static String _runningLabel(ActivePlan running) {
+    final s = running.state;
+    if (s.planComplete) return 'Complete';
+    return '${s.phase!.name} \u00b7 week ${s.pass}/${s.totalPasses}';
   }
 
   Future<void> _showCreateWorkoutDialog() async {
@@ -333,6 +345,7 @@ class _EmptyHint extends StatelessWidget {
 
 class _ItemTile extends StatelessWidget {
   final String title;
+  final String? subtitle;
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onDelete;
@@ -342,6 +355,7 @@ class _ItemTile extends StatelessWidget {
   final VoidCallback? onStart;
   const _ItemTile(
       {required this.title,
+      this.subtitle,
       required this.onTap,
       required this.onRename,
       required this.onDelete,
@@ -351,6 +365,11 @@ class _ItemTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListTile(
         title: Text(title),
+        subtitle: subtitle == null
+            ? null
+            : Text(subtitle!,
+                style: TextStyle(
+                    fontSize: 12, color: Colors.white.withValues(alpha: 0.45))),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -69,6 +69,25 @@ final planWorkoutsProvider =
     StreamProvider.family<List<PlanWorkout>, int>((ref, planId) =>
         ref.watch(dbProvider).watchPlanWorkouts(planId));
 
+// ── Periodized plans ───────────────────────────────────────────────────────
+
+/// The running periodized plan and where it stands, or null if none runs.
+final activePlanProvider = StreamProvider<ActivePlan?>((ref) =>
+    ref.watch(dbProvider).watchActivePlan());
+
+final planPhasesProvider =
+    StreamProvider.family<List<PlanPhase>, int>((ref, planId) =>
+        ref.watch(dbProvider).watchPlanPhases(planId));
+
+/// Every phase's rotation in a plan, in rotation order.
+final planSessionsProvider =
+    StreamProvider.family<List<PhaseSession>, int>((ref, planId) =>
+        ref.watch(dbProvider).watchPlanSessions(planId));
+
+final phaseTargetsProvider =
+    StreamProvider.family<List<PhaseExerciseTarget>, int>((ref, phaseId) =>
+        ref.watch(dbProvider).watchPhaseExerciseTargets(phaseId));
+
 final plannedCategoryIdsProvider =
     StreamProvider.family<Set<int>, String>((ref, dateStr) =>
         ref.watch(dbProvider).watchPlannedCategoryIdsForDate(dateStr));
@@ -501,4 +520,35 @@ extension DbMutations on WidgetRef {
   Future<void> shiftPlanDay(int planId, int weekday) => db.shiftPlanDay(planId, weekday);
   Future<void> shiftPlanWeekFrom(int planId, int fromWeekday) =>
       db.shiftPlanWeekFrom(planId, fromWeekday);
+  Future<void> setPlanActive(int id, bool active) => db.setPlanActive(id, active);
+
+  // Periodized plans
+  Future<int> insertPhase(int planId, String name,
+          {required int lengthPasses, int? deloadEvery}) =>
+      db.insertPhase(planId, name,
+          lengthPasses: lengthPasses, deloadEvery: deloadEvery);
+  Future<int> updatePhase(int id,
+          {required String name,
+          required int lengthPasses,
+          required int? deloadEvery}) =>
+      db.updatePhase(id,
+          name: name, lengthPasses: lengthPasses, deloadEvery: deloadEvery);
+  Future<void> reorderPhases(List<int> phaseIds) => db.reorderPhases(phaseIds);
+  Future<DeletedPhase?> deletePhase(int id) => db.deletePhase(id);
+  Future<void> restorePhase(DeletedPhase d) => db.restorePhase(d);
+  Future<int> addSessionToPhase(int phaseId, int workoutId) =>
+      db.addSessionToPhase(phaseId, workoutId);
+  Future<int> removePhaseSession(int id) => db.removePhaseSession(id);
+  Future<void> setPhaseExerciseTarget(int phaseId, int categoryId,
+          {int? rpe, int? sets, int? reps}) =>
+      db.setPhaseExerciseTarget(phaseId, categoryId,
+          rpe: rpe, sets: sets, reps: reps);
+  Future<PlanEvent?> finishSession(int workoutId, String dateStr) =>
+      db.finishSession(workoutId, dateStr);
+  Future<PlanEvent?> skipSession(int workoutId, String dateStr) =>
+      db.skipSession(workoutId, dateStr);
+  Future<PlanEvent?> deloadNow(String dateStr) => db.deloadNow(dateStr);
+  Future<PlanEvent?> advancePhase(String dateStr) => db.advancePhase(dateStr);
+  Future<PlanEvent?> undoPlanEvent(int id) => db.deletePlanEvent(id);
+  Future<void> restorePlanEvent(PlanEvent e) => db.restorePlanEvent(e);
 }

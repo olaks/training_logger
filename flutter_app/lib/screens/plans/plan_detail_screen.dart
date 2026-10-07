@@ -6,6 +6,7 @@ import '../../providers/app_providers.dart';
 import '../../utils/undo_snackbar.dart';
 import '../../utils/format_utils.dart';
 import '../../utils/share_file.dart';
+import 'phases_section.dart';
 
 const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -18,6 +19,8 @@ class PlanDetailScreen extends ConsumerWidget {
     final plan = ref.watch(allPlansProvider).value
         ?.firstWhere((p) => p.id == planId, orElse: () => Plan(id: planId, name: '', active: true));
     final allPlanWorkouts = ref.watch(planWorkoutsProvider(planId)).value ?? [];
+    final periodized =
+        (ref.watch(planPhasesProvider(planId)).value ?? []).isNotEmpty;
     final allWorkouts     = ref.watch(allWorkoutsProvider).value ?? [];
 
     // Group by weekday (recurring) and dateStr (specific dates)
@@ -64,6 +67,49 @@ class PlanDetailScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [
+          if (plan != null)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Active'),
+              subtitle: Text(
+                plan.active
+                    ? periodized
+                        ? 'Running. Only one phased plan runs at a time.'
+                        : 'Its workouts show on the days they are planned.'
+                    : 'Paused: nothing from this plan is scheduled.',
+                style: TextStyle(
+                    fontSize: 12, color: Colors.white.withValues(alpha: 0.5)),
+              ),
+              value: plan.active,
+              onChanged: (v) => ref.setPlanActive(plan.id, v),
+            ),
+          const SizedBox(height: 8),
+
+          // A plan with phases schedules by rotation, so its weekday grid
+          // would only mislead.
+          if (!periodized)
+            ..._weeklySchedule(
+                context, ref, byWeekday, byDate, sortedDates, workoutById),
+
+          PhasesSection(
+            planId: planId,
+            onAddSession: (phaseId) =>
+                _showAddSessionSheet(context, ref, phaseId),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _weeklySchedule(
+    BuildContext context,
+    WidgetRef ref,
+    Map<int, List<PlanWorkout>> byWeekday,
+    Map<String, List<PlanWorkout>> byDate,
+    List<String> sortedDates,
+    Workout Function(int) workoutById,
+  ) {
+    return [
           // ── Weekly schedule ─────────────────────────────────────────────
           _SectionHeader(title: 'WEEKLY SCHEDULE'),
           const SizedBox(height: 4),
@@ -140,7 +186,27 @@ class PlanDetailScreen extends ConsumerWidget {
                 ),
               ];
             }),
-        ],
+          const SizedBox(height: 24),
+    ];
+  }
+
+  void _showAddSessionSheet(BuildContext context, WidgetRef ref, int phaseId) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: false,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: _PickWorkoutSheet(
+          onPick: (workoutId, _) async {
+            await ref.addSessionToPhase(phaseId, workoutId);
+            if (ctx.mounted) Navigator.pop(ctx);
+          },
+        ),
       ),
     );
   }

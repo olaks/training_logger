@@ -25,3 +25,17 @@ String formatSet({double? weightKg, int? reps, int? timeSecs}) {
   ];
   return parts.isEmpty ? '—' : parts.join('  ·  ');
 }
+
+/// A planned target, compact: `4×6 @ RPE 8`, `3 sets`, `RPE 7`, or null when
+/// nothing is set.
+String? formatTarget(int? sets, int? reps, int? rpe) {
+  final volume = sets != null && reps != null
+      ? '$sets×$reps'
+      : sets != null
+          ? '$sets sets'
+          : reps != null
+              ? '×$reps'
+              : null;
+  if (rpe == null) return volume;
+  return volume == null ? 'RPE $rpe' : '$volume @ RPE $rpe';
+}

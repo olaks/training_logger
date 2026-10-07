@@ -1617,6 +1617,42 @@ class AppDatabase extends _$AppDatabase {
     ));
   }
 
+  Stream<List<PlanPhase>> watchPlanPhases(int planId) => (select(planPhases)
+        ..where((t) => t.planId.equals(planId))
+        ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+      .watch();
+
+  /// The rotations of every phase in [planId], each in rotation order.
+  Stream<List<PhaseSession>> watchPlanSessions(int planId) =>
+      (select(phaseSessions)
+            ..where((t) => t.phaseId.isInQuery(selectOnly(planPhases)
+              ..addColumns([planPhases.id])
+              ..where(planPhases.planId.equals(planId))))
+            ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          .watch();
+
+  Future<int> updatePhase(int id,
+          {required String name,
+          required int lengthPasses,
+          required int? deloadEvery}) =>
+      (update(planPhases)..where((t) => t.id.equals(id)))
+          .write(PlanPhasesCompanion(
+        name: Value(name),
+        lengthPasses: Value(lengthPasses),
+        deloadEvery: Value(deloadEvery),
+      ));
+
+  /// Puts a plan's phases in the order of [phaseIds].
+  Future<void> reorderPhases(List<int> phaseIds) => transaction(() async {
+        for (var i = 0; i < phaseIds.length; i++) {
+          await (update(planPhases)..where((t) => t.id.equals(phaseIds[i])))
+              .write(PlanPhasesCompanion(sortOrder: Value(i)));
+        }
+      });
+
+  Future<int> removePhaseSession(int id) =>
+      (delete(phaseSessions)..where((t) => t.id.equals(id))).go();
+
   /// Deletes a phase with its rotation, overrides and log, returning them
   /// for undo.
   Future<DeletedPhase?> deletePhase(int id) => transaction(() async {

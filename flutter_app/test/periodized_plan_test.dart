@@ -329,4 +329,38 @@ void main() {
       expect(await db.watchPhaseExerciseTargets(p.phase).first, hasLength(1));
     });
   });
+
+  group('editing phases', () {
+    test('a phase can be renamed, resized and given a deload rule', () async {
+      final p = await capacityPlan();
+      await db.updatePhase(p.phase,
+          name: 'Base', lengthPasses: 6, deloadEvery: 3);
+
+      final phase = (await db.watchPlanPhases(p.plan).first).single;
+      expect((phase.name, phase.lengthPasses, phase.deloadEvery),
+          ('Base', 6, 3));
+    });
+
+    test('phases are listed, and run, in the order they are put in',
+        () async {
+      final p = await capacityPlan();
+      final strength =
+          await db.insertPhase(p.plan, 'Basic strength', lengthPasses: 8);
+      await db.reorderPhases([strength, p.phase]);
+
+      expect((await db.watchPlanPhases(p.plan).first).map((x) => x.id),
+          [strength, p.phase]);
+      expect((await db.activePlan())!.state.phase?.id, strength);
+    });
+
+    test('a session can be taken out of a rotation', () async {
+      final p = await capacityPlan();
+      final sessions = await db.watchPlanSessions(p.plan).first;
+      expect(sessions.map((s) => s.workoutId), [p.a, p.b]);
+
+      await db.removePhaseSession(sessions.first.id);
+
+      expect((await db.activePlan())!.rotations[p.phase], [p.b]);
+    });
+  });
 }

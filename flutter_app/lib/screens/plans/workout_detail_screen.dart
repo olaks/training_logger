@@ -165,7 +165,8 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                       final (weId, cat, targetSets, targetReps, targetRpe) =
                           exercises[i];
                       final targetLabel =
-                          _formatTarget(targetSets, targetReps, targetRpe);
+                          formatTarget(targetSets, targetReps, targetRpe) ??
+                              'set target';
                       final hasTarget = targetSets != null ||
                           targetReps != null ||
                           targetRpe != null;
@@ -261,18 +262,6 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
     _flushNotes();
     context.push(
         '/workout-session/${widget.workoutId}/${dateStrFrom(DateTime.now())}');
-  }
-
-  static String _formatTarget(int? sets, int? reps, int? rpe) {
-    final volume = sets != null && reps != null
-        ? '$sets\u00d7$reps'
-        : sets != null
-            ? '$sets sets'
-            : reps != null
-                ? '\u00d7$reps'
-                : null;
-    if (rpe == null) return volume ?? 'set target';
-    return volume == null ? 'RPE $rpe' : '$volume @ RPE $rpe';
   }
 
   void _showEditTargetDialog(BuildContext context, int weId,
