@@ -162,7 +162,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                           widget.workoutId, ids);
                     },
                     itemBuilder: (_, i) {
-                      final (weId, cat, targetSets, targetReps) = exercises[i];
+                      final (weId, cat, targetSets, targetReps, _) = exercises[i];
                       final targetLabel =
                           _formatTarget(targetSets, targetReps);
                       final hasTarget =
@@ -338,7 +338,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
   }
 
   void _showAddExercisesSheet(BuildContext context,
-      List<(int, ExerciseCategory, int?, int?)> exercises) {
+      List<(int, ExerciseCategory, int?, int?, int?)> exercises) {
     showModalBottomSheet(
       context: context,
       useRootNavigator: false,

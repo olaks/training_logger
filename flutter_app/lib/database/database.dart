@@ -2,11 +2,13 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'tables.dart';
+export 'tables.dart' show PlanEventKind;
 import '../utils/format_utils.dart';
+import '../utils/periodization.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Workouts, WorkoutExercises, Plans, PlanWorkouts, ExerciseCategories, ExerciseImages, WorkoutSets, DayNotes, BodyWeights, Inspirations])
+@DriftDatabase(tables: [Workouts, WorkoutExercises, Plans, PlanWorkouts, PlanPhases, PhaseSessions, PhaseExerciseTargets, PlanEvents, ExerciseCategories, ExerciseImages, WorkoutSets, DayNotes, BodyWeights, Inspirations])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(
     name: 'training_logger',
@@ -20,7 +22,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -162,6 +164,27 @@ class AppDatabase extends _$AppDatabase {
           // Dropped first so the index always ends up matching the definition
           // above, whatever an interrupted earlier run may have left behind.
           await customStatement('DROP INDEX IF EXISTS ${index.entityName}');
+          await m.createIndex(index);
+        }
+      }
+      if (from < 18) {
+        // Periodized plans: see the tables' comments in tables.dart.
+        await m.addColumn(plans, plans.active);
+        await m.addColumn(workoutExercises, workoutExercises.targetRpe);
+        await m.createTable(planPhases);
+        await m.createTable(phaseSessions);
+        await m.createTable(phaseExerciseTargets);
+        await m.createTable(planEvents);
+        for (final index in [
+          idxPhasePlan,
+          idxPsPhase,
+          idxPsWorkout,
+          idxPetPhase,
+          idxPetCategory,
+          idxPePlan,
+          idxPePhase,
+          idxPeWorkout,
+        ]) {
           await m.createIndex(index);
         }
       }
@@ -365,7 +388,13 @@ class AppDatabase extends _$AppDatabase {
               ..where((t) => t.categoryId.equals(id)))
             .get();
         final image = await getCategoryImage(id);
+        final phaseTargets = await (select(phaseExerciseTargets)
+              ..where((t) => t.categoryId.equals(id)))
+            .get();
 
+        await (delete(phaseExerciseTargets)
+              ..where((t) => t.categoryId.equals(id)))
+            .go();
         await (delete(exerciseImages)..where((t) => t.categoryId.equals(id)))
             .go();
         await (delete(workoutSets)..where((t) => t.categoryId.equals(id))).go();
@@ -382,6 +411,7 @@ class AppDatabase extends _$AppDatabase {
           memberships: members,
           unlinkedInspirationIds: linked.map((i) => i.id).toList(),
           image: image,
+          phaseTargets: phaseTargets,
         );
       });
 
@@ -398,6 +428,9 @@ class AppDatabase extends _$AppDatabase {
         }
         for (final m in deleted.memberships) {
           await into(workoutExercises).insert(m.toCompanion(false));
+        }
+        for (final t in deleted.phaseTargets) {
+          await into(phaseExerciseTargets).insert(t.toCompanion(false));
         }
         for (final id in deleted.unlinkedInspirationIds) {
           await (update(inspirations)..where((t) => t.id.equals(id)))
@@ -1230,6 +1263,7 @@ class AppDatabase extends _$AppDatabase {
           categoryId: rows[i].categoryId,
           targetSets: Value(rows[i].targetSets),
           targetReps: Value(rows[i].targetReps),
+          targetRpe:  Value(rows[i].targetRpe),
           sortOrder:  Value(i),
         ));
       }
@@ -1321,7 +1355,18 @@ class AppDatabase extends _$AppDatabase {
         final exercises = await (select(workoutExercises)
               ..where((t) => t.workoutId.equals(id)))
             .get();
+        final sessions = await (select(phaseSessions)
+              ..where((t) => t.workoutId.equals(id)))
+            .get();
+        final events = await (select(planEvents)
+              ..where((t) => t.workoutId.equals(id)))
+            .get();
 
+        // Its sessions leave the rotations, and the log of doing them goes
+        // too: a plan replayed without the workout should read as if it had
+        // never been in the rotation.
+        await (delete(planEvents)..where((t) => t.workoutId.equals(id))).go();
+        await (delete(phaseSessions)..where((t) => t.workoutId.equals(id))).go();
         await (delete(planWorkouts)..where((t) => t.workoutId.equals(id))).go();
         await (delete(workoutExercises)..where((t) => t.workoutId.equals(id)))
             .go();
@@ -1331,6 +1376,8 @@ class AppDatabase extends _$AppDatabase {
           workout: workout,
           exercises: exercises,
           assignments: assignments,
+          sessions: sessions,
+          events: events,
         );
       });
 
@@ -1343,10 +1390,17 @@ class AppDatabase extends _$AppDatabase {
         for (final a in deleted.assignments) {
           await into(planWorkouts).insert(a.toCompanion(false));
         }
+        for (final s in deleted.sessions) {
+          await into(phaseSessions).insert(s.toCompanion(false));
+        }
+        for (final e in deleted.events) {
+          await into(planEvents).insert(e.toCompanion(false));
+        }
       });
 
-  // Returns (weId, category, targetSets, targetReps) per exercise in the workout.
-  Stream<List<(int, ExerciseCategory, int?, int?)>> watchExercisesForWorkout(int workoutId) {
+  // Returns (weId, category, targetSets, targetReps, targetRpe) per exercise in
+  // the workout.
+  Stream<List<(int, ExerciseCategory, int?, int?, int?)>> watchExercisesForWorkout(int workoutId) {
     final q = select(workoutExercises).join([
       innerJoin(exerciseCategories,
           exerciseCategories.id.equalsExp(workoutExercises.categoryId)),
@@ -1364,6 +1418,7 @@ class AppDatabase extends _$AppDatabase {
             r.readTable(exerciseCategories),
             we.targetSets,
             we.targetReps,
+            we.targetRpe,
           );
         })
         .toList());
@@ -1377,6 +1432,12 @@ class AppDatabase extends _$AppDatabase {
             targetSets: Value(targetSets),
             targetReps: Value(targetReps),
           ));
+
+  /// Kept apart from [updateWorkoutTarget], which overwrites both of its
+  /// fields: an RPE edit and a sets/reps edit come from different controls.
+  Future<int> updateWorkoutTargetRpe(int weId, int? targetRpe) =>
+      (update(workoutExercises)..where((t) => t.id.equals(weId)))
+          .write(WorkoutExercisesCompanion(targetRpe: Value(targetRpe)));
 
   Stream<List<Workout>> watchWorkoutsForExercise(int categoryId) {
     final q = select(workoutExercises).join([
@@ -1422,6 +1483,29 @@ class AppDatabase extends _$AppDatabase {
       (update(plans)..where((t) => t.id.equals(id)))
           .write(PlansCompanion(name: Value(name)));
 
+  /// Starts or stops a plan. Only one periodized plan runs at a time, so
+  /// starting one stops whichever other periodized plan was running.
+  Future<void> setPlanActive(int id, bool active) => transaction(() async {
+        if (active && await _isPeriodized(id)) {
+          await customUpdate(
+            'UPDATE plans SET active = 0 WHERE id != ? AND EXISTS '
+            '(SELECT 1 FROM plan_phases ph WHERE ph.plan_id = plans.id)',
+            variables: [Variable.withInt(id)],
+            updates: {plans},
+          );
+        }
+        await (update(plans)..where((t) => t.id.equals(id)))
+            .write(PlansCompanion(active: Value(active)));
+      });
+
+  Future<bool> _isPeriodized(int planId) async {
+    final row = await (select(planPhases)
+          ..where((t) => t.planId.equals(planId))
+          ..limit(1))
+        .getSingleOrNull();
+    return row != null;
+  }
+
   /// Deletes a plan and its assignments, returning them for undo.
   Future<DeletedPlan?> deletePlan(int id) => transaction(() async {
         final plan =
@@ -1429,11 +1513,19 @@ class AppDatabase extends _$AppDatabase {
         if (plan == null) return null;
         final assignments =
             await (select(planWorkouts)..where((t) => t.planId.equals(id))).get();
+        final phaseIds = await (select(planPhases)
+              ..where((t) => t.planId.equals(id)))
+            .map((p) => p.id)
+            .get();
+        final phases = [
+          for (final phaseId in phaseIds) (await deletePhase(phaseId))!,
+        ];
 
         await (delete(planWorkouts)..where((t) => t.planId.equals(id))).go();
         await (delete(plans)..where((t) => t.id.equals(id))).go();
 
-        return DeletedPlan(plan: plan, assignments: assignments);
+        return DeletedPlan(
+            plan: plan, assignments: assignments, phases: phases);
       });
 
   /// Reverses [deletePlan].
@@ -1441,6 +1533,9 @@ class AppDatabase extends _$AppDatabase {
         await into(plans).insert(deleted.plan.toCompanion(false));
         for (final a in deleted.assignments) {
           await into(planWorkouts).insert(a.toCompanion(false));
+        }
+        for (final p in deleted.phases) {
+          await restorePhase(p);
         }
       });
 
@@ -1479,16 +1574,233 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  // ── Periodized plans ──────────────────────────────────────────────────────
+
+  /// Appends a phase to [planId]. A plan's first phase makes it periodized;
+  /// if another periodized plan is already running, this one is stopped, so
+  /// drafting the next plan doesn't interrupt the current one.
+  Future<int> insertPhase(int planId, String name,
+          {required int lengthPasses, int? deloadEvery}) =>
+      transaction(() async {
+    if (!await _isPeriodized(planId)) {
+      final running = await activePlan();
+      if (running != null && running.plan.id != planId) {
+        await (update(plans)..where((t) => t.id.equals(planId)))
+            .write(const PlansCompanion(active: Value(false)));
+      }
+    }
+    final maxRow = await customSelect(
+      'SELECT MAX(sort_order) AS m FROM plan_phases WHERE plan_id = ?',
+      variables: [Variable.withInt(planId)],
+    ).getSingleOrNull();
+    final next = (maxRow?.readNullable<int>('m') ?? -1) + 1;
+    return into(planPhases).insert(PlanPhasesCompanion.insert(
+      planId: planId,
+      name: name,
+      lengthPasses: lengthPasses,
+      deloadEvery: Value(deloadEvery),
+      sortOrder: Value(next),
+    ));
+  });
+
+  /// Appends [workoutId] to the end of a phase's rotation.
+  Future<int> addSessionToPhase(int phaseId, int workoutId) async {
+    final maxRow = await customSelect(
+      'SELECT MAX(sort_order) AS m FROM phase_sessions WHERE phase_id = ?',
+      variables: [Variable.withInt(phaseId)],
+    ).getSingleOrNull();
+    final next = (maxRow?.readNullable<int>('m') ?? -1) + 1;
+    return into(phaseSessions).insert(PhaseSessionsCompanion.insert(
+      phaseId: phaseId,
+      workoutId: workoutId,
+      sortOrder: Value(next),
+    ));
+  }
+
+  /// Deletes a phase with its rotation, overrides and log, returning them
+  /// for undo.
+  Future<DeletedPhase?> deletePhase(int id) => transaction(() async {
+        final phase = await (select(planPhases)..where((t) => t.id.equals(id)))
+            .getSingleOrNull();
+        if (phase == null) return null;
+        final sessions = await (select(phaseSessions)
+              ..where((t) => t.phaseId.equals(id)))
+            .get();
+        final targets = await (select(phaseExerciseTargets)
+              ..where((t) => t.phaseId.equals(id)))
+            .get();
+        final events =
+            await (select(planEvents)..where((t) => t.phaseId.equals(id))).get();
+
+        await (delete(planEvents)..where((t) => t.phaseId.equals(id))).go();
+        await (delete(phaseExerciseTargets)..where((t) => t.phaseId.equals(id)))
+            .go();
+        await (delete(phaseSessions)..where((t) => t.phaseId.equals(id))).go();
+        await (delete(planPhases)..where((t) => t.id.equals(id))).go();
+
+        return DeletedPhase(
+            phase: phase, sessions: sessions, targets: targets, events: events);
+      });
+
+  /// Reverses [deletePhase].
+  Future<void> restorePhase(DeletedPhase deleted) => transaction(() async {
+        await into(planPhases).insert(deleted.phase.toCompanion(false));
+        for (final s in deleted.sessions) {
+          await into(phaseSessions).insert(s.toCompanion(false));
+        }
+        for (final t in deleted.targets) {
+          await into(phaseExerciseTargets).insert(t.toCompanion(false));
+        }
+        for (final e in deleted.events) {
+          await into(planEvents).insert(e.toCompanion(false));
+        }
+      });
+
+  Stream<List<PhaseExerciseTarget>> watchPhaseExerciseTargets(int phaseId) =>
+      (select(phaseExerciseTargets)..where((t) => t.phaseId.equals(phaseId)))
+          .watch();
+
+  /// Sets a phase's targets for one exercise, replacing any it had. Leaving
+  /// every field null removes the override, so the workout's own targets
+  /// apply again.
+  Future<void> setPhaseExerciseTarget(int phaseId, int categoryId,
+          {int? rpe, int? sets, int? reps}) =>
+      transaction(() async {
+        await (delete(phaseExerciseTargets)
+              ..where((t) =>
+                  t.phaseId.equals(phaseId) & t.categoryId.equals(categoryId)))
+            .go();
+        if (rpe == null && sets == null && reps == null) return;
+        await into(phaseExerciseTargets).insert(
+            PhaseExerciseTargetsCompanion.insert(
+          phaseId: phaseId,
+          categoryId: categoryId,
+          targetRpe: Value(rpe),
+          targetSets: Value(sets),
+          targetReps: Value(reps),
+        ));
+      });
+
+  /// The active periodized plan and where it stands, or null if no active
+  /// plan has phases.
+  Future<ActivePlan?> activePlan() async {
+    final plan = await customSelect(
+      'SELECT * FROM plans p WHERE p.active = 1 AND EXISTS '
+      '(SELECT 1 FROM plan_phases ph WHERE ph.plan_id = p.id) '
+      'ORDER BY p.id LIMIT 1',
+      readsFrom: {plans, planPhases},
+    ).map((r) => plans.map(r.data)).getSingleOrNull();
+    if (plan == null) return null;
+
+    final phases = await (select(planPhases)
+          ..where((t) => t.planId.equals(plan.id)))
+        .get();
+    final sessions = await (select(phaseSessions)
+          ..where((t) => t.phaseId.isIn(phases.map((p) => p.id)))
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .get();
+    final events = await (select(planEvents)
+          ..where((t) => t.planId.equals(plan.id)))
+        .get();
+
+    final rotations = <int, List<int>>{
+      for (final p in phases) p.id: [],
+    };
+    for (final s in sessions) {
+      rotations[s.phaseId]!.add(s.workoutId);
+    }
+    return ActivePlan(
+      plan: plan,
+      phases: phases,
+      rotations: rotations,
+      events: events,
+      state: resolvePlan(phases, rotations, events),
+    );
+  }
+
+  /// [activePlan], again whenever anything it is built from changes.
+  Stream<ActivePlan?> watchActivePlan() => customSelect(
+        'SELECT 1',
+        readsFrom: {plans, planPhases, phaseSessions, planEvents},
+      ).watch().asyncMap((_) => activePlan());
+
+  /// Marks [workoutId] done in the active plan's current pass. Returns the
+  /// event (for undo), or null when the workout isn't due this pass — not in
+  /// the rotation, already done, or no periodized plan running.
+  Future<PlanEvent?> finishSession(int workoutId, String dateStr) =>
+      _recordSession(PlanEventKind.done, workoutId, dateStr);
+
+  /// Lets the current pass finish without [workoutId]. Null as for
+  /// [finishSession].
+  Future<PlanEvent?> skipSession(int workoutId, String dateStr) =>
+      _recordSession(PlanEventKind.skip, workoutId, dateStr);
+
+  /// Makes the next pass that hasn't started a deload.
+  Future<PlanEvent?> deloadNow(String dateStr) =>
+      _recordEvent(PlanEventKind.deload, dateStr);
+
+  /// Moves the active plan on from its current phase, done or not.
+  Future<PlanEvent?> advancePhase(String dateStr) =>
+      _recordEvent(PlanEventKind.advance, dateStr);
+
+  Future<PlanEvent?> _recordSession(
+      PlanEventKind kind, int workoutId, String dateStr) async {
+    final active = await activePlan();
+    if (active == null || !active.state.remaining.contains(workoutId)) {
+      return null;
+    }
+    return _insertEvent(active, kind, dateStr, workoutId: workoutId);
+  }
+
+  Future<PlanEvent?> _recordEvent(PlanEventKind kind, String dateStr) async {
+    final active = await activePlan();
+    if (active == null || active.state.phase == null) return null;
+    return _insertEvent(active, kind, dateStr);
+  }
+
+  Future<PlanEvent> _insertEvent(
+      ActivePlan active, PlanEventKind kind, String dateStr,
+      {int? workoutId}) {
+    return into(planEvents).insertReturning(PlanEventsCompanion.insert(
+      planId: active.plan.id,
+      phaseId: active.state.phase!.id,
+      workoutId: Value(workoutId),
+      dateStr: dateStr,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      kind: kind,
+    ));
+  }
+
+  Future<PlanEvent?> deletePlanEvent(int id) async {
+    final event = await (select(planEvents)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (event == null) return null;
+    await (delete(planEvents)..where((t) => t.id.equals(id))).go();
+    return event;
+  }
+
+  /// Puts an undone event back exactly as it was, id and time included, so
+  /// it replays in its original place.
+  Future<void> restorePlanEvent(PlanEvent event) =>
+      into(planEvents).insert(event.toCompanion(false));
+
   // ── Home screen: planned exercises for a date ─────────────────────────────
+
+  /// SQL condition on `pw` (a `plan_workouts` row): its plan is running and
+  /// schedules by weekday and date. A periodized plan's sessions come from its
+  /// rotation instead — see [activePlan].
+  static const _weeklyPlan = 'pw.plan_id IN (SELECT p.id FROM plans p '
+      'WHERE p.active = 1 AND NOT EXISTS '
+      '(SELECT 1 FROM plan_phases ph WHERE ph.plan_id = p.id))';
 
   Stream<Set<int>> watchPlannedCategoryIdsForDate(String dateStr) {
     final weekday = dateFromStr(dateStr).weekday;
     return customSelect(
       'SELECT DISTINCT we.category_id FROM workout_exercises we '
       'INNER JOIN plan_workouts pw ON we.workout_id = pw.workout_id '
-      'WHERE pw.date_str = ? OR pw.weekday = ?',
+      'WHERE (pw.date_str = ? OR pw.weekday = ?) AND $_weeklyPlan',
       variables: [Variable.withString(dateStr), Variable.withInt(weekday)],
-      readsFrom: {workoutExercises, planWorkouts},
+      readsFrom: {workoutExercises, planWorkouts, plans, planPhases},
     ).watch().map((rows) =>
         rows.map((r) => r.read<int>('category_id')).toSet());
   }
@@ -1505,10 +1817,13 @@ class AppDatabase extends _$AppDatabase {
       'JOIN workouts w ON w.id = pw.workout_id '
       'JOIN workout_exercises we ON we.workout_id = pw.workout_id '
       'JOIN exercise_categories ec ON ec.id = we.category_id '
-      'WHERE pw.date_str = ? OR pw.weekday = ? '
+      'WHERE (pw.date_str = ? OR pw.weekday = ?) AND $_weeklyPlan '
       'ORDER BY w.name, ec.name',
       variables: [Variable.withString(dateStr), Variable.withInt(weekday)],
-      readsFrom: {planWorkouts, workouts, workoutExercises, exerciseCategories},
+      readsFrom: {
+        planWorkouts, workouts, workoutExercises, exerciseCategories, plans,
+        planPhases,
+      },
     ).watch().map((rows) {
       final order        = <int>[];
       final names        = <int, String>{};
@@ -1532,27 +1847,75 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  /// Returns (targetSets, targetReps) for an exercise on a given date via its
-  /// planned workout, or null if the exercise is not planned.
-  Stream<(int?, int?)?> watchExerciseTarget(int categoryId, String dateStr) {
+  /// An exercise's target on [dateStr], or null if nothing plans it.
+  ///
+  /// The running phase of a periodized plan comes first: if the exercise is in
+  /// one of its sessions, that session's target applies, with the phase's
+  /// override and any deload on top. Otherwise a weekly plan scheduling it on
+  /// that day supplies the target as written.
+  Stream<Target?> watchExerciseTarget(int categoryId, String dateStr) =>
+      customSelect(
+        'SELECT 1',
+        readsFrom: {
+          plans, planPhases, phaseSessions, planEvents, phaseExerciseTargets,
+          planWorkouts, workoutExercises,
+        },
+      ).watch().asyncMap((_) => _exerciseTarget(categoryId, dateStr));
+
+  Future<Target?> _exerciseTarget(int categoryId, String dateStr) async {
+    final active = await activePlan();
+    final phase = active?.state.phase;
+    if (active != null && phase != null) {
+      // Sessions still due this pass first, so the target is the one about
+      // to be trained when the exercise turns up in more than one.
+      final rotation = active.rotations[phase.id] ?? const <int>[];
+      final remaining = active.state.remaining;
+      final ordered = [
+        ...remaining,
+        ...rotation.where((w) => !remaining.contains(w)),
+      ];
+      for (final workoutId in ordered) {
+        final we = await (select(workoutExercises)
+              ..where((t) =>
+                  t.workoutId.equals(workoutId) &
+                  t.categoryId.equals(categoryId))
+              ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)])
+              ..limit(1))
+            .getSingleOrNull();
+        if (we == null) continue;
+        final override = await (select(phaseExerciseTargets)
+              ..where((t) =>
+                  t.phaseId.equals(phase.id) & t.categoryId.equals(categoryId))
+              ..limit(1))
+            .getSingleOrNull();
+        return resolveTarget(
+          Target(sets: we.targetSets, reps: we.targetReps, rpe: we.targetRpe),
+          override,
+          deload: active.state.isDeload,
+        );
+      }
+    }
+
     final weekday = dateFromStr(dateStr).weekday;
-    return customSelect(
-      'SELECT we.target_sets, we.target_reps '
+    final row = await customSelect(
+      'SELECT we.target_sets, we.target_reps, we.target_rpe '
       'FROM workout_exercises we '
       'JOIN plan_workouts pw ON we.workout_id = pw.workout_id '
       'WHERE we.category_id = ? AND (pw.date_str = ? OR pw.weekday = ?) '
+      'AND $_weeklyPlan '
       'LIMIT 1',
       variables: [
         Variable.withInt(categoryId),
         Variable.withString(dateStr),
         Variable.withInt(weekday),
       ],
-      readsFrom: {workoutExercises, planWorkouts},
-    ).watch().map((rows) {
-      if (rows.isEmpty) return null;
-      final r = rows.first;
-      return (r.readNullable<int>('target_sets'), r.readNullable<int>('target_reps'));
-    });
+    ).getSingleOrNull();
+    if (row == null) return null;
+    return Target(
+      sets: row.readNullable<int>('target_sets'),
+      reps: row.readNullable<int>('target_reps'),
+      rpe: row.readNullable<int>('target_rpe'),
+    );
   }
 
   static String? _nullIfEmpty(String? s) =>
@@ -1582,12 +1945,16 @@ class DeletedCategory {
   /// The exercise photo, so an undo puts that back too.
   final Uint8List? image;
 
+  /// Periodized-plan phases' targets for the exercise.
+  final List<PhaseExerciseTarget> phaseTargets;
+
   const DeletedCategory({
     required this.category,
     required this.sets,
     required this.memberships,
     required this.unlinkedInspirationIds,
     this.image,
+    this.phaseTargets = const [],
   });
 }
 
@@ -1606,10 +1973,16 @@ class DeletedWorkout {
   final List<WorkoutExercise> exercises;
   final List<PlanWorkout> assignments;
 
+  /// Its places in periodized-plan rotations, and the log of doing it.
+  final List<PhaseSession> sessions;
+  final List<PlanEvent> events;
+
   const DeletedWorkout({
     required this.workout,
     required this.exercises,
     required this.assignments,
+    this.sessions = const [],
+    this.events = const [],
   });
 }
 
@@ -1618,5 +1991,45 @@ class DeletedPlan {
   final Plan plan;
   final List<PlanWorkout> assignments;
 
-  const DeletedPlan({required this.plan, required this.assignments});
+  final List<DeletedPhase> phases;
+
+  const DeletedPlan({
+    required this.plan,
+    required this.assignments,
+    this.phases = const [],
+  });
+}
+
+/// Everything removed by [AppDatabase.deletePhase].
+class DeletedPhase {
+  final PlanPhase phase;
+  final List<PhaseSession> sessions;
+  final List<PhaseExerciseTarget> targets;
+  final List<PlanEvent> events;
+
+  const DeletedPhase({
+    required this.phase,
+    required this.sessions,
+    required this.targets,
+    required this.events,
+  });
+}
+
+/// The active periodized plan, with what [resolvePlan] made of it.
+class ActivePlan {
+  final Plan plan;
+  final List<PlanPhase> phases;
+
+  /// Phase id → workout ids, in rotation order.
+  final Map<int, List<int>> rotations;
+  final List<PlanEvent> events;
+  final PlanState state;
+
+  const ActivePlan({
+    required this.plan,
+    required this.phases,
+    required this.rotations,
+    required this.events,
+    required this.state,
+  });
 }

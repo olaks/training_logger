@@ -16,14 +16,18 @@ class WorkoutExercises extends Table {
   IntColumn get categoryId => integer().references(ExerciseCategories, #id)();
   IntColumn get targetSets => integer().nullable()();
   IntColumn get targetReps => integer().nullable()();
+  IntColumn get targetRpe  => integer().nullable()(); // 1–10, null = no target
   IntColumn get sortOrder  => integer().withDefault(const Constant(0))();
 }
 
 // ── Plans (schedules that assign Workouts to days) ────────────────────────────
 
 class Plans extends Table {
-  IntColumn  get id   => integer().autoIncrement()();
-  TextColumn get name => text()();
+  IntColumn  get id     => integer().autoIncrement()();
+  TextColumn get name   => text()();
+  // Inactive plans keep their contents but schedule nothing. At most one
+  // active plan may have phases — see [PlanPhases].
+  BoolColumn get active => boolean().withDefault(const Constant(true))();
 }
 
 @TableIndex(name: 'idx_pw_plan', columns: {#planId})
@@ -34,6 +38,75 @@ class PlanWorkouts extends Table {
   IntColumn  get workoutId => integer().references(Workouts, #id)();
   TextColumn get dateStr   => text().nullable()();    // "yyyy-MM-dd" one-off
   IntColumn  get weekday   => integer().nullable()(); // 1=Mon…7=Sun recurring
+}
+
+// ── Periodized plans ──────────────────────────────────────────────────────────
+//
+// A plan with phases is periodized: it runs its phases in order, and each
+// phase lasts a number of *passes* through its rotation of sessions rather than
+// a number of days, so missed days never move the plan. Where the plan stands
+// is never stored — it is replayed from [PlanEvents] by
+// `utils/periodization.dart`, so undo and editing a phase mid-plan come free.
+
+@TableIndex(name: 'idx_phase_plan', columns: {#planId, #sortOrder})
+class PlanPhases extends Table {
+  IntColumn  get id           => integer().autoIncrement()();
+  IntColumn  get planId       => integer().references(Plans, #id)();
+  IntColumn  get sortOrder    => integer().withDefault(const Constant(0))();
+  TextColumn get name         => text()();
+  IntColumn  get lengthPasses => integer()();
+  IntColumn  get deloadEvery  => integer().nullable()(); // null = no scheduled deloads
+}
+
+/// The rotation of a phase: one row per session, in order.
+@TableIndex(name: 'idx_ps_phase', columns: {#phaseId, #sortOrder})
+@TableIndex(name: 'idx_ps_workout', columns: {#workoutId})
+class PhaseSessions extends Table {
+  IntColumn get id        => integer().autoIncrement()();
+  IntColumn get phaseId   => integer().references(PlanPhases, #id)();
+  IntColumn get workoutId => integer().references(Workouts, #id)();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+}
+
+/// A phase's targets for one exercise, overriding the workout's own for every
+/// workout in that phase. A null field falls back to the workout's value.
+@TableIndex(name: 'idx_pet_phase', columns: {#phaseId})
+@TableIndex(name: 'idx_pet_category', columns: {#categoryId})
+class PhaseExerciseTargets extends Table {
+  IntColumn get id         => integer().autoIncrement()();
+  IntColumn get phaseId    => integer().references(PlanPhases, #id)();
+  IntColumn get categoryId => integer().references(ExerciseCategories, #id)();
+  IntColumn get targetRpe  => integer().nullable()();
+  IntColumn get targetSets => integer().nullable()();
+  IntColumn get targetReps => integer().nullable()();
+}
+
+/// Stored by index: append new kinds, never reorder.
+enum PlanEventKind {
+  /// A session in the current pass was done.
+  done,
+
+  /// A session in the current pass was deliberately not done.
+  skip,
+
+  /// "Deload now": the next pass that hasn't started becomes a deload.
+  deload,
+
+  /// The athlete confirmed moving on from a phase.
+  advance,
+}
+
+@TableIndex(name: 'idx_pe_plan', columns: {#planId, #timestamp})
+@TableIndex(name: 'idx_pe_phase', columns: {#phaseId})
+@TableIndex(name: 'idx_pe_workout', columns: {#workoutId})
+class PlanEvents extends Table {
+  IntColumn  get id        => integer().autoIncrement()();
+  IntColumn  get planId    => integer().references(Plans, #id)();
+  IntColumn  get phaseId   => integer().references(PlanPhases, #id)();
+  IntColumn  get workoutId => integer().nullable().references(Workouts, #id)(); // done / skip only
+  TextColumn get dateStr   => text()();
+  IntColumn  get timestamp => integer()();
+  IntColumn  get kind      => intEnum<PlanEventKind>()();
 }
 
 // ── Exercises / sets ──────────────────────────────────────────────────────────

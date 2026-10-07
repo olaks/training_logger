@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../database/database.dart';
 import '../utils/beeper.dart';
+import '../utils/periodization.dart';
 import '../utils/phase_countdown.dart';
 import '../utils/training_load.dart';
 import 'load_settings_provider.dart';
@@ -52,7 +53,7 @@ final allWorkoutsProvider = StreamProvider<List<Workout>>((ref) =>
     ref.watch(dbProvider).watchAllWorkouts());
 
 final workoutExercisesProvider =
-    StreamProvider.family<List<(int, ExerciseCategory, int?, int?)>, int>((ref, workoutId) =>
+    StreamProvider.family<List<(int, ExerciseCategory, int?, int?, int?)>, int>((ref, workoutId) =>
         ref.watch(dbProvider).watchExercisesForWorkout(workoutId));
 
 final workoutsForExerciseProvider =
@@ -80,7 +81,7 @@ final plannedWorkoutsForDateProvider =
 // ── Exercise target for a date ────────────────────────────────────────────
 
 final exerciseTargetProvider =
-    StreamProvider.family<(int?, int?)?, ({int categoryId, String dateStr})>(
+    StreamProvider.family<Target?, ({int categoryId, String dateStr})>(
         (ref, p) => ref.watch(dbProvider).watchExerciseTarget(p.categoryId, p.dateStr));
 
 // ── Day notes ─────────────────────────────────────────────────────────────

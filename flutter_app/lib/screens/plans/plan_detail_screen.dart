@@ -16,7 +16,7 @@ class PlanDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final plan = ref.watch(allPlansProvider).value
-        ?.firstWhere((p) => p.id == planId, orElse: () => Plan(id: planId, name: ''));
+        ?.firstWhere((p) => p.id == planId, orElse: () => Plan(id: planId, name: '', active: true));
     final allPlanWorkouts = ref.watch(planWorkoutsProvider(planId)).value ?? [];
     final allWorkouts     = ref.watch(allWorkoutsProvider).value ?? [];
 

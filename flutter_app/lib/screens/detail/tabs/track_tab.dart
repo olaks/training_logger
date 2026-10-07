@@ -221,8 +221,8 @@ class _TrackTabState extends ConsumerState<TrackTab> {
     // Workout target for this exercise on this date
     final target = ref.watch(exerciseTargetProvider(
         (categoryId: widget.categoryId, dateStr: widget.dateStr))).value;
-    final targetSets = target?.$1;
-    final targetReps = target?.$2;
+    final targetSets = target?.sets;
+    final targetReps = target?.reps;
 
     // ── Pre-fill from last set ────────────────────────────────────────────
     if (!_prefilled && (todaySets.isNotEmpty || allSets.isNotEmpty)) {

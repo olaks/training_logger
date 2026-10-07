@@ -5,11 +5,11 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:drift_dev/api/migrations_native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqlite3/sqlite3.dart';
 import 'package:training_logger/database/database.dart';
 
 import 'generated_migrations/schema.dart';
 import 'generated_migrations/schema_v16.dart' as v16;
+import 'generated_migrations/schema_v17.dart' as v17;
 
 /// The migration chain is the one place a bug destroys data that no backup
 /// inside the app can recover, so these check the schema drift actually ends
@@ -33,17 +33,17 @@ void main() {
 
   test('upgrading from v15 lands on the same schema as a fresh install',
       () async {
-    // Build the file, then rewind it to look like a v15 database. v16 changed
-    // no tables, so the shape is right — only the version has to move.
-    final fresh = AppDatabase.forTesting(NativeDatabase(file));
-    await fresh.insertOrGetCategory('Bench');
-    await fresh.close();
+    // v16 changed no tables, so a v16 database marked as v15 has the right
+    // shape — only the version has to move.
+    final verifier = SchemaVerifier(GeneratedHelper());
+    final schema = await verifier.schemaAt(16);
+    final old = v16.DatabaseAtV16(schema.newConnection());
+    await old.customStatement(
+        "INSERT INTO exercise_categories (name) VALUES ('Bench')");
+    await old.customStatement('PRAGMA user_version = 15');
+    await old.close();
 
-    final raw = sqlite3.open(file.path);
-    raw.execute('PRAGMA user_version = 15');
-    raw.close();
-
-    final upgraded = AppDatabase.forTesting(NativeDatabase(file));
+    final upgraded = AppDatabase.forTesting(schema.newConnection());
     await upgraded.validateDatabaseSchema();
     expect((await upgraded.watchAllCategories().first).map((c) => c.name),
         contains('Bench'),
@@ -70,7 +70,7 @@ void main() {
     const catId = 1;
 
     final db = AppDatabase.forTesting(schema.newConnection());
-    await verifier.migrateAndValidate(db, 17);
+    await verifier.migrateAndValidate(db, db.schemaVersion);
 
     expect(await db.getCategoryImage(catId), [1, 2, 3, 4],
         reason: 'a photo stored on the category row must end up in the '
@@ -98,8 +98,32 @@ void main() {
     final verifier = SchemaVerifier(GeneratedHelper());
     final schema = await verifier.schemaAt(16);
     final db = AppDatabase.forTesting(schema.newConnection());
-    await verifier.migrateAndValidate(db, 17);
+    await verifier.migrateAndValidate(db, db.schemaVersion);
     expect(await indexesOf(db), expected);
+    await db.close();
+  });
+
+  test('v17 plans come through the upgrade active, with their workouts',
+      () async {
+    final verifier = SchemaVerifier(GeneratedHelper());
+    final schema = await verifier.schemaAt(17);
+
+    final old = v17.DatabaseAtV17(schema.newConnection());
+    await old.customStatement("INSERT INTO plans (id, name) VALUES (1, 'Week')");
+    await old.customStatement("INSERT INTO workouts (id, name) VALUES (1, 'Push')");
+    await old.customStatement(
+        'INSERT INTO plan_workouts (plan_id, workout_id, weekday) '
+        'VALUES (1, 1, 3)');
+    await old.close();
+
+    final db = AppDatabase.forTesting(schema.newConnection());
+    await verifier.migrateAndValidate(db, 18);
+
+    final plan = (await db.watchAllPlans().first).single;
+    expect(plan.name, 'Week');
+    expect(plan.active, isTrue,
+        reason: 'a plan that was scheduling workouts must keep doing so');
+    expect((await db.watchPlanWorkouts(1).first).single.weekday, 3);
     await db.close();
   });
 }

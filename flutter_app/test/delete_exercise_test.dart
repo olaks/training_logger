@@ -1,11 +1,13 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:drift_dev/api/migrations_native.dart';
 import 'package:training_logger/database/database.dart';
+
+import 'generated_migrations/schema.dart';
+import 'generated_migrations/schema_v16.dart' as v16;
 
 void main() {
   late AppDatabase db;
@@ -148,41 +150,24 @@ void main() {
     });
   });
 
-  group('migration to v16', () {
-    late Directory dir;
-    late File file;
+  test('migration to v16 clears rows orphaned by the old delete, then '
+      'enforces keys', () async {
+    // v16 changed no tables, so a v16 database marked as v15 has the right
+    // shape. Reproduce what the old deleteCategory left behind: the exercise
+    // gone, its sets still there.
+    final schema = await SchemaVerifier(GeneratedHelper()).schemaAt(16);
+    final old = v16.DatabaseAtV16(schema.newConnection());
+    await old.customStatement(
+        'INSERT INTO workout_sets (category_id, date_str, timestamp) '
+        "VALUES (99, '2026-01-01', 1)");
+    await old.customStatement('PRAGMA user_version = 15');
+    await old.close();
 
-    setUp(() {
-      // The test deliberately opens the same file twice, in sequence.
-      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-      dir = Directory.systemTemp.createTempSync('training_logger_test');
-      file = File('${dir.path}/db.sqlite');
-    });
-    tearDown(() => dir.deleteSync(recursive: true));
-
-    test('clears rows orphaned by the old delete, then enforces keys',
-        () async {
-      // Create the schema, then throw away the connection.
-      final fresh = AppDatabase.forTesting(NativeDatabase(file));
-      final bench = await fresh.insertOrGetCategory('Bench');
-      await fresh.insertSet(WorkoutSetsCompanion.insert(
-          categoryId: bench, dateStr: '2026-01-01', timestamp: 1));
-      await fresh.close();
-
-      // Reproduce what the old deleteCategory left behind: the exercise gone,
-      // its sets still there. Rewind the version so the upgrade path runs.
-      final raw = sqlite3.open(file.path);
-      raw.execute('DELETE FROM exercise_categories WHERE id = $bench');
-      raw.execute('PRAGMA user_version = 15');
-      expect(raw.select('SELECT * FROM workout_sets'), hasLength(1));
-      raw.close();
-
-      final upgraded = AppDatabase.forTesting(NativeDatabase(file));
-      expect(await upgraded.watchWorkoutDates().first, isEmpty,
-          reason: 'the orphaned day should no longer look trained');
-      final fk = await upgraded.customSelect('PRAGMA foreign_keys').getSingle();
-      expect(fk.read<int>('foreign_keys'), 1);
-      await upgraded.close();
-    });
+    final upgraded = AppDatabase.forTesting(schema.newConnection());
+    expect(await upgraded.watchWorkoutDates().first, isEmpty,
+        reason: 'the orphaned day should no longer look trained');
+    final fk = await upgraded.customSelect('PRAGMA foreign_keys').getSingle();
+    expect(fk.read<int>('foreign_keys'), 1);
+    await upgraded.close();
   });
 }
