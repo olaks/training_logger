@@ -193,4 +193,117 @@ void main() {
 
     expect(await restored.importFromJson(json), 2);
   });
+
+  group('periodized plans', () {
+    /// A running plan two sessions in, with a deload queued and an override.
+    Future<void> seedPeriodized(AppDatabase db) async {
+      final bench = await db.insertOrGetCategory('Bench');
+      final a = await db.insertWorkout('Strength A');
+      await db.addExerciseToWorkout(a, bench);
+      final we = (await db.watchExercisesForWorkout(a).first).single.$1;
+      await db.updateWorkoutTarget(we, 4, 6);
+      await db.updateWorkoutTargetRpe(we, 8);
+      final b = await db.insertWorkout('Board');
+      await db.addExerciseToWorkout(
+          b, await db.insertOrGetCategory('Board climbing'));
+
+      final plan = await db.insertPlan('Season');
+      final capacity = await db.insertPhase(plan, 'Capacity',
+          lengthPasses: 10, deloadEvery: 4);
+      await db.addSessionToPhase(capacity, a);
+      await db.addSessionToPhase(capacity, b);
+      await db.setPhaseExerciseTarget(capacity, bench, rpe: 7, reps: 10);
+      final strength =
+          await db.insertPhase(plan, 'Basic strength', lengthPasses: 8);
+      await db.addSessionToPhase(strength, a);
+
+      await db.finishSession(a, '2026-03-02');
+      await db.finishSession(b, '2026-03-04');
+      await db.finishSession(a, '2026-03-09');
+      await db.deloadNow('2026-03-09');
+    }
+
+    test('a running plan comes back where it stood', () async {
+      await seedPeriodized(source);
+      final before = (await source.activePlan())!.state;
+
+      final restored = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(restored.close);
+      await restored.importFromJson(await source.exportToJson());
+
+      final active = (await restored.activePlan())!;
+      expect(active.plan.name, 'Season');
+      expect(active.phases.map((p) => (p.name, p.lengthPasses, p.deloadEvery)),
+          [('Capacity', 10, 4), ('Basic strength', 8, null)]);
+      final s = active.state;
+      expect((s.phase?.name, s.pass, s.isDeload, s.totalPasses),
+          (before.phase?.name, before.pass, before.isDeload, before.totalPasses));
+      expect(s.remaining.length, before.remaining.length);
+
+      final workouts = await restored.watchAllWorkouts().first;
+      final a = workouts.firstWhere((w) => w.name == 'Strength A');
+      expect((await restored.watchExercisesForWorkout(a.id).first).single.$5, 8,
+          reason: 'the target RPE travels with the workout');
+      final override = (await restored
+              .watchPhaseExerciseTargets(active.phases.first.id)
+              .first)
+          .single;
+      expect((override.targetRpe, override.targetReps), (7, 10));
+    });
+
+    test('re-importing the backup adds no second copy of the plan', () async {
+      await seedPeriodized(source);
+      final json = await source.exportToJson();
+
+      final restored = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(restored.close);
+      await restored.importFromJson(json);
+      await restored.importFromJson(json);
+
+      final active = (await restored.activePlan())!;
+      expect(active.phases, hasLength(2));
+      expect(active.events, hasLength(4));
+      expect(active.rotations[active.phases.first.id], hasLength(2));
+    });
+
+    test('an imported running plan waits while another runs', () async {
+      await seedPeriodized(source);
+      final json = await source.exportToJson();
+
+      final restored = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(restored.close);
+      final mine = await restored.insertPlan('Mine');
+      final w = await restored.insertWorkout('Push');
+      await restored.addSessionToPhase(
+          await restored.insertPhase(mine, 'Base', lengthPasses: 4), w);
+      await restored.importFromJson(json);
+
+      expect((await restored.activePlan())?.plan.id, mine);
+    });
+
+    test('a shared plan carries its phases and targets but not the progress',
+        () async {
+      await seedPeriodized(source);
+      final planId = (await source.activePlan())!.plan.id;
+      final json = await source.exportPlanToJson(planId);
+
+      final restored = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(restored.close);
+      await restored.importPlanFromJson(json);
+
+      final active = (await restored.activePlan())!;
+      expect(active.phases.map((p) => p.name), ['Capacity', 'Basic strength']);
+      expect(active.state.pass, 1, reason: 'it starts from the beginning');
+      expect(active.events, isEmpty);
+      expect(active.state.remaining, hasLength(2));
+      final override = (await restored
+              .watchPhaseExerciseTargets(active.phases.first.id)
+              .first)
+          .single;
+      expect(override.targetRpe, 7);
+      final a = (await restored.watchAllWorkouts().first)
+          .firstWhere((w) => w.name == 'Strength A');
+      expect((await restored.watchExercisesForWorkout(a.id).first).single.$5, 8);
+    });
+  });
 }

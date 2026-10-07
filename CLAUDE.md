@@ -48,7 +48,7 @@ is torn down so drift's stream-close timer can run.
 ### Stack
 
 - **State management:** Riverpod 3 (providers + `Notifier` for transient UI state)
-- **Database:** Drift (SQLite) with code generation — schema version 17, foreign keys enforced
+- **Database:** Drift (SQLite) with code generation — schema version 18, foreign keys enforced
 - **Routing:** go_router (URL-based, important for web)
 - **UI:** Material 3 with custom dark themes (4 accent colors)
 
@@ -60,7 +60,7 @@ is torn down so drift's stream-close timer can run.
 | `providers/` | Riverpod providers: `dbProvider` singleton, stream providers for reactive data, `TrackNotifier` for stepper state, `DbMutations` extension for writes |
 | `screens/` | UI organized by feature: `home/`, `exercises/`, `detail/` (Track/History/Graph tabs, edit-set sheet, shared set inputs), `plans/`, `import/`, `settings/`, `hangboard/`, `inspiration/`, `load/` (ACWR card, charts, method explainer) |
 | `theme/` | Material 3 theme builder and accent color definitions |
-| `utils/` | Date formatting, climbing grade scales (Font/V-scale), display formatters, `PhaseCountdown` (shared by all three timers), body-weight lookup, `training_load.dart` (load metrics + ACWR), file picking, undo snackbar |
+| `utils/` | Date formatting, climbing grade scales (Font/V-scale), display formatters, `PhaseCountdown` (shared by all three timers), body-weight lookup, `training_load.dart` (load metrics + ACWR), `periodization.dart` (periodized-plan resolver), file picking, undo snackbar |
 
 ### Data flow
 
@@ -92,6 +92,22 @@ what make a backup import ambiguous.
 `importFromJson` builds its "already here" lookups once up front rather than
 querying per row — a full history is thousands of rows, and they all import
 inside one transaction.
+
+### Periodized plans
+
+A plan with rows in `PlanPhases` is periodized: it runs its phases in order,
+each lasting a number of *passes* through its rotation (`PhaseSessions`), which
+the UI calls weeks. Missed days don't move it; only sessions do. Its weekday
+`PlanWorkouts` are ignored, and at most one periodized plan is active at a
+time (`setPlanActive`, `insertPhase`). Inactive plans schedule nothing.
+
+Where a plan stands is never stored. `PlanEvents` logs done, skip, "deload now"
+and "move on to the next phase", and `resolvePlan` in
+`utils/periodization.dart` replays it — so undo is deleting an event, and
+editing a phase mid-plan just re-resolves. A deload pass forces every target to
+RPE 5; `resolveTarget` layers a workout exercise's own target, the phase's
+`PhaseExerciseTargets` override, and the deload. `activePlanProvider` and
+`exerciseTargetProvider` are what the UI reads.
 
 ### Training load / ACWR
 
