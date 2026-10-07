@@ -1944,6 +1944,35 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// Where [active] stood on [dateStr], with the sessions to look at first
+  /// for that day: today and later, the plan as it stands and what is still
+  /// due; a past day, the plan before that day's first session and the
+  /// sessions done or skipped on it. Null for a past day it logged nothing on.
+  static (PlanState?, List<int>) _planStateOn(
+      ActivePlan active, String dateStr) {
+    if (dateStr.compareTo(dateStrFrom(DateTime.now())) >= 0) {
+      return (active.state, active.state.remaining);
+    }
+    final thatDay = [
+      for (final e in active.events)
+        if (e.dateStr == dateStr && e.workoutId != null) e,
+    ]..sort(_byTime);
+    if (thatDay.isEmpty) return (null, const []);
+    final first = thatDay.first;
+    final before = [
+      for (final e in active.events)
+        if (_byTime(e, first) < 0) e,
+    ];
+    return (
+      resolvePlan(active.phases, active.rotations, before),
+      [for (final e in thatDay) e.workoutId!],
+    );
+  }
+
+  static int _byTime(PlanEvent x, PlanEvent y) => x.timestamp != y.timestamp
+      ? x.timestamp.compareTo(y.timestamp)
+      : x.id.compareTo(y.id);
+
   /// [activePlan], again whenever anything it is built from changes.
   Stream<ActivePlan?> watchActivePlan() => customSelect(
         'SELECT 1',
@@ -2088,10 +2117,12 @@ class AppDatabase extends _$AppDatabase {
 
   /// An exercise's target on [dateStr], or null if nothing plans it.
   ///
-  /// The running phase of a periodized plan comes first: if the exercise is in
-  /// one of its sessions, that session's target applies, with the phase's
-  /// override and any deload on top. Otherwise a weekly plan scheduling it on
-  /// that day supplies the target as written.
+  /// The periodized plan comes first: if the exercise is in one of the
+  /// phase's sessions, that session's target applies, with the phase's
+  /// override and any deload on top. Today and later that is the plan as it
+  /// stands; a past day gets the plan as it stood before that day's first
+  /// session, and nothing from the plan if it logged none that day. Otherwise
+  /// a weekly plan scheduling it on that day supplies the target as written.
   Stream<Target?> watchExerciseTarget(int categoryId, String dateStr) =>
       customSelect(
         'SELECT 1',
@@ -2103,15 +2134,17 @@ class AppDatabase extends _$AppDatabase {
 
   Future<Target?> _exerciseTarget(int categoryId, String dateStr) async {
     final active = await activePlan();
-    final phase = active?.state.phase;
-    if (active != null && phase != null) {
-      // Sessions still due this pass first, so the target is the one about
-      // to be trained when the exercise turns up in more than one.
+    final (state, preferred) = active == null
+        ? (null, const <int>[])
+        : _planStateOn(active, dateStr);
+    final phase = state?.phase;
+    if (active != null && state != null && phase != null) {
+      // Sessions of that day first, so the target is the one being trained
+      // when the exercise turns up in more than one.
       final rotation = active.rotations[phase.id] ?? const <int>[];
-      final remaining = active.state.remaining;
       final ordered = [
-        ...remaining,
-        ...rotation.where((w) => !remaining.contains(w)),
+        ...preferred,
+        ...rotation.where((w) => !preferred.contains(w)),
       ];
       for (final workoutId in ordered) {
         final we = await (select(workoutExercises)
@@ -2130,7 +2163,7 @@ class AppDatabase extends _$AppDatabase {
         return resolveTarget(
           Target(sets: we.targetSets, reps: we.targetReps, rpe: we.targetRpe),
           override,
-          deload: active.state.isDeload,
+          deload: state.isDeload,
         );
       }
     }

@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:training_logger/database/database.dart';
+import 'package:training_logger/utils/format_utils.dart';
 
 /// Building and running a periodized plan through the database. Where the
 /// plan stands is replayed by `utils/periodization.dart` (tested on its own);
@@ -190,6 +191,8 @@ void main() {
   });
 
   group('targets', () {
+    final today = dateStrFrom(DateTime.now());
+
     /// Bench in workout [w] at 4×6 @ RPE 8.
     Future<int> benchIn(int w) async {
       final bench = await db.insertOrGetCategory('Bench');
@@ -243,7 +246,7 @@ void main() {
       final bench = await benchIn(p.a);
       await db.setPhaseExerciseTarget(p.phase, bench, rpe: 7);
 
-      final t = await db.watchExerciseTarget(bench, '2026-03-02').first;
+      final t = await db.watchExerciseTarget(bench, today).first;
       expect((t?.sets, t?.reps, t?.rpe), (4, 6, 7));
     });
 
@@ -251,9 +254,9 @@ void main() {
       final p = await capacityPlan();
       final bench = await benchIn(p.a);
       await db.setPhaseExerciseTarget(p.phase, bench, rpe: 9);
-      await db.deloadNow('2026-03-02');
+      await db.deloadNow(today);
 
-      final t = await db.watchExerciseTarget(bench, '2026-03-02').first;
+      final t = await db.watchExerciseTarget(bench, today).first;
       expect((t?.rpe, t?.isDeload), (5, true));
     });
 
@@ -268,13 +271,38 @@ void main() {
       expect(await db.watchPhaseExerciseTargets(p.phase).first, isEmpty);
     });
 
+    test('a past day shows the target as it stood that day', () async {
+      final p = await capacityPlan();
+      final bench = await benchIn(p.a);
+      await db.setPhaseExerciseTarget(p.phase, bench, rpe: 7);
+      // The first week is done that day; the week after is a deload.
+      await db.finishSession(p.a, '2026-03-02');
+      await db.finishSession(p.b, '2026-03-02');
+      await db.deloadNow(today);
+
+      final then = await db.watchExerciseTarget(bench, '2026-03-02').first;
+      expect((then?.rpe, then?.isDeload), (7, false),
+          reason: 'the deload came after');
+      final now = await db.watchExerciseTarget(bench, today).first;
+      expect((now?.rpe, now?.isDeload), (5, true));
+    });
+
+    test('a past day the plan has no session on has no periodized target',
+        () async {
+      final p = await capacityPlan();
+      final bench = await benchIn(p.a);
+      await db.finishSession(p.a, '2026-03-02');
+
+      expect(await db.watchExerciseTarget(bench, '2026-03-01').first, isNull);
+    });
+
     test('an exercise outside the running phase has no periodized target',
         () async {
       await capacityPlan();
       final other = await db.insertWorkout('Legs');
       final bench = await benchIn(other);
 
-      expect(await db.watchExerciseTarget(bench, '2026-03-02').first, isNull);
+      expect(await db.watchExerciseTarget(bench, today).first, isNull);
     });
   });
 
