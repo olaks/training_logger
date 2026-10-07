@@ -736,10 +736,17 @@ class AppDatabase extends _$AppDatabase {
 
     late int planId;
     await transaction(() async {
+      // Names match ignoring case, first match winning, as everywhere else.
+      final allPlans = await select(plans).get();
+      final workoutIdByName = <String, int>{};
+      for (final w in await select(workouts).get()) {
+        workoutIdByName.putIfAbsent(w.name.toLowerCase(), () => w.id);
+      }
+      final catIdByName = <String, int>{};
+
       // ── Plan ──────────────────────────────────────────────────────────
-      final existingPlan = (await (select(plans)
-            ..where((t) => t.name.equals(planName)))
-          .get())
+      final existingPlan = allPlans
+          .where((p) => p.name.toLowerCase() == planName.toLowerCase())
           .firstOrNull;
       final inProgress = existingPlan != null &&
           await (select(planEvents)
@@ -749,8 +756,7 @@ class AppDatabase extends _$AppDatabase {
               null;
       if (existingPlan == null || inProgress) {
         final name = inProgress
-            ? _uniqueName(
-                (await select(plans).get()).map((p) => p.name), planName)
+            ? _uniqueName(allPlans.map((p) => p.name), planName)
             : planName;
         planId = await into(plans).insert(PlansCompanion.insert(name: name));
       } else {
@@ -759,71 +765,41 @@ class AppDatabase extends _$AppDatabase {
       }
 
       // ── Workouts (merge by name; create missing with their exercises) ─
-      final workoutIdByName = <String, int>{};
-      final catIdByName     = <String, int>{};
-
       for (final w in workoutsJson) {
         final name  = w['name'] as String;
         final notes = (w['notes'] as String?) ?? '';
+        if (workoutIdByName.containsKey(name.toLowerCase())) continue;
 
-        final existingW = (await (select(workouts)
-              ..where((t) => t.name.equals(name)))
-            .get())
-            .firstOrNull;
+        final wId = await into(workouts).insert(
+            WorkoutsCompanion.insert(name: name, notes: Value(notes)));
+        workoutIdByName[name.toLowerCase()] = wId;
 
-        int wId;
-        if (existingW != null) {
-          wId = existingW.id;
-        } else {
-          wId = await into(workouts).insert(
-              WorkoutsCompanion.insert(name: name, notes: Value(notes)));
+        final exList =
+            (w['exercises'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        for (final we in exList) {
+          final exName = we['name'] as String;
+          final catId = catIdByName[exName.toLowerCase()] ??= await
+              insertOrGetCategory(exName, groupName: we['group'] as String?);
 
-          final exList =
-              (w['exercises'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-          for (final we in exList) {
-            final exName = we['name'] as String;
-            final group  = we['group'] as String?;
-
-            int catId;
-            if (catIdByName.containsKey(exName)) {
-              catId = catIdByName[exName]!;
-            } else {
-              catId = await insertOrGetCategory(exName, groupName: group);
-              catIdByName[exName] = catId;
-            }
-
-            await into(workoutExercises).insert(
-              WorkoutExercisesCompanion.insert(
-                workoutId:  wId,
-                categoryId: catId,
-                targetSets: Value((we['targetSets'] as num?)?.toInt()),
-                targetReps: Value((we['targetReps'] as num?)?.toInt()),
-                targetRpe:  Value((we['targetRpe']  as num?)?.toInt()),
-                sortOrder:  Value((we['sortOrder']  as num?)?.toInt() ?? 0),
-              ),
-            );
-          }
+          await into(workoutExercises).insert(
+            WorkoutExercisesCompanion.insert(
+              workoutId:  wId,
+              categoryId: catId,
+              targetSets: Value((we['targetSets'] as num?)?.toInt()),
+              targetReps: Value((we['targetReps'] as num?)?.toInt()),
+              targetRpe:  Value((we['targetRpe']  as num?)?.toInt()),
+              sortOrder:  Value((we['sortOrder']  as num?)?.toInt() ?? 0),
+            ),
+          );
         }
-        workoutIdByName[name] = wId;
       }
 
       // ── Assignments ───────────────────────────────────────────────────
+      // A workout missing from "workouts" (hand-edited JSON) is still found
+      // if the library already has it.
       for (final a in assignmentsJson) {
-        final woName = a['workout'] as String?;
-        if (woName == null || woName.isEmpty) continue;
-
-        int? woId = workoutIdByName[woName];
-        if (woId == null) {
-          // Fallback for hand-edited JSON that references a workout
-          // already in the library but not listed under "workouts".
-          final existing = (await (select(workouts)
-                ..where((t) => t.name.equals(woName)))
-              .get())
-              .firstOrNull;
-          if (existing == null) continue;
-          woId = existing.id;
-          workoutIdByName[woName] = woId;
-        }
+        final woId = workoutIdByName[(a['workout'] as String? ?? '').toLowerCase()];
+        if (woId == null) continue;
 
         await into(planWorkouts).insert(PlanWorkoutsCompanion.insert(
           planId:    planId,
@@ -837,20 +813,26 @@ class AppDatabase extends _$AppDatabase {
       final phasesJson =
           (planJson['phases'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       if (phasesJson.isNotEmpty) {
+        final running = (await activePlan())?.plan.id;
         final existing = await (select(planPhases)
               ..where((t) => t.planId.equals(planId)))
             .get();
         for (final phase in existing) {
           await deletePhase(phase.id);
         }
-        final workoutByName = {
-          for (final w in await select(workouts).get()) w.name: w.id,
-          ...workoutIdByName,
-        };
+        // Exercises a target names but no workout brought in.
+        for (final p in phasesJson) {
+          for (final t in (p['targets'] as List? ?? []).cast<Map<String, dynamic>>()) {
+            final exName = t['exercise'] as String;
+            catIdByName[exName.toLowerCase()] ??=
+                await insertOrGetCategory(exName);
+          }
+        }
         await _phasesFromJson(planId, phasesJson,
-            workoutId: (name) => workoutByName[name],
-            categoryId: (name) async =>
-                catIdByName[name] ?? await insertOrGetCategory(name));
+            workoutId: (name) => workoutIdByName[name.toLowerCase()],
+            categoryId: (name) => catIdByName[name.toLowerCase()]);
+        final active = existingPlan == null || inProgress || existingPlan.active;
+        await _settleRunningPlan(planId, active, running);
       }
     });
     return planId;
@@ -917,60 +899,83 @@ class AppDatabase extends _$AppDatabase {
     ];
   }
 
-  /// Adds [phasesJson] (as written by [_phasesToJson]) to [planId], after any
-  /// phases it has. Sessions, targets and log entries naming a workout or
-  /// exercise that can't be found are dropped rather than failing the import.
+  /// Adds [phasesJson] (as written by [_phasesToJson]) to [planId], which
+  /// has no phases. Sessions and targets naming a workout or exercise that
+  /// can't be found are dropped rather than failing the import; a log entry
+  /// keeps its place without its workout, the way deleting one leaves it.
   ///
-  /// A plan that would make a second running periodized plan is paused.
+  /// Each phase is one insert, for its id; everything under them goes in as a
+  /// single batch, so a year of log entries isn't a statement apiece.
   Future<void> _phasesFromJson(
     int planId,
     List<Map<String, dynamic>> phasesJson, {
     required int? Function(String name) workoutId,
-    required Future<int?> Function(String name) categoryId,
+    required int? Function(String name) categoryId,
   }) async {
-    final running = await activePlan();
-    for (final p in phasesJson) {
-      final phaseId = await insertPhase(planId, p['name'] as String,
-          lengthPasses: (p['lengthPasses'] as num).toInt(),
-          deloadEvery: (p['deloadEvery'] as num?)?.toInt());
+    final sessions = <PhaseSessionsCompanion>[];
+    final targets  = <PhaseExerciseTargetsCompanion>[];
+    final events   = <PlanEventsCompanion>[];
+    for (var i = 0; i < phasesJson.length; i++) {
+      final p = phasesJson[i];
+      final phaseId = await into(planPhases).insert(PlanPhasesCompanion.insert(
+        planId:       planId,
+        name:         p['name'] as String,
+        lengthPasses: (p['lengthPasses'] as num).toInt(),
+        deloadEvery:  Value((p['deloadEvery'] as num?)?.toInt()),
+        sortOrder:    Value(i),
+      ));
 
-      for (final name in (p['sessions'] as List? ?? []).cast<String>()) {
-        final w = workoutId(name);
-        if (w != null) await addSessionToPhase(phaseId, w);
+      final names = (p['sessions'] as List? ?? []).cast<String>();
+      for (var j = 0; j < names.length; j++) {
+        final w = workoutId(names[j]);
+        if (w == null) continue;
+        sessions.add(PhaseSessionsCompanion.insert(
+            phaseId: phaseId, workoutId: w, sortOrder: Value(j)));
       }
       for (final t in (p['targets'] as List? ?? []).cast<Map<String, dynamic>>()) {
-        final c = await categoryId(t['exercise'] as String);
+        final c = categoryId(t['exercise'] as String);
         if (c == null) continue;
-        await setPhaseExerciseTarget(phaseId, c,
-            rpe: (t['rpe'] as num?)?.toInt(),
-            sets: (t['sets'] as num?)?.toInt(),
-            reps: (t['reps'] as num?)?.toInt());
+        targets.add(PhaseExerciseTargetsCompanion.insert(
+          phaseId:    phaseId,
+          categoryId: c,
+          targetRpe:  Value((t['rpe']  as num?)?.toInt()),
+          targetSets: Value((t['sets'] as num?)?.toInt()),
+          targetReps: Value((t['reps'] as num?)?.toInt()),
+        ));
       }
       for (final e in (p['log'] as List? ?? []).cast<Map<String, dynamic>>()) {
         final kind = PlanEventKind.values
             .where((k) => k.name == e['kind'])
             .firstOrNull;
         if (kind == null) continue;
-        // An entry whose workout can't be found keeps its place in the log
-        // without one, the way deleting a workout leaves it.
         final workoutName = e['workout'] as String?;
-        final w = workoutName == null ? null : workoutId(workoutName);
-        await into(planEvents).insert(PlanEventsCompanion.insert(
-          planId: planId,
-          phaseId: phaseId,
-          workoutId: Value(w),
-          pass: Value((e['pass'] as num?)?.toInt()),
+        events.add(PlanEventsCompanion.insert(
+          planId:     planId,
+          phaseId:    phaseId,
+          workoutId:  Value(workoutName == null ? null : workoutId(workoutName)),
+          pass:       Value((e['pass'] as num?)?.toInt()),
           closesPass: Value(e['closesPass'] as bool? ?? false),
-          dateStr: e['date'] as String,
-          timestamp: (e['timestamp'] as num).toInt(),
-          kind: kind,
+          dateStr:    e['date'] as String,
+          timestamp:  (e['timestamp'] as num).toInt(),
+          kind:       kind,
         ));
       }
     }
-    if (running != null && running.plan.id != planId) {
-      await (update(plans)..where((t) => t.id.equals(planId)))
-          .write(const PlansCompanion(active: Value(false)));
-    }
+    await batch((b) => b
+      ..insertAll(phaseSessions, sessions)
+      ..insertAll(phaseExerciseTargets, targets)
+      ..insertAll(planEvents, events));
+  }
+
+  /// Pauses [planId], just given phases, if [runningPlanId] — the periodized
+  /// plan already running — is another plan. Returns the plan running now.
+  Future<int?> _settleRunningPlan(
+      int planId, bool active, int? runningPlanId) async {
+    if (!active) return runningPlanId;
+    if (runningPlanId == null || runningPlanId == planId) return planId;
+    await (update(plans)..where((t) => t.id.equals(planId)))
+        .write(const PlansCompanion(active: Value(false)));
+    return runningPlanId;
   }
 
   // ── Export / Import backup ────────────────────────────────────────────────
@@ -1243,9 +1248,17 @@ class AppDatabase extends _$AppDatabase {
       // ── Plans ─────────────────────────────────────────────────────────
       final plansData = (data['plans'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       final planIdByName = <String, int>{};
+      final planActive = <int, bool>{};
       for (final p in await select(plans).get()) {
         planIdByName.putIfAbsent(p.name.toLowerCase(), () => p.id);
+        planActive[p.id] = p.active;
       }
+      final periodized = (await (selectOnly(planPhases, distinct: true)
+                ..addColumns([planPhases.planId]))
+              .get())
+          .map((r) => r.read(planPhases.planId)!)
+          .toSet();
+      var runningPlanId = (await activePlan())?.plan.id;
       final existingAssignments = (await select(planWorkouts).get())
           .map((pw) => (pw.planId, pw.workoutId))
           .toSet();
@@ -1256,19 +1269,23 @@ class AppDatabase extends _$AppDatabase {
 
         var planId = planIdByName[key];
         if (planId == null) {
-          planId = await into(plans).insert(PlansCompanion.insert(
-              name: name, active: Value(p['active'] as bool? ?? true)));
+          final active = p['active'] as bool? ?? true;
+          planId = await into(plans).insert(
+              PlansCompanion.insert(name: name, active: Value(active)));
           planIdByName[key] = planId;
+          planActive[planId] = active;
         }
 
         // Phases only go into a plan that has none: one already periodized
         // here keeps its own, as everything already present does.
         final phasesData =
             (p['phases'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-        if (phasesData.isNotEmpty && !await _isPeriodized(planId)) {
+        if (phasesData.isNotEmpty && periodized.add(planId)) {
           await _phasesFromJson(planId, phasesData,
               workoutId: (name) => workoutIdByName[name.toLowerCase()],
-              categoryId: (name) async => catIdByName[name.toLowerCase()]);
+              categoryId: (name) => catIdByName[name.toLowerCase()]);
+          runningPlanId = await _settleRunningPlan(
+              planId, planActive[planId]!, runningPlanId);
         }
 
         final assignments = (p['assignments'] as List?)?.cast<Map<String, dynamic>>() ?? [];

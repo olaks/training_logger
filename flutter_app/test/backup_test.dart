@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, QueryExecutor, QueryInterceptor, Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:training_logger/database/database.dart';
@@ -315,6 +316,63 @@ void main() {
           ['Capacity', 'Basic strength']);
     });
 
+    test('a long plan log imports in no more statements than a short one',
+        () async {
+      /// Statements a backup import runs, for a plan [weeks] passes in.
+      Future<int> statementsFor(int weeks) async {
+        final from = AppDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(from.close);
+        final plan = await from.insertPlan('Season');
+        final phase =
+            await from.insertPhase(plan, 'Capacity', lengthPasses: 40);
+        final ws = [
+          for (final name in ['A', 'B', 'C'])
+            await from.insertWorkout(name),
+        ];
+        for (final w in ws) {
+          await from.addSessionToPhase(phase, w);
+        }
+        for (var i = 0; i < weeks; i++) {
+          for (final w in ws) {
+            await from.finishSession(w, '2026-03-02');
+          }
+        }
+
+        final counter = _StatementCounter();
+        final into = AppDatabase.forTesting(
+            NativeDatabase.memory().interceptWith(counter));
+        addTearDown(into.close);
+        await into.insertPlan('warm up the connection');
+        counter.count = 0;
+        await into.importFromJson(await from.exportToJson());
+        return counter.count;
+      }
+
+      expect(await statementsFor(20), await statementsFor(2),
+          reason: 'the log is written in one go, not a statement per entry');
+    });
+
+    test('a shared plan matches workouts and plans whatever their case',
+        () async {
+      final plan = await source.insertPlan('season');
+      final mine = await source.insertWorkout('strength a');
+      final other = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(other.close);
+      await seedPeriodized(other);
+      final json =
+          await other.exportPlanToJson((await other.activePlan())!.plan.id);
+
+      await source.importPlanFromJson(json);
+
+      expect(await source.watchAllPlans().first, hasLength(1),
+          reason: '"Season" is the plan already here as "season"');
+      final workouts = await source.watchAllWorkouts().first;
+      expect(workouts.where((w) => w.name.toLowerCase() == 'strength a'),
+          hasLength(1));
+      final sessions = await source.watchPlanSessions(plan).first;
+      expect(sessions.map((s) => s.workoutId), contains(mine));
+    });
+
     test('a shared plan carries its phases and targets but not the progress',
         () async {
       await seedPeriodized(source);
@@ -340,4 +398,46 @@ void main() {
       expect((await restored.watchExercisesForWorkout(a.id).first).single.$5, 8);
     });
   });
+}
+
+/// Counts every statement that reaches the database.
+class _StatementCounter extends QueryInterceptor {
+  var count = 0;
+
+  @override
+  Future<void> runBatched(QueryExecutor executor, statements) {
+    count++;
+    return super.runBatched(executor, statements);
+  }
+
+  @override
+  Future<void> runCustom(QueryExecutor executor, String statement, List<Object?> args) {
+    count++;
+    return super.runCustom(executor, statement, args);
+  }
+
+  @override
+  Future<int> runInsert(QueryExecutor executor, String statement, List<Object?> args) {
+    count++;
+    return super.runInsert(executor, statement, args);
+  }
+
+  @override
+  Future<int> runUpdate(QueryExecutor executor, String statement, List<Object?> args) {
+    count++;
+    return super.runUpdate(executor, statement, args);
+  }
+
+  @override
+  Future<int> runDelete(QueryExecutor executor, String statement, List<Object?> args) {
+    count++;
+    return super.runDelete(executor, statement, args);
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+      QueryExecutor executor, String statement, List<Object?> args) {
+    count++;
+    return super.runSelect(executor, statement, args);
+  }
 }
