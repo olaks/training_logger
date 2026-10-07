@@ -281,6 +281,40 @@ void main() {
       expect((await restored.activePlan())?.plan.id, mine);
     });
 
+    test('a shared plan imported over one in progress lands beside it',
+        () async {
+      await seedPeriodized(source);
+      final running = (await source.activePlan())!;
+      final json = await source.exportPlanToJson(running.plan.id);
+
+      await source.importPlanFromJson(json);
+
+      final plans = await source.watchAllPlans().first;
+      expect(plans.map((p) => p.name), unorderedEquals(['Season', 'Season 2']));
+      final after = (await source.activePlan())!;
+      expect(after.plan.id, running.plan.id, reason: 'the running plan runs on');
+      expect(after.events, hasLength(running.events.length),
+          reason: 'none of its progress is lost');
+      expect(after.state.pass, running.state.pass);
+    });
+
+    test('a shared plan imported over an unstarted one replaces its phases',
+        () async {
+      final plan = await source.insertPlan('Season');
+      await source.insertPhase(plan, 'Old', lengthPasses: 3);
+      final other = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(other.close);
+      await seedPeriodized(other);
+      final json =
+          await other.exportPlanToJson((await other.activePlan())!.plan.id);
+
+      await source.importPlanFromJson(json);
+
+      expect(await source.watchAllPlans().first, hasLength(1));
+      expect((await source.watchPlanPhases(plan).first).map((p) => p.name),
+          ['Capacity', 'Basic strength']);
+    });
+
     test('a shared plan carries its phases and targets but not the progress',
         () async {
       await seedPeriodized(source);

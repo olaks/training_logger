@@ -96,6 +96,21 @@ void main() {
       expect((await db.activePlan())!.state.phase?.name, 'Basic strength');
     });
 
+    test('moving on from the last phase stops the plan, so the next one '
+        'can run', () async {
+      final p = await capacityPlan();
+      await db.advancePhase('2026-03-02');
+
+      expect(await db.activePlan(), isNull);
+      final plan = (await db.watchAllPlans().first).single;
+      expect(plan.active, isFalse);
+
+      final next = await capacityPlan();
+      expect((await db.activePlan())?.plan.id, next.plan,
+          reason: 'nothing is running, so the new plan starts at once');
+      expect(p.plan, isNot(next.plan));
+    });
+
     test('an event can be undone', () async {
       final p = await capacityPlan();
       final event = await db.finishSession(p.a, '2026-03-02');

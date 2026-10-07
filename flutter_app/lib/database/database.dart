@@ -709,7 +709,9 @@ class AppDatabase extends _$AppDatabase {
   /// Imports a single-plan JSON produced by [exportPlanToJson].
   ///
   /// - Plan: matched by name. If present, the plan id is preserved and its
-  ///   weekday/date assignments are REPLACED. Otherwise a new plan is created.
+  ///   weekday/date assignments and phases are REPLACED — unless it has
+  ///   logged progress, which a replace would wipe: then the import becomes
+  ///   a new plan named "[name] 2". Otherwise a new plan is created.
   /// - Workouts: merged by name. Existing workouts are reused as-is; only
   ///   workouts with names not yet in the library are created (with their
   ///   exercise list).
@@ -739,8 +741,18 @@ class AppDatabase extends _$AppDatabase {
             ..where((t) => t.name.equals(planName)))
           .get())
           .firstOrNull;
-      if (existingPlan == null) {
-        planId = await into(plans).insert(PlansCompanion.insert(name: planName));
+      final inProgress = existingPlan != null &&
+          await (select(planEvents)
+                ..where((t) => t.planId.equals(existingPlan.id))
+                ..limit(1))
+              .getSingleOrNull() !=
+              null;
+      if (existingPlan == null || inProgress) {
+        final name = inProgress
+            ? _uniqueName(
+                (await select(plans).get()).map((p) => p.name), planName)
+            : planName;
+        planId = await into(plans).insert(PlansCompanion.insert(name: name));
       } else {
         planId = existingPlan.id;
         await (delete(planWorkouts)..where((t) => t.planId.equals(planId))).go();
@@ -1399,12 +1411,16 @@ class AppDatabase extends _$AppDatabase {
       into(workouts).insert(WorkoutsCompanion.insert(name: name));
 
   /// Returns [base] if no workout uses it, otherwise "[base] 2", "[base] 3"…
-  Future<String> uniqueWorkoutName(String base) async {
-    final taken = (await select(workouts).get()).map((w) => w.name).toSet();
-    if (!taken.contains(base)) return base;
+  Future<String> uniqueWorkoutName(String base) async =>
+      _uniqueName((await select(workouts).get()).map((w) => w.name), base);
+
+  /// [base] if it isn't in [taken], otherwise "[base] 2", "[base] 3"…
+  static String _uniqueName(Iterable<String> taken, String base) {
+    final names = taken.toSet();
+    if (!names.contains(base)) return base;
     for (var n = 2;; n++) {
       final candidate = '$base $n';
-      if (!taken.contains(candidate)) return candidate;
+      if (!names.contains(candidate)) return candidate;
     }
   }
 
@@ -1949,9 +1965,18 @@ class AppDatabase extends _$AppDatabase {
   Future<PlanEvent?> deloadNow(String dateStr) =>
       _recordEvent(PlanEventKind.deload, dateStr);
 
-  /// Moves the active plan on from its current phase, done or not.
-  Future<PlanEvent?> advancePhase(String dateStr) =>
-      _recordEvent(PlanEventKind.advance, dateStr);
+  /// Moves the active plan on from its current phase, done or not. Moving on
+  /// from the last phase ends the plan, which stops it running so that the
+  /// next periodized plan can.
+  Future<PlanEvent?> advancePhase(String dateStr) => transaction(() async {
+        final event = await _recordEvent(PlanEventKind.advance, dateStr);
+        if (event == null) return null;
+        if ((await activePlan())!.state.planComplete) {
+          await (update(plans)..where((t) => t.id.equals(event.planId)))
+              .write(const PlansCompanion(active: Value(false)));
+        }
+        return event;
+      });
 
   Future<PlanEvent?> _recordSession(
       PlanEventKind kind, int workoutId, String dateStr) async {
