@@ -73,7 +73,7 @@ void main() {
     final workout = await db.insertWorkout('Push day');
     await db.addExerciseToWorkout(workout, cat);
     await db.updateWorkoutTarget(
-        (await db.watchExercisesForWorkout(workout).first).single.$1, 3, 10);
+        (await db.watchExercisesForWorkout(workout).first).single.id, 3, 10);
     final plan = await db.insertPlan('Week');
     await db.assignWorkoutToPlan(plan, workout, weekday: 3);
 
@@ -85,8 +85,8 @@ void main() {
 
     expect((await db.watchAllWorkouts().first).single.name, 'Push day');
     final members = await db.watchExercisesForWorkout(workout).first;
-    expect(members.single.$3, 3);
-    expect(members.single.$4, 10);
+    expect(members.single.target.sets, 3);
+    expect(members.single.target.reps, 10);
     expect((await db.watchPlanWorkouts(plan).first).single.weekday, 3);
   });
 

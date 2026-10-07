@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
 import '../../utils/format_utils.dart';
+import '../../utils/periodization.dart';
 import '../../utils/undo_snackbar.dart';
 
 class WorkoutDetailScreen extends ConsumerStatefulWidget {
@@ -155,21 +156,20 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                     onReorder: (oldIndex, newIndex) {
                       if (newIndex > oldIndex) newIndex--;
                       final ids =
-                          exercises.map((e) => e.$1).toList();
+                          exercises.map((e) => e.id).toList();
                       final moved = ids.removeAt(oldIndex);
                       ids.insert(newIndex, moved);
                       ref.reorderWorkoutExercises(
                           widget.workoutId, ids);
                     },
                     itemBuilder: (_, i) {
-                      final (weId, cat, targetSets, targetReps, targetRpe) =
-                          exercises[i];
-                      final targetLabel =
-                          formatTarget(targetSets, targetReps, targetRpe) ??
-                              'set target';
-                      final hasTarget = targetSets != null ||
-                          targetReps != null ||
-                          targetRpe != null;
+                      final WorkoutExerciseEntry(
+                        id: weId,
+                        category: cat,
+                        :target,
+                      ) = exercises[i];
+                      final targetLabel = formatTarget(target) ?? 'set target';
+                      final hasTarget = !target.isEmpty;
                       return ListTile(
                         key: ValueKey(weId),
                         leading: ReorderableDragStartListener(
@@ -189,8 +189,8 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             GestureDetector(
-                              onTap: () => _showEditTargetDialog(context,
-                                  weId, targetSets, targetReps, targetRpe),
+                              onTap: () => _showEditTargetDialog(
+                                  context, weId, target),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8, vertical: 4),
@@ -264,14 +264,13 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
         '/workout-session/${widget.workoutId}/${dateStrFrom(DateTime.now())}');
   }
 
-  void _showEditTargetDialog(BuildContext context, int weId,
-      int? currentSets, int? currentReps, int? currentRpe) {
+  void _showEditTargetDialog(BuildContext context, int weId, Target current) {
     final setsCtrl = TextEditingController(
-        text: currentSets?.toString() ?? '');
+        text: current.sets?.toString() ?? '');
     final repsCtrl = TextEditingController(
-        text: currentReps?.toString() ?? '');
+        text: current.reps?.toString() ?? '');
     final rpeCtrl = TextEditingController(
-        text: currentRpe?.toString() ?? '');
+        text: current.rpe?.toString() ?? '');
 
     void save(BuildContext dialogCtx) {
       final sets = setsCtrl.text.trim().isEmpty
@@ -356,7 +355,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
   }
 
   void _showAddExercisesSheet(BuildContext context,
-      List<(int, ExerciseCategory, int?, int?, int?)> exercises) {
+      List<WorkoutExerciseEntry> exercises) {
     showModalBottomSheet(
       context: context,
       useRootNavigator: false,
@@ -471,7 +470,7 @@ class _AddExercisesSheetState extends ConsumerState<_AddExercisesSheet> {
     final currentExercises = ref.watch(workoutExercisesProvider(widget.workoutId)).value ?? [];
     final countById = <int, int>{};
     for (final e in currentExercises) {
-      countById[e.$2.id] = (countById[e.$2.id] ?? 0) + 1;
+      countById[e.category.id] = (countById[e.category.id] ?? 0) + 1;
     }
 
     // Filter by query (name or group)

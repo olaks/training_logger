@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:training_logger/database/database.dart';
 import 'package:training_logger/utils/format_utils.dart';
+import 'package:training_logger/utils/periodization.dart';
 
 /// Building and running a periodized plan through the database. Where the
 /// plan stands is replayed by `utils/periodization.dart` (tested on its own);
@@ -198,8 +199,8 @@ void main() {
       final bench = await db.insertOrGetCategory('Bench');
       await db.addExerciseToWorkout(w, bench);
       final we = (await db.watchExercisesForWorkout(w).first)
-          .firstWhere((r) => r.$2.id == bench)
-          .$1;
+          .firstWhere((r) => r.category.id == bench)
+          .id;
       await db.updateWorkoutTarget(we, 4, 6);
       await db.updateWorkoutTargetRpe(we, 8);
       return bench;
@@ -209,16 +210,16 @@ void main() {
       final w = await db.insertWorkout('Push');
       await benchIn(w);
 
-      expect((await db.watchExercisesForWorkout(w).first).single.$5, 8);
+      expect((await db.watchExercisesForWorkout(w).first).single.target.rpe, 8);
     });
 
     test('setting the sets and reps target leaves the RPE alone', () async {
       final w = await db.insertWorkout('Push');
       await benchIn(w);
-      final we = (await db.watchExercisesForWorkout(w).first).single.$1;
+      final we = (await db.watchExercisesForWorkout(w).first).single.id;
       await db.updateWorkoutTarget(we, 5, 5);
 
-      expect((await db.watchExercisesForWorkout(w).first).single.$5, 8);
+      expect((await db.watchExercisesForWorkout(w).first).single.target.rpe, 8);
     });
 
     test('a copied workout keeps its target RPEs', () async {
@@ -226,7 +227,7 @@ void main() {
       await benchIn(w);
       final copy = await db.duplicateWorkout(w);
 
-      expect((await db.watchExercisesForWorkout(copy).first).single.$5, 8);
+      expect((await db.watchExercisesForWorkout(copy).first).single.target.rpe, 8);
     });
 
     test("a weekly plan's exercise target includes the RPE", () async {
@@ -244,7 +245,7 @@ void main() {
     test("the running phase overrides the workout's RPE", () async {
       final p = await capacityPlan();
       final bench = await benchIn(p.a);
-      await db.setPhaseExerciseTarget(p.phase, bench, rpe: 7);
+      await db.setPhaseExerciseTarget(p.phase, bench, const Target(rpe: 7));
 
       final t = await db.watchExerciseTarget(bench, today).first;
       expect((t?.sets, t?.reps, t?.rpe), (4, 6, 7));
@@ -253,7 +254,7 @@ void main() {
     test('a deload pass drops the target to RPE 5', () async {
       final p = await capacityPlan();
       final bench = await benchIn(p.a);
-      await db.setPhaseExerciseTarget(p.phase, bench, rpe: 9);
+      await db.setPhaseExerciseTarget(p.phase, bench, const Target(rpe: 9));
       await db.deloadNow(today);
 
       final t = await db.watchExerciseTarget(bench, today).first;
@@ -263,10 +264,11 @@ void main() {
     test('a phase override with nothing set is removed', () async {
       final p = await capacityPlan();
       final bench = await benchIn(p.a);
-      await db.setPhaseExerciseTarget(p.phase, bench, rpe: 7, sets: 3);
+      await db.setPhaseExerciseTarget(
+          p.phase, bench, const Target(rpe: 7, sets: 3));
       expect(await db.watchPhaseExerciseTargets(p.phase).first, hasLength(1));
 
-      await db.setPhaseExerciseTarget(p.phase, bench);
+      await db.setPhaseExerciseTarget(p.phase, bench, const Target());
 
       expect(await db.watchPhaseExerciseTargets(p.phase).first, isEmpty);
     });
@@ -274,7 +276,7 @@ void main() {
     test('a past day shows the target as it stood that day', () async {
       final p = await capacityPlan();
       final bench = await benchIn(p.a);
-      await db.setPhaseExerciseTarget(p.phase, bench, rpe: 7);
+      await db.setPhaseExerciseTarget(p.phase, bench, const Target(rpe: 7));
       // The first week is done that day; the week after is a deload.
       await db.finishSession(p.a, '2026-03-02');
       await db.finishSession(p.b, '2026-03-02');
@@ -312,7 +314,7 @@ void main() {
       final p = await capacityPlan(deloadEvery: 4);
       final bench = await db.insertOrGetCategory('Bench');
       await db.addExerciseToWorkout(p.a, bench);
-      await db.setPhaseExerciseTarget(p.phase, bench, rpe: 7);
+      await db.setPhaseExerciseTarget(p.phase, bench, const Target(rpe: 7));
       await db.finishSession(p.a, '2026-03-02');
       await db.deloadNow('2026-03-02');
       return (plan: p.plan, phase: p.phase, a: p.a, b: p.b, bench: bench);

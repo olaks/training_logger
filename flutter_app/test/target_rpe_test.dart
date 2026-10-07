@@ -23,7 +23,7 @@ void main() {
     bench = await db.insertOrGetCategory('Bench');
     workout = await db.insertWorkout('Push');
     await db.addExerciseToWorkout(workout, bench);
-    final we = (await db.watchExercisesForWorkout(workout).first).single.$1;
+    final we = (await db.watchExercisesForWorkout(workout).first).single.id;
     await db.updateWorkoutTarget(we, 4, 6);
     await db.updateWorkoutTargetRpe(we, 8);
   });

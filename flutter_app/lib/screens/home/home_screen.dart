@@ -235,9 +235,9 @@ class HomeScreen extends ConsumerWidget {
             (
               w,
               [
-                for (final row
+                for (final e
                     in ref.watch(workoutExercisesProvider(id)).value ?? const [])
-                  row.$2,
+                  e.category,
               ],
               doneToday.contains(id),
             ),
@@ -247,13 +247,15 @@ class HomeScreen extends ConsumerWidget {
   Future<void> _recordSession(BuildContext context, WidgetRef ref,
       Workout workout, String dateStr, {required bool skip}) async {
     final messenger = ScaffoldMessenger.of(context);
+    // Like every plan undo, this one may outlive the widget that offered it.
+    final db = ref.read(dbProvider);
     final event = skip
-        ? await ref.skipSession(workout.id, dateStr)
-        : await ref.finishSession(workout.id, dateStr);
+        ? await db.skipSession(workout.id, dateStr)
+        : await db.finishSession(workout.id, dateStr);
     if (event == null) return;
     showUndoSnackBar(messenger,
         message: skip ? 'Skipped ${workout.name}' : '${workout.name} done',
-        onUndo: () => ref.undoPlanEvent(event.id));
+        onUndo: () => db.deletePlanEvent(event.id));
   }
 
   /// Turns the exercises logged on [dateStr] into a reusable workout, using

@@ -85,7 +85,7 @@ class _WorkoutSessionScreenState
 
     // Clamp index if the exercise list shrinks while we're on it.
     final safeIndex = _index.clamp(0, exercises.length - 1);
-    final current = exercises[safeIndex].$2;
+    final current = exercises[safeIndex].category;
     final isLast = safeIndex == exercises.length - 1;
     final primary = Theme.of(context).colorScheme.primary;
 
@@ -127,7 +127,7 @@ class _WorkoutSessionScreenState
             count: exercises.length,
             currentIndex: safeIndex,
             doneFlags: [
-              for (final e in exercises) loggedIds.contains(e.$2.id),
+              for (final e in exercises) loggedIds.contains(e.category.id),
             ],
             primary: primary,
             onTap: (i) => _goTo(i, exercises.length),
@@ -138,7 +138,7 @@ class _WorkoutSessionScreenState
               itemCount: exercises.length,
               onPageChanged: (i) => setState(() => _index = i),
               itemBuilder: (_, i) {
-                final cat = exercises[i].$2;
+                final cat = exercises[i].category;
                 return TrackTab(
                   key: ValueKey('session-${cat.id}'),
                   categoryId: cat.id,

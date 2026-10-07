@@ -103,12 +103,7 @@ class _PhaseDone extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final phase = active.state.phase!;
-    final ordered = [...active.phases]
-      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    final next = ordered
-        .skipWhile((p) => p.id != phase.id)
-        .skip(1)
-        .firstOrNull;
+    final next = active.nextPhase;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -673,9 +673,7 @@ class AppDatabase extends _$AppDatabase {
           return <String, dynamic>{
             'name': ec.name,
             if (ec.groupName  != null) 'group':      ec.groupName,
-            if (we.targetSets != null) 'targetSets': we.targetSets,
-            if (we.targetReps != null) 'targetReps': we.targetReps,
-            if (we.targetRpe  != null) 'targetRpe':  we.targetRpe,
+            ..._targetToJson(we.target),
             'sortOrder': we.sortOrder,
           };
         }).toList(),
@@ -785,9 +783,9 @@ class AppDatabase extends _$AppDatabase {
             WorkoutExercisesCompanion.insert(
               workoutId:  wId,
               categoryId: catId,
-              targetSets: Value((we['targetSets'] as num?)?.toInt()),
-              targetReps: Value((we['targetReps'] as num?)?.toInt()),
-              targetRpe:  Value((we['targetRpe']  as num?)?.toInt()),
+              targetSets: Value(_targetFromJson(we).sets),
+              targetReps: Value(_targetFromJson(we).reps),
+              targetRpe:  Value(_targetFromJson(we).rpe),
               sortOrder:  Value((we['sortOrder']  as num?)?.toInt() ?? 0),
             ),
           );
@@ -855,6 +853,20 @@ class AppDatabase extends _$AppDatabase {
           ..where((t) => t.planId.equals(planId))
           ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
         .get();
+    final ids = phases.map((p) => p.id);
+    final sessions = await (select(phaseSessions)
+          ..where((t) => t.phaseId.isIn(ids))
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .get();
+    final targets = await (select(phaseExerciseTargets)
+          ..where((t) => t.phaseId.isIn(ids)))
+        .get();
+    final log = withLog
+        ? await (select(planEvents)
+              ..where((t) => t.planId.equals(planId))
+              ..orderBy([(t) => OrderingTerm.asc(t.timestamp)]))
+            .get()
+        : const <PlanEvent>[];
     return [
       for (final phase in phases)
         <String, dynamic>{
@@ -862,42 +874,47 @@ class AppDatabase extends _$AppDatabase {
           'lengthPasses': phase.lengthPasses,
           if (phase.deloadEvery != null) 'deloadEvery': phase.deloadEvery,
           'sessions': [
-            for (final s in await (select(phaseSessions)
-                  ..where((t) => t.phaseId.equals(phase.id))
-                  ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
-                .get())
-              workoutNames[s.workoutId] ?? '',
+            for (final s in sessions)
+              if (s.phaseId == phase.id) workoutNames[s.workoutId] ?? '',
           ],
           'targets': [
-            for (final t in await (select(phaseExerciseTargets)
-                  ..where((t) => t.phaseId.equals(phase.id)))
-                .get())
-              <String, dynamic>{
-                'exercise': categoryNames[t.categoryId] ?? '',
-                if (t.targetRpe  != null) 'rpe':  t.targetRpe,
-                if (t.targetSets != null) 'sets': t.targetSets,
-                if (t.targetReps != null) 'reps': t.targetReps,
-              },
+            for (final t in targets)
+              if (t.phaseId == phase.id)
+                <String, dynamic>{
+                  'exercise': categoryNames[t.categoryId] ?? '',
+                  ..._targetToJson(t.target),
+                },
           ],
           if (withLog)
             'log': [
-              for (final e in await (select(planEvents)
-                    ..where((t) => t.phaseId.equals(phase.id))
-                    ..orderBy([(t) => OrderingTerm.asc(t.timestamp)]))
-                  .get())
-                <String, dynamic>{
-                  'kind': e.kind.name,
-                  if (e.workoutId != null)
-                    'workout': workoutNames[e.workoutId] ?? '',
-                  if (e.pass != null) 'pass': e.pass,
-                  if (e.closesPass) 'closesPass': true,
-                  'date': e.dateStr,
-                  'timestamp': e.timestamp,
-                },
+              for (final e in log)
+                if (e.phaseId == phase.id)
+                  <String, dynamic>{
+                    'kind': e.kind.name,
+                    if (e.workoutId != null)
+                      'workout': workoutNames[e.workoutId] ?? '',
+                    if (e.pass != null) 'pass': e.pass,
+                    if (e.closesPass) 'closesPass': true,
+                    'date': e.dateStr,
+                    'timestamp': e.timestamp,
+                  },
             ],
         },
     ];
   }
+
+  /// A target in the export format, leaving out what isn't set.
+  static Map<String, dynamic> _targetToJson(Target t) => {
+        if (t.sets != null) 'targetSets': t.sets,
+        if (t.reps != null) 'targetReps': t.reps,
+        if (t.rpe  != null) 'targetRpe':  t.rpe,
+      };
+
+  static Target _targetFromJson(Map<String, dynamic> json) => Target(
+        sets: (json['targetSets'] as num?)?.toInt(),
+        reps: (json['targetReps'] as num?)?.toInt(),
+        rpe:  (json['targetRpe']  as num?)?.toInt(),
+      );
 
   /// Adds [phasesJson] (as written by [_phasesToJson]) to [planId], which
   /// has no phases. Sessions and targets naming a workout or exercise that
@@ -935,12 +952,13 @@ class AppDatabase extends _$AppDatabase {
       for (final t in (p['targets'] as List? ?? []).cast<Map<String, dynamic>>()) {
         final c = categoryId(t['exercise'] as String);
         if (c == null) continue;
+        final target = _targetFromJson(t);
         targets.add(PhaseExerciseTargetsCompanion.insert(
           phaseId:    phaseId,
           categoryId: c,
-          targetRpe:  Value((t['rpe']  as num?)?.toInt()),
-          targetSets: Value((t['sets'] as num?)?.toInt()),
-          targetReps: Value((t['reps'] as num?)?.toInt()),
+          targetRpe:  Value(target.rpe),
+          targetSets: Value(target.sets),
+          targetReps: Value(target.reps),
         ));
       }
       for (final e in (p['log'] as List? ?? []).cast<Map<String, dynamic>>()) {
@@ -967,8 +985,9 @@ class AppDatabase extends _$AppDatabase {
       ..insertAll(planEvents, events));
   }
 
-  /// Pauses [planId], just given phases, if [runningPlanId] — the periodized
-  /// plan already running — is another plan. Returns the plan running now.
+  /// Pauses [planId], just made periodized, if [runningPlanId] — the
+  /// periodized plan already running — is another plan. Returns the plan
+  /// running now.
   Future<int?> _settleRunningPlan(
       int planId, bool active, int? runningPlanId) async {
     if (!active) return runningPlanId;
@@ -1030,9 +1049,7 @@ class AppDatabase extends _$AppDatabase {
         if (w.notes.isNotEmpty) 'notes': w.notes,
         'exercises': exList.map((we) => <String, dynamic>{
           'name': catNameById[we.categoryId] ?? '',
-          if (we.targetSets != null) 'targetSets': we.targetSets,
-          if (we.targetReps != null) 'targetReps': we.targetReps,
-          if (we.targetRpe  != null) 'targetRpe':  we.targetRpe,
+          ..._targetToJson(we.target),
           'sortOrder': we.sortOrder,
         }).toList(),
       };
@@ -1236,9 +1253,9 @@ class AppDatabase extends _$AppDatabase {
             WorkoutExercisesCompanion.insert(
               workoutId:  wId,
               categoryId: catId,
-              targetSets: Value((we['targetSets'] as num?)?.toInt()),
-              targetReps: Value((we['targetReps'] as num?)?.toInt()),
-              targetRpe:  Value((we['targetRpe']  as num?)?.toInt()),
+              targetSets: Value(_targetFromJson(we).sets),
+              targetReps: Value(_targetFromJson(we).reps),
+              targetRpe:  Value(_targetFromJson(we).rpe),
               sortOrder:  Value(sortOrder),
             ),
           );
@@ -1605,9 +1622,8 @@ class AppDatabase extends _$AppDatabase {
         }
       });
 
-  // Returns (weId, category, targetSets, targetReps, targetRpe) per exercise in
-  // the workout.
-  Stream<List<(int, ExerciseCategory, int?, int?, int?)>> watchExercisesForWorkout(int workoutId) {
+  /// The exercises in a workout, in its order, each with its target.
+  Stream<List<WorkoutExerciseEntry>> watchExercisesForWorkout(int workoutId) {
     final q = select(workoutExercises).join([
       innerJoin(exerciseCategories,
           exerciseCategories.id.equalsExp(workoutExercises.categoryId)),
@@ -1620,12 +1636,10 @@ class AppDatabase extends _$AppDatabase {
     return q.watch().map((rows) => rows
         .map((r) {
           final we = r.readTable(workoutExercises);
-          return (
-            we.id,
-            r.readTable(exerciseCategories),
-            we.targetSets,
-            we.targetReps,
-            we.targetRpe,
+          return WorkoutExerciseEntry(
+            id: we.id,
+            category: r.readTable(exerciseCategories),
+            target: we.target,
           );
         })
         .toList());
@@ -1657,15 +1671,23 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> addExerciseToWorkout(int workoutId, int categoryId) async {
     // Assign next sort order so new exercises appear at the end
-    final maxRow = await customSelect(
-      'SELECT MAX(sort_order) AS m FROM workout_exercises WHERE workout_id = ?',
-      variables: [Variable.withInt(workoutId)],
-    ).getSingleOrNull();
-    final next = (maxRow?.readNullable<int>('m') ?? -1) + 1;
+    final next =
+        await _nextSortOrder('workout_exercises', 'workout_id', workoutId);
     await into(workoutExercises).insert(
       WorkoutExercisesCompanion.insert(
           workoutId: workoutId, categoryId: categoryId, sortOrder: Value(next)),
     );
+  }
+
+  /// The sort order that puts a new row last among [table]'s rows whose
+  /// [parentColumn] is [parentId].
+  Future<int> _nextSortOrder(
+      String table, String parentColumn, int parentId) async {
+    final row = await customSelect(
+      'SELECT MAX(sort_order) AS m FROM $table WHERE $parentColumn = ?',
+      variables: [Variable.withInt(parentId)],
+    ).getSingleOrNull();
+    return (row?.readNullable<int>('m') ?? -1) + 1;
   }
 
   Future<int> removeExerciseFromWorkout(int weId) =>
@@ -1790,17 +1812,9 @@ class AppDatabase extends _$AppDatabase {
           {required int lengthPasses, int? deloadEvery}) =>
       transaction(() async {
     if (!await _isPeriodized(planId)) {
-      final running = await activePlan();
-      if (running != null && running.plan.id != planId) {
-        await (update(plans)..where((t) => t.id.equals(planId)))
-            .write(const PlansCompanion(active: Value(false)));
-      }
+      await _settleRunningPlan(planId, true, (await activePlan())?.plan.id);
     }
-    final maxRow = await customSelect(
-      'SELECT MAX(sort_order) AS m FROM plan_phases WHERE plan_id = ?',
-      variables: [Variable.withInt(planId)],
-    ).getSingleOrNull();
-    final next = (maxRow?.readNullable<int>('m') ?? -1) + 1;
+    final next = await _nextSortOrder('plan_phases', 'plan_id', planId);
     return into(planPhases).insert(PlanPhasesCompanion.insert(
       planId: planId,
       name: name,
@@ -1812,11 +1826,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Appends [workoutId] to the end of a phase's rotation.
   Future<int> addSessionToPhase(int phaseId, int workoutId) async {
-    final maxRow = await customSelect(
-      'SELECT MAX(sort_order) AS m FROM phase_sessions WHERE phase_id = ?',
-      variables: [Variable.withInt(phaseId)],
-    ).getSingleOrNull();
-    final next = (maxRow?.readNullable<int>('m') ?? -1) + 1;
+    final next = await _nextSortOrder('phase_sessions', 'phase_id', phaseId);
     return into(phaseSessions).insert(PhaseSessionsCompanion.insert(
       phaseId: phaseId,
       workoutId: workoutId,
@@ -1906,21 +1916,21 @@ class AppDatabase extends _$AppDatabase {
   /// Sets a phase's targets for one exercise, replacing any it had. Leaving
   /// every field null removes the override, so the workout's own targets
   /// apply again.
-  Future<void> setPhaseExerciseTarget(int phaseId, int categoryId,
-          {int? rpe, int? sets, int? reps}) =>
+  Future<void> setPhaseExerciseTarget(
+          int phaseId, int categoryId, Target target) =>
       transaction(() async {
         await (delete(phaseExerciseTargets)
               ..where((t) =>
                   t.phaseId.equals(phaseId) & t.categoryId.equals(categoryId)))
             .go();
-        if (rpe == null && sets == null && reps == null) return;
+        if (target.isEmpty) return;
         await into(phaseExerciseTargets).insert(
             PhaseExerciseTargetsCompanion.insert(
           phaseId: phaseId,
           categoryId: categoryId,
-          targetRpe: Value(rpe),
-          targetSets: Value(sets),
-          targetReps: Value(reps),
+          targetRpe: Value(target.rpe),
+          targetSets: Value(target.sets),
+          targetReps: Value(target.reps),
         ));
       });
 
@@ -2163,25 +2173,23 @@ class AppDatabase extends _$AppDatabase {
         ...preferred,
         ...rotation.where((w) => !preferred.contains(w)),
       ];
-      for (final workoutId in ordered) {
-        final we = await (select(workoutExercises)
-              ..where((t) =>
-                  t.workoutId.equals(workoutId) &
-                  t.categoryId.equals(categoryId))
-              ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)])
-              ..limit(1))
-            .getSingleOrNull();
-        if (we == null) continue;
+      final slots = await (select(workoutExercises)
+            ..where((t) =>
+                t.workoutId.isIn(ordered) & t.categoryId.equals(categoryId))
+            ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          .get();
+      final we = ordered
+          .map((w) => slots.where((s) => s.workoutId == w).firstOrNull)
+          .nonNulls
+          .firstOrNull;
+      if (we != null) {
         final override = await (select(phaseExerciseTargets)
               ..where((t) =>
                   t.phaseId.equals(phase.id) & t.categoryId.equals(categoryId))
               ..limit(1))
             .getSingleOrNull();
-        return resolveTarget(
-          Target(sets: we.targetSets, reps: we.targetReps, rpe: we.targetRpe),
-          override,
-          deload: state.isDeload,
-        );
+        return resolveTarget(we.target, override?.target,
+            deload: state.isDeload);
       }
     }
 
@@ -2321,5 +2329,27 @@ class ActivePlan {
     required this.rotations,
     required this.events,
     required this.state,
+  });
+
+  /// The phase after the current one, or null if it is the last.
+  PlanPhase? get nextPhase {
+    final current = state.phase;
+    if (current == null) return null;
+    final ordered = [...phases]
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return ordered.skipWhile((p) => p.id != current.id).skip(1).firstOrNull;
+  }
+}
+
+/// One exercise in a workout: its slot id, the exercise, and its target.
+class WorkoutExerciseEntry {
+  final int id;
+  final ExerciseCategory category;
+  final Target target;
+
+  const WorkoutExerciseEntry({
+    required this.id,
+    required this.category,
+    required this.target,
   });
 }

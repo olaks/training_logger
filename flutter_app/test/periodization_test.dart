@@ -394,15 +394,8 @@ void main() {
   group('resolveTarget', () {
     const base = Target(sets: 4, reps: 6, rpe: 8);
 
-    PhaseExerciseTarget override({int? rpe, int? sets, int? reps}) =>
-        PhaseExerciseTarget(
-          id: 1,
-          phaseId: 10,
-          categoryId: 1,
-          targetRpe: rpe,
-          targetSets: sets,
-          targetReps: reps,
-        );
+    Target override({int? rpe, int? sets, int? reps}) =>
+        Target(rpe: rpe, sets: sets, reps: reps);
 
     test("without a phase override the workout's own target stands", () {
       final t = resolveTarget(base, null, deload: false);

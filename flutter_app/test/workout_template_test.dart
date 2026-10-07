@@ -34,11 +34,11 @@ void main() {
       final wId = await db.createWorkoutFromDay('2026-08-30', 'Fri session');
       final rows = await db.watchExercisesForWorkout(wId).first;
 
-      expect(rows.map((r) => r.$2.name), ['Bench', 'Squat']);
-      expect(rows[0].$3, 3);  // three bench sets
-      expect(rows[0].$4, 5);  // all at 5 reps
-      expect(rows[1].$3, 1);
-      expect(rows[1].$4, 8);
+      expect(rows.map((r) => r.category.name), ['Bench', 'Squat']);
+      expect(rows[0].target.sets, 3);  // three bench sets
+      expect(rows[0].target.reps, 5);  // all at 5 reps
+      expect(rows[1].target.sets, 1);
+      expect(rows[1].target.reps, 8);
     });
 
     test('reps target is null when the sets disagree', () async {
@@ -49,8 +49,8 @@ void main() {
       final wId = await db.createWorkoutFromDay('2026-08-30', 'Pull day');
       final rows = await db.watchExercisesForWorkout(wId).first;
 
-      expect(rows.single.$3, 2);
-      expect(rows.single.$4, isNull);
+      expect(rows.single.target.sets, 2);
+      expect(rows.single.target.reps, isNull);
     });
 
     test('throws on a day with nothing logged', () {
@@ -69,7 +69,7 @@ void main() {
       await db.addExerciseToWorkout(srcId, b);
       await db.addExerciseToWorkout(srcId, a);
       final srcRows = await db.watchExercisesForWorkout(srcId).first;
-      await db.updateWorkoutTarget(srcRows.first.$1, 4, 10);
+      await db.updateWorkoutTarget(srcRows.first.id, 4, 10);
 
       final copyId = await db.duplicateWorkout(srcId);
       final copy = await db.watchAllWorkouts().first
@@ -78,9 +78,9 @@ void main() {
 
       expect(copy.name, 'Push Day (copy)');
       expect(copy.notes, 'warm up first');
-      expect(copyRows.map((r) => r.$2.name), ['B', 'A']); // order preserved
-      expect(copyRows.first.$3, 4);
-      expect(copyRows.first.$4, 10);
+      expect(copyRows.map((r) => r.category.name), ['B', 'A']); // order preserved
+      expect(copyRows.first.target.sets, 4);
+      expect(copyRows.first.target.reps, 10);
       // The original is untouched.
       expect((await db.watchExercisesForWorkout(srcId).first).length, 2);
     });

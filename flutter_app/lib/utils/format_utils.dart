@@ -1,3 +1,5 @@
+import 'periodization.dart';
+
 String dateStrFrom(DateTime dt) =>
     '${dt.year.toString().padLeft(4, '0')}-'
     '${dt.month.toString().padLeft(2, '0')}-'
@@ -28,13 +30,14 @@ String formatSet({double? weightKg, int? reps, int? timeSecs}) {
 
 /// A planned target, compact: `4×6 @ RPE 8`, `3 sets`, `RPE 7`, or null when
 /// nothing is set.
-String? formatTarget(int? sets, int? reps, int? rpe) {
+String? formatTarget(Target target) {
+  final Target(:sets, :reps, :rpe) = target;
   final volume = sets != null && reps != null
-      ? '$sets×$reps'
+      ? '$sets\u00d7$reps'
       : sets != null
           ? '$sets sets'
           : reps != null
-              ? '×$reps'
+              ? '\u00d7$reps'
               : null;
   if (rpe == null) return volume;
   return volume == null ? 'RPE $rpe' : '$volume @ RPE $rpe';

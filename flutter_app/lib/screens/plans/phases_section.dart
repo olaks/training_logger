@@ -441,12 +441,11 @@ class _PhaseTargetsSheet extends ConsumerWidget {
     };
     // An exercise in several sessions is listed once, with the first
     // session's target as its base — the override applies to all of them.
-    final exercises = <int, (ExerciseCategory, int?, int?, int?)>{};
+    final exercises = <int, WorkoutExerciseEntry>{};
     for (final w in workoutIds) {
-      for (final (_, cat, sets, reps, rpe)
-          in ref.watch(workoutExercisesProvider(w)).value ??
-              const <(int, ExerciseCategory, int?, int?, int?)>[]) {
-        exercises.putIfAbsent(cat.id, () => (cat, sets, reps, rpe));
+      for (final e in ref.watch(workoutExercisesProvider(w)).value ??
+          const <WorkoutExerciseEntry>[]) {
+        exercises.putIfAbsent(e.category.id, () => e);
       }
     }
     final primary = Theme.of(context).colorScheme.primary;
@@ -480,14 +479,15 @@ class _PhaseTargetsSheet extends ConsumerWidget {
               child: Text('No exercises in this phase\'s sessions yet.',
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
             ),
-          for (final (cat, sets, reps, rpe) in exercises.values)
+          for (final WorkoutExerciseEntry(category: cat, :target)
+              in exercises.values)
             Builder(builder: (context) {
               final o = overrides[cat.id];
-              final base = formatTarget(sets, reps, rpe);
+              final base = formatTarget(target);
               final phaseTarget = o == null
                   ? null
-                  : formatTarget(o.targetSets ?? sets, o.targetReps ?? reps,
-                      o.targetRpe ?? rpe);
+                  : formatTarget(
+                      resolveTarget(target, o.target, deload: false));
               return ListTile(
                 title: Text(cat.name),
                 subtitle: Text('Workout: ${base ?? 'no target'}',
@@ -523,9 +523,11 @@ class _PhaseTargetsSheet extends ConsumerWidget {
       ref.setPhaseExerciseTarget(
         phase.id,
         cat.id,
-        rpe: r != null && r >= 1 && r <= 10 ? r : null,
-        sets: clear ? null : parse(sets),
-        reps: clear ? null : parse(reps),
+        Target(
+          rpe: r != null && r >= 1 && r <= 10 ? r : null,
+          sets: clear ? null : parse(sets),
+          reps: clear ? null : parse(reps),
+        ),
       );
       Navigator.pop(dialogCtx);
     }

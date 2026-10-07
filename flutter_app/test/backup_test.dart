@@ -5,6 +5,7 @@ import 'package:drift/drift.dart'
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:training_logger/database/database.dart';
+import 'package:training_logger/utils/periodization.dart';
 
 /// The JSON export is the only way training history leaves the device, so a
 /// round trip has to come back whole.
@@ -48,7 +49,7 @@ void main() {
     await db.addExerciseToWorkout(workout, hang);
     await db.addExerciseToWorkout(workout, boulder);
     await db.updateWorkoutTarget(
-        (await db.watchExercisesForWorkout(workout).first).first.$1, 4, 6);
+        (await db.watchExercisesForWorkout(workout).first).first.id, 4, 6);
 
     final plan = await db.insertPlan('Winter');
     await db.assignWorkoutToPlan(plan, workout, weekday: 2);
@@ -94,9 +95,9 @@ void main() {
     expect(workouts.single.notes, 'Warm up first');
     final members =
         await restored.watchExercisesForWorkout(workouts.single.id).first;
-    expect(members.map((m) => m.$2.name), ['Edge Lift 18 mm', 'Comp Boulder']);
-    expect(members.first.$3, 4, reason: 'target sets');
-    expect(members.first.$4, 6, reason: 'target reps');
+    expect(members.map((m) => m.category.name), ['Edge Lift 18 mm', 'Comp Boulder']);
+    expect(members.first.target.sets, 4, reason: 'target sets');
+    expect(members.first.target.reps, 6, reason: 'target reps');
 
     final plans = await restored.watchAllPlans().first;
     final assignments =
@@ -201,7 +202,7 @@ void main() {
       final bench = await db.insertOrGetCategory('Bench');
       final a = await db.insertWorkout('Strength A');
       await db.addExerciseToWorkout(a, bench);
-      final we = (await db.watchExercisesForWorkout(a).first).single.$1;
+      final we = (await db.watchExercisesForWorkout(a).first).single.id;
       await db.updateWorkoutTarget(we, 4, 6);
       await db.updateWorkoutTargetRpe(we, 8);
       final b = await db.insertWorkout('Board');
@@ -213,7 +214,8 @@ void main() {
           lengthPasses: 10, deloadEvery: 4);
       await db.addSessionToPhase(capacity, a);
       await db.addSessionToPhase(capacity, b);
-      await db.setPhaseExerciseTarget(capacity, bench, rpe: 7, reps: 10);
+      await db.setPhaseExerciseTarget(
+          capacity, bench, const Target(rpe: 7, reps: 10));
       final strength =
           await db.insertPhase(plan, 'Basic strength', lengthPasses: 8);
       await db.addSessionToPhase(strength, a);
@@ -243,7 +245,7 @@ void main() {
 
       final workouts = await restored.watchAllWorkouts().first;
       final a = workouts.firstWhere((w) => w.name == 'Strength A');
-      expect((await restored.watchExercisesForWorkout(a.id).first).single.$5, 8,
+      expect((await restored.watchExercisesForWorkout(a.id).first).single.target.rpe, 8,
           reason: 'the target RPE travels with the workout');
       final override = (await restored
               .watchPhaseExerciseTargets(active.phases.first.id)
@@ -395,7 +397,7 @@ void main() {
       expect(override.targetRpe, 7);
       final a = (await restored.watchAllWorkouts().first)
           .firstWhere((w) => w.name == 'Strength A');
-      expect((await restored.watchExercisesForWorkout(a.id).first).single.$5, 8);
+      expect((await restored.watchExercisesForWorkout(a.id).first).single.target.rpe, 8);
     });
   });
 }

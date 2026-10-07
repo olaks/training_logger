@@ -53,7 +53,7 @@ final allWorkoutsProvider = StreamProvider<List<Workout>>((ref) =>
     ref.watch(dbProvider).watchAllWorkouts());
 
 final workoutExercisesProvider =
-    StreamProvider.family<List<(int, ExerciseCategory, int?, int?, int?)>, int>((ref, workoutId) =>
+    StreamProvider.family<List<WorkoutExerciseEntry>, int>((ref, workoutId) =>
         ref.watch(dbProvider).watchExercisesForWorkout(workoutId));
 
 final workoutsForExerciseProvider =
@@ -539,16 +539,10 @@ extension DbMutations on WidgetRef {
   Future<int> addSessionToPhase(int phaseId, int workoutId) =>
       db.addSessionToPhase(phaseId, workoutId);
   Future<int> removePhaseSession(int id) => db.removePhaseSession(id);
-  Future<void> setPhaseExerciseTarget(int phaseId, int categoryId,
-          {int? rpe, int? sets, int? reps}) =>
-      db.setPhaseExerciseTarget(phaseId, categoryId,
-          rpe: rpe, sets: sets, reps: reps);
-  Future<PlanEvent?> finishSession(int workoutId, String dateStr) =>
-      db.finishSession(workoutId, dateStr);
-  Future<PlanEvent?> skipSession(int workoutId, String dateStr) =>
-      db.skipSession(workoutId, dateStr);
-  Future<PlanEvent?> deloadNow(String dateStr) => db.deloadNow(dateStr);
+  Future<void> setPhaseExerciseTarget(
+          int phaseId, int categoryId, Target target) =>
+      db.setPhaseExerciseTarget(phaseId, categoryId, target);
+  // Finishing, skipping and "deload now" offer an undo that can outlive the
+  // widget, so those screens write through the database directly.
   Future<PlanEvent?> advancePhase(String dateStr) => db.advancePhase(dateStr);
-  Future<PlanEvent?> undoPlanEvent(int id) => db.deletePlanEvent(id);
-  Future<void> restorePlanEvent(PlanEvent e) => db.restorePlanEvent(e);
 }

@@ -181,18 +181,30 @@ class Target {
   final bool isDeload;
 
   const Target({this.sets, this.reps, this.rpe, this.isDeload = false});
+
+  /// No sets, reps or RPE set.
+  bool get isEmpty => sets == null && reps == null && rpe == null;
+}
+
+extension WorkoutExerciseTarget on WorkoutExercise {
+  Target get target =>
+      Target(sets: targetSets, reps: targetReps, rpe: targetRpe);
+}
+
+extension PhaseOverrideTarget on PhaseExerciseTarget {
+  Target get target =>
+      Target(sets: targetSets, reps: targetReps, rpe: targetRpe);
 }
 
 /// An exercise's target for a session: the workout's own [base], with the
 /// phase's [override] on top where it sets a field, and the RPE forced down to
 /// [kDeloadRpe] on a deload pass. Volume is left alone in a deload — it is the
 /// effort that comes down.
-Target resolveTarget(Target base, PhaseExerciseTarget? override,
-    {required bool deload}) {
+Target resolveTarget(Target base, Target? override, {required bool deload}) {
   return Target(
-    sets: override?.targetSets ?? base.sets,
-    reps: override?.targetReps ?? base.reps,
-    rpe: deload ? kDeloadRpe : override?.targetRpe ?? base.rpe,
+    sets: override?.sets ?? base.sets,
+    reps: override?.reps ?? base.reps,
+    rpe: deload ? kDeloadRpe : override?.rpe ?? base.rpe,
     isDeload: deload,
   );
 }
