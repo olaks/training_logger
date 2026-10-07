@@ -469,6 +469,17 @@ class PlanEvents extends Table with TableInfo {
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       $customConstraints: 'NULL REFERENCES workouts(id)');
+  late final GeneratedColumn<int> pass = GeneratedColumn<int>(
+      'pass', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NULL');
+  late final GeneratedColumn<int> closesPass = GeneratedColumn<int>(
+      'closes_pass', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NOT NULL DEFAULT 0 CHECK (closes_pass IN (0, 1))',
+      defaultValue: const CustomExpression('0'));
   late final GeneratedColumn<String> dateStr = GeneratedColumn<String>(
       'date_str', aliasedName, false,
       type: DriftSqlType.string,
@@ -485,8 +496,17 @@ class PlanEvents extends Table with TableInfo {
       requiredDuringInsert: true,
       $customConstraints: 'NOT NULL');
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, planId, phaseId, workoutId, dateStr, timestamp, kind];
+  List<GeneratedColumn> get $columns => [
+        id,
+        planId,
+        phaseId,
+        workoutId,
+        pass,
+        closesPass,
+        dateStr,
+        timestamp,
+        kind
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override

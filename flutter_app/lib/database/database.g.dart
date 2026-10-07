@@ -2439,6 +2439,21 @@ class $PlanEventsTable extends PlanEvents
       requiredDuringInsert: false,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('REFERENCES workouts (id)'));
+  static const VerificationMeta _passMeta = const VerificationMeta('pass');
+  @override
+  late final GeneratedColumn<int> pass = GeneratedColumn<int>(
+      'pass', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _closesPassMeta =
+      const VerificationMeta('closesPass');
+  @override
+  late final GeneratedColumn<bool> closesPass = GeneratedColumn<bool>(
+      'closes_pass', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("closes_pass" IN (0, 1))'),
+      defaultValue: const Constant(false));
   static const VerificationMeta _dateStrMeta =
       const VerificationMeta('dateStr');
   @override
@@ -2457,8 +2472,17 @@ class $PlanEventsTable extends PlanEvents
               type: DriftSqlType.int, requiredDuringInsert: true)
           .withConverter<PlanEventKind>($PlanEventsTable.$converterkind);
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, planId, phaseId, workoutId, dateStr, timestamp, kind];
+  List<GeneratedColumn> get $columns => [
+        id,
+        planId,
+        phaseId,
+        workoutId,
+        pass,
+        closesPass,
+        dateStr,
+        timestamp,
+        kind
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2487,6 +2511,16 @@ class $PlanEventsTable extends PlanEvents
     if (data.containsKey('workout_id')) {
       context.handle(_workoutIdMeta,
           workoutId.isAcceptableOrUnknown(data['workout_id']!, _workoutIdMeta));
+    }
+    if (data.containsKey('pass')) {
+      context.handle(
+          _passMeta, pass.isAcceptableOrUnknown(data['pass']!, _passMeta));
+    }
+    if (data.containsKey('closes_pass')) {
+      context.handle(
+          _closesPassMeta,
+          closesPass.isAcceptableOrUnknown(
+              data['closes_pass']!, _closesPassMeta));
     }
     if (data.containsKey('date_str')) {
       context.handle(_dateStrMeta,
@@ -2517,6 +2551,10 @@ class $PlanEventsTable extends PlanEvents
           .read(DriftSqlType.int, data['${effectivePrefix}phase_id'])!,
       workoutId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}workout_id']),
+      pass: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}pass']),
+      closesPass: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}closes_pass'])!,
       dateStr: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}date_str'])!,
       timestamp: attachedDatabase.typeMapping
@@ -2540,6 +2578,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
   final int planId;
   final int phaseId;
   final int? workoutId;
+  final int? pass;
+  final bool closesPass;
   final String dateStr;
   final int timestamp;
   final PlanEventKind kind;
@@ -2548,6 +2588,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
       required this.planId,
       required this.phaseId,
       this.workoutId,
+      this.pass,
+      required this.closesPass,
       required this.dateStr,
       required this.timestamp,
       required this.kind});
@@ -2560,6 +2602,10 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
     if (!nullToAbsent || workoutId != null) {
       map['workout_id'] = Variable<int>(workoutId);
     }
+    if (!nullToAbsent || pass != null) {
+      map['pass'] = Variable<int>(pass);
+    }
+    map['closes_pass'] = Variable<bool>(closesPass);
     map['date_str'] = Variable<String>(dateStr);
     map['timestamp'] = Variable<int>(timestamp);
     {
@@ -2576,6 +2622,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
       workoutId: workoutId == null && nullToAbsent
           ? const Value.absent()
           : Value(workoutId),
+      pass: pass == null && nullToAbsent ? const Value.absent() : Value(pass),
+      closesPass: Value(closesPass),
       dateStr: Value(dateStr),
       timestamp: Value(timestamp),
       kind: Value(kind),
@@ -2590,6 +2638,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
       planId: serializer.fromJson<int>(json['planId']),
       phaseId: serializer.fromJson<int>(json['phaseId']),
       workoutId: serializer.fromJson<int?>(json['workoutId']),
+      pass: serializer.fromJson<int?>(json['pass']),
+      closesPass: serializer.fromJson<bool>(json['closesPass']),
       dateStr: serializer.fromJson<String>(json['dateStr']),
       timestamp: serializer.fromJson<int>(json['timestamp']),
       kind: $PlanEventsTable.$converterkind
@@ -2604,6 +2654,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
       'planId': serializer.toJson<int>(planId),
       'phaseId': serializer.toJson<int>(phaseId),
       'workoutId': serializer.toJson<int?>(workoutId),
+      'pass': serializer.toJson<int?>(pass),
+      'closesPass': serializer.toJson<bool>(closesPass),
       'dateStr': serializer.toJson<String>(dateStr),
       'timestamp': serializer.toJson<int>(timestamp),
       'kind':
@@ -2616,6 +2668,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
           int? planId,
           int? phaseId,
           Value<int?> workoutId = const Value.absent(),
+          Value<int?> pass = const Value.absent(),
+          bool? closesPass,
           String? dateStr,
           int? timestamp,
           PlanEventKind? kind}) =>
@@ -2624,6 +2678,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
         planId: planId ?? this.planId,
         phaseId: phaseId ?? this.phaseId,
         workoutId: workoutId.present ? workoutId.value : this.workoutId,
+        pass: pass.present ? pass.value : this.pass,
+        closesPass: closesPass ?? this.closesPass,
         dateStr: dateStr ?? this.dateStr,
         timestamp: timestamp ?? this.timestamp,
         kind: kind ?? this.kind,
@@ -2634,6 +2690,9 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
       planId: data.planId.present ? data.planId.value : this.planId,
       phaseId: data.phaseId.present ? data.phaseId.value : this.phaseId,
       workoutId: data.workoutId.present ? data.workoutId.value : this.workoutId,
+      pass: data.pass.present ? data.pass.value : this.pass,
+      closesPass:
+          data.closesPass.present ? data.closesPass.value : this.closesPass,
       dateStr: data.dateStr.present ? data.dateStr.value : this.dateStr,
       timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
       kind: data.kind.present ? data.kind.value : this.kind,
@@ -2647,6 +2706,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
           ..write('planId: $planId, ')
           ..write('phaseId: $phaseId, ')
           ..write('workoutId: $workoutId, ')
+          ..write('pass: $pass, ')
+          ..write('closesPass: $closesPass, ')
           ..write('dateStr: $dateStr, ')
           ..write('timestamp: $timestamp, ')
           ..write('kind: $kind')
@@ -2655,8 +2716,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, planId, phaseId, workoutId, dateStr, timestamp, kind);
+  int get hashCode => Object.hash(id, planId, phaseId, workoutId, pass,
+      closesPass, dateStr, timestamp, kind);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2665,6 +2726,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
           other.planId == this.planId &&
           other.phaseId == this.phaseId &&
           other.workoutId == this.workoutId &&
+          other.pass == this.pass &&
+          other.closesPass == this.closesPass &&
           other.dateStr == this.dateStr &&
           other.timestamp == this.timestamp &&
           other.kind == this.kind);
@@ -2675,6 +2738,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
   final Value<int> planId;
   final Value<int> phaseId;
   final Value<int?> workoutId;
+  final Value<int?> pass;
+  final Value<bool> closesPass;
   final Value<String> dateStr;
   final Value<int> timestamp;
   final Value<PlanEventKind> kind;
@@ -2683,6 +2748,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
     this.planId = const Value.absent(),
     this.phaseId = const Value.absent(),
     this.workoutId = const Value.absent(),
+    this.pass = const Value.absent(),
+    this.closesPass = const Value.absent(),
     this.dateStr = const Value.absent(),
     this.timestamp = const Value.absent(),
     this.kind = const Value.absent(),
@@ -2692,6 +2759,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
     required int planId,
     required int phaseId,
     this.workoutId = const Value.absent(),
+    this.pass = const Value.absent(),
+    this.closesPass = const Value.absent(),
     required String dateStr,
     required int timestamp,
     required PlanEventKind kind,
@@ -2705,6 +2774,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
     Expression<int>? planId,
     Expression<int>? phaseId,
     Expression<int>? workoutId,
+    Expression<int>? pass,
+    Expression<bool>? closesPass,
     Expression<String>? dateStr,
     Expression<int>? timestamp,
     Expression<int>? kind,
@@ -2714,6 +2785,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
       if (planId != null) 'plan_id': planId,
       if (phaseId != null) 'phase_id': phaseId,
       if (workoutId != null) 'workout_id': workoutId,
+      if (pass != null) 'pass': pass,
+      if (closesPass != null) 'closes_pass': closesPass,
       if (dateStr != null) 'date_str': dateStr,
       if (timestamp != null) 'timestamp': timestamp,
       if (kind != null) 'kind': kind,
@@ -2725,6 +2798,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
       Value<int>? planId,
       Value<int>? phaseId,
       Value<int?>? workoutId,
+      Value<int?>? pass,
+      Value<bool>? closesPass,
       Value<String>? dateStr,
       Value<int>? timestamp,
       Value<PlanEventKind>? kind}) {
@@ -2733,6 +2808,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
       planId: planId ?? this.planId,
       phaseId: phaseId ?? this.phaseId,
       workoutId: workoutId ?? this.workoutId,
+      pass: pass ?? this.pass,
+      closesPass: closesPass ?? this.closesPass,
       dateStr: dateStr ?? this.dateStr,
       timestamp: timestamp ?? this.timestamp,
       kind: kind ?? this.kind,
@@ -2754,6 +2831,12 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
     if (workoutId.present) {
       map['workout_id'] = Variable<int>(workoutId.value);
     }
+    if (pass.present) {
+      map['pass'] = Variable<int>(pass.value);
+    }
+    if (closesPass.present) {
+      map['closes_pass'] = Variable<bool>(closesPass.value);
+    }
     if (dateStr.present) {
       map['date_str'] = Variable<String>(dateStr.value);
     }
@@ -2774,6 +2857,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
           ..write('planId: $planId, ')
           ..write('phaseId: $phaseId, ')
           ..write('workoutId: $workoutId, ')
+          ..write('pass: $pass, ')
+          ..write('closesPass: $closesPass, ')
           ..write('dateStr: $dateStr, ')
           ..write('timestamp: $timestamp, ')
           ..write('kind: $kind')
@@ -7607,6 +7692,8 @@ typedef $$PlanEventsTableCreateCompanionBuilder = PlanEventsCompanion Function({
   required int planId,
   required int phaseId,
   Value<int?> workoutId,
+  Value<int?> pass,
+  Value<bool> closesPass,
   required String dateStr,
   required int timestamp,
   required PlanEventKind kind,
@@ -7616,6 +7703,8 @@ typedef $$PlanEventsTableUpdateCompanionBuilder = PlanEventsCompanion Function({
   Value<int> planId,
   Value<int> phaseId,
   Value<int?> workoutId,
+  Value<int?> pass,
+  Value<bool> closesPass,
   Value<String> dateStr,
   Value<int> timestamp,
   Value<PlanEventKind> kind,
@@ -7679,6 +7768,12 @@ class $$PlanEventsTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pass => $composableBuilder(
+      column: $table.pass, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get closesPass => $composableBuilder(
+      column: $table.closesPass, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get dateStr => $composableBuilder(
       column: $table.dateStr, builder: (column) => ColumnFilters(column));
@@ -7764,6 +7859,12 @@ class $$PlanEventsTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get pass => $composableBuilder(
+      column: $table.pass, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get closesPass => $composableBuilder(
+      column: $table.closesPass, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get dateStr => $composableBuilder(
       column: $table.dateStr, builder: (column) => ColumnOrderings(column));
 
@@ -7845,6 +7946,12 @@ class $$PlanEventsTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get pass =>
+      $composableBuilder(column: $table.pass, builder: (column) => column);
+
+  GeneratedColumn<bool> get closesPass => $composableBuilder(
+      column: $table.closesPass, builder: (column) => column);
 
   GeneratedColumn<String> get dateStr =>
       $composableBuilder(column: $table.dateStr, builder: (column) => column);
@@ -7943,6 +8050,8 @@ class $$PlanEventsTableTableManager extends RootTableManager<
             Value<int> planId = const Value.absent(),
             Value<int> phaseId = const Value.absent(),
             Value<int?> workoutId = const Value.absent(),
+            Value<int?> pass = const Value.absent(),
+            Value<bool> closesPass = const Value.absent(),
             Value<String> dateStr = const Value.absent(),
             Value<int> timestamp = const Value.absent(),
             Value<PlanEventKind> kind = const Value.absent(),
@@ -7952,6 +8061,8 @@ class $$PlanEventsTableTableManager extends RootTableManager<
             planId: planId,
             phaseId: phaseId,
             workoutId: workoutId,
+            pass: pass,
+            closesPass: closesPass,
             dateStr: dateStr,
             timestamp: timestamp,
             kind: kind,
@@ -7961,6 +8072,8 @@ class $$PlanEventsTableTableManager extends RootTableManager<
             required int planId,
             required int phaseId,
             Value<int?> workoutId = const Value.absent(),
+            Value<int?> pass = const Value.absent(),
+            Value<bool> closesPass = const Value.absent(),
             required String dateStr,
             required int timestamp,
             required PlanEventKind kind,
@@ -7970,6 +8083,8 @@ class $$PlanEventsTableTableManager extends RootTableManager<
             planId: planId,
             phaseId: phaseId,
             workoutId: workoutId,
+            pass: pass,
+            closesPass: closesPass,
             dateStr: dateStr,
             timestamp: timestamp,
             kind: kind,

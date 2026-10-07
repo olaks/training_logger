@@ -104,6 +104,13 @@ class PlanEvents extends Table {
   IntColumn  get planId    => integer().references(Plans, #id)();
   IntColumn  get phaseId   => integer().references(PlanPhases, #id)();
   IntColumn  get workoutId => integer().nullable().references(Workouts, #id)(); // done / skip only
+  // done / skip only: the 1-based pass of the phase it was recorded in. Passes
+  // before the latest one stamped are complete whatever the rotation is now,
+  // so editing a rotation mid-plan can't undo weeks already trained.
+  IntColumn  get pass      => integer().nullable()();
+  // done / skip only: it was the last session still due in its pass, so the
+  // pass was finished then — even if a session has been added since.
+  BoolColumn get closesPass => boolean().withDefault(const Constant(false))();
   TextColumn get dateStr   => text()();
   IntColumn  get timestamp => integer()();
   IntColumn  get kind      => intEnum<PlanEventKind>()();

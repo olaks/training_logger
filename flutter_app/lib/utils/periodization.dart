@@ -24,6 +24,10 @@ class PlanState {
   /// 1-based pass within [phase].
   final int pass;
 
+  /// Passes of [phase] finished so far. Unlike [pass], not capped at
+  /// [totalPasses]: a finished phase keeps counting while it waits.
+  final int passesDone;
+
   /// Passes in [phase], including any deloads inserted by hand.
   final int totalPasses;
 
@@ -45,6 +49,7 @@ class PlanState {
   const PlanState({
     required this.phase,
     required this.pass,
+    required this.passesDone,
     required this.totalPasses,
     required this.remaining,
     required this.isDeload,
@@ -79,6 +84,7 @@ PlanState resolvePlan(
     return const PlanState(
       phase: null,
       pass: 0,
+      passesDone: 0,
       totalPasses: 0,
       remaining: [],
       isDeload: false,
@@ -99,21 +105,33 @@ PlanState resolvePlan(
   };
   var passesDone = 0;
   final covered = <int>{};
+  var started = false;
   for (final e in log.where((e) => e.phaseId == current.id)) {
     switch (e.kind) {
       case PlanEventKind.done:
       case PlanEventKind.skip:
-        // A session outside the rotation, or one already covered this pass,
-        // doesn't bring the pass any closer to done.
-        if (!rotation.contains(e.workoutId)) continue;
-        covered.add(e.workoutId!);
-        if (covered.length == rotation.toSet().length) {
+        // Each session carries the pass it was recorded in, and whether it
+        // finished that pass. Both stand whatever the rotation has become
+        // since: a later stamp means every pass before it was finished, an
+        // earlier one belongs to a pass that is already behind.
+        final stamp = e.pass ?? passesDone + 1;
+        if (stamp < passesDone + 1) continue;
+        if (stamp > passesDone + 1) {
+          passesDone = stamp - 1;
+          covered.clear();
+        }
+        started = true;
+        // A session outside the rotation (or whose workout is gone) still
+        // starts its pass, but doesn't bring it any closer to done.
+        if (rotation.contains(e.workoutId)) covered.add(e.workoutId!);
+        if (e.closesPass || rotation.every(covered.contains)) {
           passesDone++;
           covered.clear();
+          started = false;
         }
       case PlanEventKind.deload:
         // The deload goes on the first pass not yet started.
-        final target = passesDone + (covered.isEmpty ? 1 : 2);
+        final target = passesDone + (started ? 2 : 1);
         if (deloads.contains(target)) continue;
         final next = deloads.where((p) => p > target).fold<int?>(
             null, (m, p) => m == null || p < m ? p : m);
@@ -141,6 +159,7 @@ PlanState resolvePlan(
   return PlanState(
     phase: current,
     pass: pass,
+    passesDone: passesDone,
     totalPasses: total,
     remaining: [
       for (final w in rotation)

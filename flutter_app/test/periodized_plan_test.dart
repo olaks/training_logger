@@ -291,15 +291,22 @@ void main() {
     test('a workout in a rotation can be deleted, and comes back in it',
         () async {
       final p = await usedPlan();
+      await db.finishSession(p.b, '2026-03-03');
+      await db.finishSession(p.a, '2026-03-04');
+      expect((await db.activePlan())!.state.pass, 2);
 
       final deleted = await db.deleteWorkout(p.a);
-      expect((await db.activePlan())!.rotations[p.phase], [p.b]);
+      final without = (await db.activePlan())!;
+      expect(without.rotations[p.phase], [p.b]);
+      expect(without.state.pass, 2,
+          reason: 'the week trained with it stays done');
 
       await db.restoreWorkout(deleted!);
       final active = (await db.activePlan())!;
       expect(active.rotations[p.phase], [p.a, p.b]);
       expect(active.state.remaining, [p.b],
           reason: 'the session done with it is back too');
+      expect(active.events.where((e) => e.workoutId == p.a), hasLength(2));
     });
 
     test('an exercise with a phase override can be deleted, and the override '
@@ -351,6 +358,15 @@ void main() {
       expect((await db.watchPlanPhases(p.plan).first).map((x) => x.id),
           [strength, p.phase]);
       expect((await db.activePlan())!.state.phase?.id, strength);
+    });
+
+    test('adding a session mid-plan keeps the weeks already done', () async {
+      final p = await capacityPlan();
+      await db.finishSession(p.a, '2026-03-02');
+      await db.finishSession(p.b, '2026-03-03');
+      await db.addSessionToPhase(p.phase, await db.insertWorkout('Legs'));
+
+      expect((await db.activePlan())!.state.pass, 2);
     });
 
     test('a session can be taken out of a rotation', () async {

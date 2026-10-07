@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:training_logger/database/database.dart';
 import 'package:training_logger/utils/periodization.dart';
@@ -16,19 +17,29 @@ PlanPhase phase(int id, {int passes = 10, int? deloadEvery, int order = 0}) =>
     );
 
 /// Builds events in the order given, one millisecond apart.
+///
+/// Sessions are stamped with [pass], the week they were recorded in, the way
+/// the database stamps them. It only moves on through [passes] and [nextPass],
+/// and starts over when a phase is moved on from.
 class Log {
   final events = <PlanEvent>[];
+  var pass = 1;
 
-  void _add(int phaseId, PlanEventKind kind, [int? workoutId]) =>
+  void _add(int phaseId, PlanEventKind kind,
+          [int? workoutId, bool closes = false]) =>
       events.add(PlanEvent(
         id: events.length + 1,
         planId: 1,
         phaseId: phaseId,
         workoutId: workoutId,
+        pass: workoutId == null ? null : pass,
+        closesPass: closes,
         dateStr: '2026-01-01',
         timestamp: events.length,
         kind: kind,
       ));
+
+  void nextPass() => pass++;
 
   void done(int phaseId, List<int> workouts) {
     for (final w in workouts) {
@@ -41,12 +52,18 @@ class Log {
 
   void deload(int phaseId) => _add(phaseId, PlanEventKind.deload);
 
-  void advance(int phaseId) => _add(phaseId, PlanEventKind.advance);
+  void advance(int phaseId) {
+    _add(phaseId, PlanEventKind.advance);
+    pass = 1;
+  }
 
-  /// [passes] full passes through [rotation].
+  /// [passes] full passes through [rotation], the last session of each
+  /// marked as finishing it, as the database marks it.
   void passes(int phaseId, List<int> rotation, int passes) {
     for (var i = 0; i < passes; i++) {
-      done(phaseId, rotation);
+      done(phaseId, rotation.sublist(0, rotation.length - 1));
+      _add(phaseId, PlanEventKind.done, rotation.last, true);
+      nextPass();
     }
   }
 }
@@ -188,6 +205,89 @@ void main() {
           resolvePlan([phase(10, passes: 5)], {10: [a, b]}, log.events);
       expect(extended.pass, 4);
       expect(extended.phaseComplete, isFalse);
+    });
+  });
+
+  group('editing a rotation mid-plan', () {
+    test('adding a session keeps the weeks already done', () {
+      final log = Log()
+        ..passes(10, [a, b], 3)
+        ..done(10, [a]);
+      final state = resolvePlan([phase(10)], {10: [a, b, c]}, log.events);
+
+      expect(state.pass, 4);
+      expect(state.remaining, [b, c],
+          reason: 'the new session is due from the current week');
+    });
+
+    test('removing a session keeps the weeks already done', () {
+      final log = Log()
+        ..passes(10, [a, b, c], 2)
+        ..done(10, [a]);
+      final state = resolvePlan([phase(10)], {10: [a, b]}, log.events);
+
+      expect(state.pass, 3);
+      expect(state.remaining, [b]);
+    });
+
+    test('removing the only session left to do finishes the week', () {
+      final log = Log()
+        ..passes(10, [a, b], 2)
+        ..done(10, [a]);
+      final state = resolvePlan([phase(10)], {10: [a]}, log.events);
+
+      expect(state.pass, 4);
+      expect(state.remaining, [a]);
+    });
+
+    test('adding a session to a finished week leaves it finished', () {
+      final log = Log()..passes(10, [a, b], 1);
+      final state = resolvePlan([phase(10)], {10: [a, b, c]}, log.events);
+
+      expect(state.pass, 2);
+      expect(state.remaining, [a, b, c]);
+    });
+
+    test('undoing the session that finished a week reopens it, new session '
+        'and all', () {
+      final log = Log()..passes(10, [a, b], 1);
+      final events = log.events.sublist(0, log.events.length - 1);
+      final state = resolvePlan([phase(10)], {10: [a, b, c]}, events);
+
+      expect(state.pass, 1);
+      expect(state.remaining, [b, c]);
+    });
+
+    test('emptying the rotation keeps the weeks already done', () {
+      final log = Log()..passes(10, [a, b], 2);
+      final state = resolvePlan([phase(10)], {10: []}, log.events);
+
+      expect(state.pass, 3);
+    });
+
+    test('a session whose workout is gone still marks its week', () {
+      // Deleting a workout clears the event's workout but keeps its stamp.
+      final log = Log()
+        ..passes(10, [a, b], 2)
+        ..done(10, [a]);
+      final events = [
+        for (final e in log.events)
+          e.workoutId == a ? e.copyWith(workoutId: const Value(null)) : e,
+      ];
+      final state = resolvePlan([phase(10)], {10: [b]}, events);
+
+      expect(state.pass, 3, reason: 'two weeks done, the third under way');
+      expect(state.remaining, [b]);
+    });
+
+    test('undoing the session that started a week goes back to the one '
+        'before', () {
+      final log = Log()..passes(10, [a, b], 2);
+      final events = log.events.sublist(0, log.events.length - 1);
+      final state = resolvePlan([phase(10)], {10: [a, b]}, events);
+
+      expect(state.pass, 2);
+      expect(state.remaining, [b]);
     });
   });
 

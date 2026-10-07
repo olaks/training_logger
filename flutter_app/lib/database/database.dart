@@ -895,6 +895,8 @@ class AppDatabase extends _$AppDatabase {
                   'kind': e.kind.name,
                   if (e.workoutId != null)
                     'workout': workoutNames[e.workoutId] ?? '',
+                  if (e.pass != null) 'pass': e.pass,
+                  if (e.closesPass) 'closesPass': true,
                   'date': e.dateStr,
                   'timestamp': e.timestamp,
                 },
@@ -937,13 +939,16 @@ class AppDatabase extends _$AppDatabase {
             .where((k) => k.name == e['kind'])
             .firstOrNull;
         if (kind == null) continue;
+        // An entry whose workout can't be found keeps its place in the log
+        // without one, the way deleting a workout leaves it.
         final workoutName = e['workout'] as String?;
         final w = workoutName == null ? null : workoutId(workoutName);
-        if (workoutName != null && w == null) continue;
         await into(planEvents).insert(PlanEventsCompanion.insert(
           planId: planId,
           phaseId: phaseId,
           workoutId: Value(w),
+          pass: Value((e['pass'] as num?)?.toInt()),
+          closesPass: Value(e['closesPass'] as bool? ?? false),
           dateStr: e['date'] as String,
           timestamp: (e['timestamp'] as num).toInt(),
           kind: kind,
@@ -1529,10 +1534,11 @@ class AppDatabase extends _$AppDatabase {
               ..where((t) => t.workoutId.equals(id)))
             .get();
 
-        // Its sessions leave the rotations, and the log of doing them goes
-        // too: a plan replayed without the workout should read as if it had
-        // never been in the rotation.
-        await (delete(planEvents)..where((t) => t.workoutId.equals(id))).go();
+        // Its sessions leave the rotations, but the log of doing them stays,
+        // without the workout: each entry still marks the week it was done
+        // in, so the weeks trained with it stay done.
+        await (update(planEvents)..where((t) => t.workoutId.equals(id)))
+            .write(const PlanEventsCompanion(workoutId: Value(null)));
         await (delete(phaseSessions)..where((t) => t.workoutId.equals(id))).go();
         await (delete(planWorkouts)..where((t) => t.workoutId.equals(id))).go();
         await (delete(workoutExercises)..where((t) => t.workoutId.equals(id)))
@@ -1561,7 +1567,8 @@ class AppDatabase extends _$AppDatabase {
           await into(phaseSessions).insert(s.toCompanion(false));
         }
         for (final e in deleted.events) {
-          await into(planEvents).insert(e.toCompanion(false));
+          await (update(planEvents)..where((t) => t.id.equals(e.id)))
+              .write(PlanEventsCompanion(workoutId: Value(e.workoutId)));
         }
       });
 
@@ -1968,6 +1975,10 @@ class AppDatabase extends _$AppDatabase {
       planId: active.plan.id,
       phaseId: active.state.phase!.id,
       workoutId: Value(workoutId),
+      pass: Value(workoutId == null ? null : active.state.passesDone + 1),
+      closesPass: Value(workoutId != null &&
+          active.state.remaining.length == 1 &&
+          active.state.remaining.single == workoutId),
       dateStr: dateStr,
       timestamp: DateTime.now().millisecondsSinceEpoch,
       kind: kind,
@@ -2176,7 +2187,8 @@ class DeletedWorkout {
   final List<WorkoutExercise> exercises;
   final List<PlanWorkout> assignments;
 
-  /// Its places in periodized-plan rotations, and the log of doing it.
+  /// Its places in periodized-plan rotations, and the log entries that
+  /// named it (kept on delete, with the workout cleared).
   final List<PhaseSession> sessions;
   final List<PlanEvent> events;
 

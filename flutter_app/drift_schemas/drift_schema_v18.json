@@ -826,6 +826,30 @@
             ]
           },
           {
+            "name": "pass",
+            "getter_name": "pass",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "closes_pass",
+            "getter_name": "closesPass",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"closes_pass\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"closes_pass\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
             "name": "date_str",
             "getter_name": "dateStr",
             "moor_type": "string",
@@ -1628,7 +1652,7 @@
       "sql": [
         {
           "dialect": "sqlite",
-          "sql": "CREATE TABLE IF NOT EXISTS \"plan_events\" (\"id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"plan_id\" INTEGER NOT NULL REFERENCES plans (id), \"phase_id\" INTEGER NOT NULL REFERENCES plan_phases (id), \"workout_id\" INTEGER NULL REFERENCES workouts (id), \"date_str\" TEXT NOT NULL, \"timestamp\" INTEGER NOT NULL, \"kind\" INTEGER NOT NULL);"
+          "sql": "CREATE TABLE IF NOT EXISTS \"plan_events\" (\"id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"plan_id\" INTEGER NOT NULL REFERENCES plans (id), \"phase_id\" INTEGER NOT NULL REFERENCES plan_phases (id), \"workout_id\" INTEGER NULL REFERENCES workouts (id), \"pass\" INTEGER NULL, \"closes_pass\" INTEGER NOT NULL DEFAULT 0 CHECK (\"closes_pass\" IN (0, 1)), \"date_str\" TEXT NOT NULL, \"timestamp\" INTEGER NOT NULL, \"kind\" INTEGER NOT NULL);"
         }
       ]
     },
