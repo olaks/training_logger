@@ -426,13 +426,15 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
           TextButton(
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
-              final deleted = await ref.deleteWorkout(id);
+              // The undo outlives this screen, so it can't go through its ref.
+              final db = ref.read(dbProvider);
+              final deleted = await db.deleteWorkout(id);
               if (context.mounted) Navigator.pop(context);
               if (context.mounted) context.pop();
               if (deleted == null) return;
               showUndoSnackBar(messenger,
                   message: 'Deleted "$name"',
-                  onUndo: () => ref.restoreWorkout(deleted));
+                  onUndo: () => db.restoreWorkout(deleted));
             },
             child: Text('Delete',
                 style:

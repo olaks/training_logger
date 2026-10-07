@@ -388,8 +388,6 @@ extension DbMutations on WidgetRef {
   Future<void> updateCategoryGroup(int id, String? group) => db.updateCategoryGroup(id, group);
   Future<void> updateCategoryDescription(int id, String? description) =>
       db.updateCategoryDescription(id, description);
-  Future<DeletedCategory?> removeCategory(int id)  => db.deleteCategory(id);
-  Future<void> restoreCategory(DeletedCategory d)  => db.restoreCategory(d);
 
   /// Pass [grade] for climbing exercises (only grade + rpe are stored).
   Future<void> saveSet({

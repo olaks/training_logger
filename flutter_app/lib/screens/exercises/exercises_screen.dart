@@ -363,12 +363,14 @@ class _DeleteExerciseDialog extends ConsumerWidget {
           onPressed: () async {
             final messenger = ScaffoldMessenger.of(context);
             final navigator = Navigator.of(context);
-            final deleted = await ref.removeCategory(categoryId);
+            // The undo outlives this dialog, so it can't go through its ref.
+            final db = ref.read(dbProvider);
+            final deleted = await db.deleteCategory(categoryId);
             navigator.pop();
             if (deleted == null) return;
             showUndoSnackBar(messenger,
                 message: 'Deleted "$name"',
-                onUndo: () => ref.restoreCategory(deleted));
+                onUndo: () => db.restoreCategory(deleted));
           },
           child: Text('Delete',
               style: TextStyle(color: Theme.of(context).colorScheme.error)),

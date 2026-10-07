@@ -322,13 +322,15 @@ Future<void> _pickDate(BuildContext context, WidgetRef ref) async {
           TextButton(
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
-              final deleted = await ref.deletePlan(id);
+              // The undo outlives this screen, so it can't go through its ref.
+              final db = ref.read(dbProvider);
+              final deleted = await db.deletePlan(id);
               if (context.mounted) Navigator.pop(context);
               if (context.mounted) context.pop();
               if (deleted == null) return;
               showUndoSnackBar(messenger,
                   message: 'Deleted "$name"',
-                  onUndo: () => ref.restorePlan(deleted));
+                  onUndo: () => db.restorePlan(deleted));
             },
             child: Text('Delete',
                 style:
