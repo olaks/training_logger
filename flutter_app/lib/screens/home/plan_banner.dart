@@ -1,0 +1,146 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../database/database.dart';
+import '../../providers/app_providers.dart';
+import '../../utils/periodization.dart';
+import '../../utils/undo_snackbar.dart';
+
+/// Where the running periodized plan stands, at the top of today's view:
+/// the phase and week, how far off the next deload is, and — once every week
+/// of a phase is done — the choice between moving on and adding a week.
+class PlanBanner extends ConsumerWidget {
+  final ActivePlan active;
+  final String dateStr;
+  const PlanBanner({super.key, required this.active, required this.dateStr});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = active.state;
+    final phase = s.phase!;
+    final primary = Theme.of(context).colorScheme.primary;
+    final color = s.isDeload ? Colors.amber : primary;
+
+    final headline = [
+      '${phase.name} · week ${s.pass}/${s.totalPasses}',
+      if (s.isDeload)
+        'deload, RPE $kDeloadRpe'
+      else if (!s.phaseComplete && s.passesUntilDeload != null)
+        'deload in ${s.passesUntilDeload}',
+    ].join(' · ');
+
+    final left = s.remaining.length;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      color: color.withValues(alpha: 0.08),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 6, 4, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(headline,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, color: color)),
+                ),
+                PopupMenuButton<_BannerAction>(
+                  icon: Icon(Icons.more_vert,
+                      size: 20, color: Colors.white.withValues(alpha: 0.4)),
+                  onSelected: (a) => switch (a) {
+                    _BannerAction.deload => _deloadNow(context, ref),
+                    _BannerAction.open =>
+                      context.push('/plans/${active.plan.id}'),
+                  },
+                  itemBuilder: (_) => [
+                    if (!s.isDeload && !s.phaseComplete)
+                      const PopupMenuItem(
+                          value: _BannerAction.deload,
+                          child: Text('Deload now')),
+                    PopupMenuItem(
+                        value: _BannerAction.open,
+                        child: Text('Open ${active.plan.name}')),
+                  ],
+                ),
+              ],
+            ),
+            if (s.phaseComplete)
+              _PhaseDone(active: active, dateStr: dateStr)
+            else
+              Text(
+                left == 1
+                    ? '1 session left this week'
+                    : '$left sessions left this week',
+                style: TextStyle(
+                    fontSize: 12, color: Colors.white.withValues(alpha: 0.55)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deloadNow(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    // The banner can be rebuilt away before the undo is tapped.
+    final db = ref.read(dbProvider);
+    final event = await db.deloadNow(dateStr);
+    if (event == null) return;
+    showUndoSnackBar(messenger,
+        message: 'Deload coming up',
+        onUndo: () => db.deletePlanEvent(event.id));
+  }
+}
+
+enum _BannerAction { deload, open }
+
+class _PhaseDone extends ConsumerWidget {
+  final ActivePlan active;
+  final String dateStr;
+  const _PhaseDone({required this.active, required this.dateStr});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final phase = active.state.phase!;
+    final ordered = [...active.phases]
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final next = ordered
+        .skipWhile((p) => p.id != phase.id)
+        .skip(1)
+        .firstOrNull;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 6),
+          child: Text(
+            next == null
+                ? '${phase.name} is done, and with it the plan.'
+                : '${phase.name} is done. Move on, or add a week if it is '
+                    'still paying off?',
+            style: TextStyle(
+                fontSize: 12, color: Colors.white.withValues(alpha: 0.7)),
+          ),
+        ),
+        Wrap(
+          spacing: 8,
+          children: [
+            FilledButton(
+              onPressed: () => ref.advancePhase(dateStr),
+              child: Text(next == null ? 'Finish plan' : 'Start ${next.name}'),
+            ),
+            OutlinedButton(
+              onPressed: () => ref.updatePhase(phase.id,
+                  name: phase.name,
+                  lengthPasses: phase.lengthPasses + 1,
+                  deloadEvery: phase.deloadEvery),
+              child: const Text('Add a week'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}

@@ -8,6 +8,8 @@ import '../../providers/app_providers.dart';
 import '../../providers/backup_provider.dart';
 import '../../utils/format_utils.dart';
 import '../load/load_summary_card.dart';
+import '../../utils/undo_snackbar.dart';
+import 'plan_banner.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -22,10 +24,26 @@ class HomeScreen extends ConsumerWidget {
     final plannedWorkouts =
         ref.watch(plannedWorkoutsForDateProvider(dateStr)).value ?? [];
 
+    // A periodized plan's sessions aren't tied to a date, so they show on
+    // today only: what is still due this week, and what was done today.
+    final running = ref.watch(activePlanProvider).value;
+    final isToday = dateStr == dateStrFrom(DateTime.now());
+    final plan = isToday && running?.state.phase != null ? running : null;
+    final sessions = plan == null
+        ? const <_Session>[]
+        : _sessionsToday(ref, plan, dateStr);
+
     // Unstarted planned exercises for the FAB quick-pick
     final loggedCatIds = (setsAsync.value ?? []).map((s) => s.categoryId).toSet();
     final loggedSetCount = setsAsync.value?.length ?? 0;
     final unstartedExercises = <(String, ExerciseCategory)>[];
+    for (final (workout, exercises, _) in sessions) {
+      for (final cat in exercises) {
+        if (!loggedCatIds.contains(cat.id)) {
+          unstartedExercises.add((workout.name, cat));
+        }
+      }
+    }
     for (final (workout, exercises) in plannedWorkouts) {
       for (final cat in exercises) {
         if (!loggedCatIds.contains(cat.id)) {
@@ -79,16 +97,17 @@ class HomeScreen extends ConsumerWidget {
                 }
 
                 // Category IDs accounted for by planned workouts
-                final plannedCatIds = plannedWorkouts
-                    .expand((w) => w.$2.map((e) => e.id))
-                    .toSet();
+                final plannedCatIds = {
+                  for (final w in plannedWorkouts) ...w.$2.map((e) => e.id),
+                  for (final w in sessions) ...w.$2.map((e) => e.id),
+                };
 
                 // Logged sets whose exercise is not in any planned workout
                 final extraIds = grouped.keys
                     .where((id) => !plannedCatIds.contains(id))
                     .toList();
 
-                if (plannedWorkouts.isEmpty && grouped.isEmpty) {
+                if (plan == null && plannedWorkouts.isEmpty && grouped.isEmpty) {
                   return _EmptyState(
                       onStart: () => context.go('/exercises'));
                 }
@@ -96,6 +115,39 @@ class HomeScreen extends ConsumerWidget {
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
                   children: [
+                    // ── Periodized plan: this week's sessions ────────────
+                    if (plan != null)
+                      PlanBanner(active: plan, dateStr: dateStr),
+                    for (final (workout, exercises, done) in sessions) ...[
+                      _SectionHeader(
+                        name: workout.name,
+                        done: done,
+                        onStart: done || exercises.isEmpty
+                            ? null
+                            : () => context.push(
+                                '/workout-session/${workout.id}/$dateStr'),
+                        onMarkDone: done
+                            ? null
+                            : () => _recordSession(context, ref, workout,
+                                dateStr, skip: false),
+                        onSkip: done
+                            ? null
+                            : () => _recordSession(context, ref, workout,
+                                dateStr, skip: true),
+                      ),
+                      const SizedBox(height: 4),
+                      ...exercises.map((cat) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _DayExerciseCard(
+                              name: cat.name,
+                              sets: grouped[cat.id] ?? [],
+                              onTap: () => context
+                                  .push('/exercise/${cat.id}/$dateStr'),
+                            ),
+                          )),
+                      const SizedBox(height: 8),
+                    ],
+
                     // ── Planned workout sections ─────────────────────────
                     for (final (workout, exercises) in plannedWorkouts) ...[
                       _SectionHeader(
@@ -120,9 +172,9 @@ class HomeScreen extends ConsumerWidget {
 
                     // ── Logged sets not in any planned workout ───────────
                     if (extraIds.isNotEmpty) ...[
-                      if (plannedWorkouts.isNotEmpty)
+                      if (plannedWorkouts.isNotEmpty || sessions.isNotEmpty)
                         const _SectionHeader(name: 'Other'),
-                      if (plannedWorkouts.isNotEmpty)
+                      if (plannedWorkouts.isNotEmpty || sessions.isNotEmpty)
                         const SizedBox(height: 4),
                       ...extraIds.map((catId) {
                         final name = cats
@@ -159,6 +211,49 @@ class HomeScreen extends ConsumerWidget {
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  /// The running plan's sessions to show today, in rotation order: those
+  /// still due this week, and those already done today. None while a
+  /// finished phase waits to be moved on from — the banner asks about that.
+  List<_Session> _sessionsToday(
+      WidgetRef ref, ActivePlan plan, String dateStr) {
+    final phase = plan.state.phase!;
+    final doneToday = {
+      for (final e in plan.events)
+        if (e.kind == PlanEventKind.done &&
+            e.phaseId == phase.id &&
+            e.dateStr == dateStr)
+          e.workoutId,
+    };
+    final workouts = ref.watch(allWorkoutsProvider).value ?? [];
+    return [
+      for (final id in {...?plan.rotations[phase.id]})
+        if (doneToday.contains(id) ||
+            (!plan.state.phaseComplete && plan.state.remaining.contains(id)))
+          if (workouts.where((w) => w.id == id).firstOrNull case final w?)
+            (
+              w,
+              [
+                for (final row
+                    in ref.watch(workoutExercisesProvider(id)).value ?? const [])
+                  row.$2,
+              ],
+              doneToday.contains(id),
+            ),
+    ];
+  }
+
+  Future<void> _recordSession(BuildContext context, WidgetRef ref,
+      Workout workout, String dateStr, {required bool skip}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final event = skip
+        ? await ref.skipSession(workout.id, dateStr)
+        : await ref.finishSession(workout.id, dateStr);
+    if (event == null) return;
+    showUndoSnackBar(messenger,
+        message: skip ? 'Skipped ${workout.name}' : '${workout.name} done',
+        onUndo: () => ref.undoPlanEvent(event.id));
   }
 
   /// Turns the exercises logged on [dateStr] into a reusable workout, using
@@ -574,10 +669,25 @@ class _NoteDialogState extends State<_NoteDialog> {
 
 // ── Section header ──────────────────────────────────────────────────────────
 
+/// A session of the running plan: the workout, its exercises, and whether it
+/// was done today (rather than still due this week).
+typedef _Session = (Workout, List<ExerciseCategory>, bool);
+
 class _SectionHeader extends StatelessWidget {
   final String name;
   final VoidCallback? onStart;
-  const _SectionHeader({required this.name, this.onStart});
+
+  /// A plan session done today: shown ticked, with nothing left to start.
+  final bool done;
+  final VoidCallback? onMarkDone;
+  final VoidCallback? onSkip;
+  const _SectionHeader({
+    required this.name,
+    this.onStart,
+    this.done = false,
+    this.onMarkDone,
+    this.onSkip,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -597,6 +707,11 @@ class _SectionHeader extends StatelessWidget {
               ),
             ),
           ),
+          if (done)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Icon(Icons.check_circle, size: 18, color: primary),
+            ),
           if (onStart != null)
             TextButton.icon(
               onPressed: onStart,
@@ -611,6 +726,25 @@ class _SectionHeader extends StatelessWidget {
                     fontSize: 11,
                     letterSpacing: 1.2,
                     fontWeight: FontWeight.w700),
+              ),
+            ),
+          if (onMarkDone != null || onSkip != null)
+            SizedBox(
+              width: 32,
+              height: 28,
+              child: PopupMenuButton<bool>(
+                padding: EdgeInsets.zero,
+                icon: Icon(Icons.more_vert,
+                    size: 18, color: Colors.white.withValues(alpha: 0.4)),
+                // true = skip, false = mark done
+                onSelected: (skip) => (skip ? onSkip : onMarkDone)?.call(),
+                itemBuilder: (_) => [
+                  if (onMarkDone != null)
+                    const PopupMenuItem(value: false, child: Text('Mark done')),
+                  if (onSkip != null)
+                    const PopupMenuItem(
+                        value: true, child: Text('Skip this week')),
+                ],
               ),
             ),
         ],

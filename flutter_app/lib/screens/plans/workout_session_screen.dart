@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
+import '../../utils/undo_snackbar.dart';
 import '../detail/tabs/track_tab.dart';
 
 class WorkoutSessionScreen extends ConsumerStatefulWidget {
@@ -38,6 +39,20 @@ class _WorkoutSessionScreenState
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
     );
+  }
+
+  /// Leaves the session, ticking it off the running plan's week if it is one
+  /// of the sessions still due there.
+  Future<void> _finish(Workout? workout) async {
+    final messenger = ScaffoldMessenger.of(context);
+    // The undo outlives this screen, so it can't go through its ref.
+    final db = ref.read(dbProvider);
+    final event = await db.finishSession(widget.workoutId, widget.dateStr);
+    if (mounted) context.pop();
+    if (event == null) return;
+    showUndoSnackBar(messenger,
+        message: '${workout?.name ?? 'Session'} done',
+        onUndo: () => db.deletePlanEvent(event.id));
   }
 
   @override
@@ -156,7 +171,7 @@ class _WorkoutSessionScreenState
                     child: FilledButton.icon(
                       onPressed: () {
                         if (isLast) {
-                          context.pop();
+                          _finish(workout);
                         } else {
                           _goTo(safeIndex + 1, exercises.length);
                         }
