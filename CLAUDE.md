@@ -43,6 +43,9 @@ flutter test test/backup_test.dart     # single test file
 `.githooks/` runs it (enable per clone: `git config core.hooksPath .githooks`).
 Review rules live in `CODING_STANDARDS.md`.
 
+The Dart is hand-aligned (columns of `=` and `:` lined up), not `dart format`
+output: edit in that style, and leave `dart format` off existing files.
+
 Widget tests run in fake time, where a drift stream (`watch…().first`) never
 completes: read streams inside `tester.runAsync` (one-shot queries and writes
 complete without it), and advance the clock a millisecond before the tree is
@@ -118,7 +121,7 @@ The metric and averaging choice live in `providers/load_settings_provider.dart`,
 persisted through `SharedPreferences` and seeded in `main()` the same way the
 theme is. Anything reading the series watches `loadSeriesProvider`.
 
-Migrations are incremental in `database.dart` — each `if (from < N)` block handles one schema version. When adding columns or tables, bump `schemaVersion` and add a new migration block.
+Migrations are incremental in `database.dart` — each `if (from < N)` block handles one schema version. When adding columns or tables, bump `schemaVersion` and add a new migration block. A schema version is frozen once a release carries it — compare against the newest `v*` tag (`git show $(git describe --tags --abbrev=0):flutter_app/lib/database/database.dart | grep schemaVersion`). An unreleased version may be amended in place, re-dumping its schema; a released one only moves forward.
 
 Foreign keys are enforced (`PRAGMA foreign_keys = ON` in `beforeOpen`). Undo works by each delete returning a snapshot that the matching `restore*` puts back.
 
