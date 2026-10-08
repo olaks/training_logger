@@ -4,7 +4,9 @@ Goal: use the logger to run a plan that spans many weeks, up to a whole year,
 in phases (Capacity → Basic strength → Max strength …). Each phase has its own
 rotation of sessions and its own target RPEs, with regular deloads.
 
-Status: design agreed, nothing implemented yet.
+Status: implementation order 1–5 done, shipped in v1.6.0 (schema v18 is now
+frozen). Open work is the **Later** list below. "Where the logger is now"
+describes the app before this work began.
 
 ## Where the logger is now
 
