@@ -84,6 +84,11 @@ final planSessionsProvider =
     StreamProvider.family<List<PhaseSession>, int>((ref, planId) =>
         ref.watch(dbProvider).watchPlanSessions(planId));
 
+/// A plan's whole event log, for laying it out in time.
+final planEventsProvider =
+    StreamProvider.family<List<PlanEvent>, int>((ref, planId) =>
+        ref.watch(dbProvider).watchPlanEvents(planId));
+
 final phaseTargetsProvider =
     StreamProvider.family<List<PhaseExerciseTarget>, int>((ref, phaseId) =>
         ref.watch(dbProvider).watchPhaseExerciseTargets(phaseId));

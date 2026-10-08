@@ -102,8 +102,8 @@ length or rotation mid-plan just re-resolves.
 
 ## Later
 
-- **Projected timeline** (first): estimated dates for each phase from your
-  recent session frequency, with deloads marked — makes the year visible.
+- ~~**Projected timeline**~~ — done: `projectPlan` in `utils/periodization.dart`
+  and the Timeline section on plan detail, for any phased plan.
 - "You logged sets for B today, mark it done?" prompt.
 - Generator wizard with phase presets.
 - Phase and deload bands behind the ACWR chart.

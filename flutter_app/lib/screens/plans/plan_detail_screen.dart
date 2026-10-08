@@ -7,6 +7,7 @@ import '../../utils/undo_snackbar.dart';
 import '../../utils/format_utils.dart';
 import '../../utils/share_file.dart';
 import 'phases_section.dart';
+import 'timeline_section.dart';
 
 const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -90,6 +91,8 @@ class PlanDetailScreen extends ConsumerWidget {
           if (!periodized)
             ..._weeklySchedule(
                 context, ref, byWeekday, byDate, sortedDates, workoutById),
+
+          TimelineSection(planId: planId),
 
           PhasesSection(
             planId: planId,

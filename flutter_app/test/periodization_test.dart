@@ -466,6 +466,189 @@ void main() {
     });
   });
 
+  group('projectPlan', () {
+    final today = DateTime(2026, 10, 8);
+    DateTime day(String s) => DateTime.utc(
+        int.parse(s.substring(0, 4)),
+        int.parse(s.substring(5, 7)),
+        int.parse(s.substring(8)));
+
+    /// Sessions of [rotation] on consecutive [dates], a pass at a time, as
+    /// the database stamps them.
+    List<PlanEvent> sessions(int phaseId, List<int> rotation,
+        List<String> dates, {int firstId = 1}) {
+      return [
+        for (var i = 0; i < dates.length; i++)
+          PlanEvent(
+            id: firstId + i,
+            planId: 1,
+            phaseId: phaseId,
+            workoutId: rotation[i % rotation.length],
+            pass: i ~/ rotation.length + 1,
+            closesPass: i % rotation.length == rotation.length - 1,
+            dateStr: dates[i],
+            timestamp: firstId + i,
+            kind: PlanEventKind.done,
+          ),
+      ];
+    }
+
+    PlanEvent event(int id, int phaseId, PlanEventKind kind, String date) =>
+        PlanEvent(
+          id: id,
+          planId: 1,
+          phaseId: phaseId,
+          closesPass: false,
+          dateStr: date,
+          timestamp: id,
+          kind: kind,
+        );
+
+    test('without a recent pace every pass is taken as a week', () {
+      final p = projectPlan(
+        [phase(10, passes: 4, deloadEvery: 2), phase(20, passes: 2, order: 1)],
+        {10: [a, b, c], 20: [d]},
+        const [],
+        today,
+      );
+
+      expect(p.sessionsPerWeek, isNull);
+      final [first, second] = p.phases;
+      expect((first.start, first.end), (day('2026-10-08'), day('2026-11-05')));
+      expect(first.deloads, [day('2026-10-15'), day('2026-10-29')]);
+      expect(first.started, isFalse);
+      expect((second.start, second.end),
+          (day('2026-11-05'), day('2026-11-19')));
+      expect(p.end, day('2026-11-19'));
+    });
+
+    test('the pace of the recent sessions sets how long a pass takes', () {
+      // Three sessions a week for two weeks: two passes of three done.
+      final log = sessions(10, [a, b, c], [
+        '2026-09-25', '2026-09-28', '2026-09-30',
+        '2026-10-02', '2026-10-05', '2026-10-07',
+      ]);
+      final p = projectPlan(
+          [phase(10, passes: 4)], {10: [a, b, c]}, log, today);
+
+      expect(p.sessionsPerWeek, closeTo(3, 1e-9));
+      final [only] = p.phases;
+      expect((only.start, only.started), (day('2026-09-25'), true));
+      // Passes 3 and 4 still to go, a week each.
+      expect(only.end, day('2026-10-22'));
+    });
+
+    test('a pass under way counts only the sessions still due', () {
+      final log = sessions(10, [a, b, c], [
+        '2026-09-25', '2026-09-28', '2026-09-30',
+        '2026-10-02', '2026-10-05', '2026-10-07',
+        '2026-10-08', '2026-10-08',
+      ]);
+      final p = projectPlan(
+          [phase(10, passes: 3)], {10: [a, b, c]}, log, today);
+
+      // Eight sessions over fourteen days make a pass of three 5¼ days, and
+      // a third of one is left: 1¾ days, so the 10th.
+      expect(p.phases.single.end, day('2026-10-10'));
+    });
+
+    test('a one-session rotation still takes a week a pass', () {
+      // About two sessions a week, and a rotation of one: two passes a week
+      // at that pace, but each is still projected as a week.
+      final log = sessions(10, [a], [
+        '2026-09-14', '2026-09-17', '2026-09-21', '2026-09-24',
+        '2026-09-28', '2026-10-01', '2026-10-05', '2026-10-08',
+      ]);
+      final p = projectPlan(
+        [phase(10, passes: 10), phase(20, passes: 3, order: 1)],
+        {10: [a], 20: [b]},
+        log,
+        today,
+      );
+
+      final [_, next] = p.phases;
+      expect(next.end.difference(next.start).inDays, 21);
+    });
+
+    test('a longer rotation runs at the pace it is trained', () {
+      // Six sessions a week through a rotation of three: two passes a week.
+      final log = sessions(10, [a, b, c], [
+        '2026-09-27', '2026-09-28', '2026-09-29', '2026-09-30',
+        '2026-10-01', '2026-10-02', '2026-10-04', '2026-10-05',
+        '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-08',
+      ]);
+      final p = projectPlan(
+        [phase(10, passes: 6), phase(20, passes: 4, order: 1)],
+        {10: [a, b, c], 20: [a, b, c]},
+        log,
+        today,
+      );
+
+      // Twelve sessions in twelve days: a pass of three takes three days.
+      final [_, next] = p.phases;
+      expect(next.end.difference(next.start).inDays, 12);
+    });
+
+    test('sessions older than the window give no pace', () {
+      final log = sessions(10, [a, b, c], [
+        '2026-08-01', '2026-08-03', '2026-08-05', '2026-09-10',
+      ]);
+      final p = projectPlan(
+          [phase(10, passes: 4)], {10: [a, b, c]}, log, today);
+
+      expect(p.sessionsPerWeek, isNull);
+    });
+
+    test('a phase moved on from keeps the days it actually ran', () {
+      final log = [
+        ...sessions(10, [a], ['2026-08-03', '2026-08-10']),
+        event(3, 10, PlanEventKind.advance, '2026-08-20'),
+      ];
+      final p = projectPlan(
+        [phase(10, passes: 2), phase(20, passes: 2, order: 1)],
+        {10: [a], 20: [b]},
+        log,
+        today,
+      );
+
+      final [done, now] = p.phases;
+      expect((done.start, done.end, done.finished),
+          (day('2026-08-03'), day('2026-08-20'), true));
+      // The next phase began the day this one was moved on from, sessions
+      // or not, so there is no gap between them.
+      expect((now.start, now.started, now.finished),
+          (day('2026-08-20'), true, false));
+    });
+
+    test('a deload now shows on the timeline and lengthens the phase', () {
+      final p = projectPlan(
+        [phase(10, passes: 2)],
+        {10: [a]},
+        [event(1, 10, PlanEventKind.deload, '2026-10-08')],
+        today,
+      );
+
+      final [only] = p.phases;
+      expect(only.deloads, [day('2026-10-08')]);
+      expect(only.end, day('2026-10-29'));
+    });
+
+    test('a finished phase waiting to move on ends today', () {
+      final log = sessions(10, [a], ['2026-10-01', '2026-10-06']);
+      final p = projectPlan(
+        [phase(10, passes: 2, deloadEvery: 2), phase(20, passes: 1, order: 1)],
+        {10: [a], 20: [b]},
+        log,
+        today,
+      );
+
+      final [waiting, next] = p.phases;
+      expect(waiting.end, day('2026-10-08'));
+      expect(waiting.deloads, isEmpty);
+      expect(next.start, day('2026-10-08'));
+    });
+  });
+
   group('resolveTarget', () {
     const base = Target(sets: 4, reps: 6, rpe: 8);
 

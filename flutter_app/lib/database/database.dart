@@ -1848,6 +1848,10 @@ class AppDatabase extends _$AppDatabase {
             ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
           .watch();
 
+  /// Every event in [planId]'s log, in no particular order.
+  Stream<List<PlanEvent>> watchPlanEvents(int planId) =>
+      (select(planEvents)..where((t) => t.planId.equals(planId))).watch();
+
   Future<int> updatePhase(int id,
           {required String name,
           required int lengthPasses,

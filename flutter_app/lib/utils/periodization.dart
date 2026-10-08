@@ -1,4 +1,5 @@
 import '../database/database.dart';
+import 'format_utils.dart';
 
 /// Where a periodized plan stands, replayed from its event log.
 ///
@@ -47,6 +48,10 @@ class PlanState {
   /// one, null when none is left.
   final int? passesUntilDeload;
 
+  /// Every deload pass of [phase], 1-based and in order: the phase's rule as
+  /// reshaped by each "deload now".
+  final List<int> deloads;
+
   /// Every pass of [phase] is done; waiting for the athlete to move on.
   final bool phaseComplete;
 
@@ -62,6 +67,7 @@ class PlanState {
     required this.remaining,
     required this.isDeload,
     required this.passesUntilDeload,
+    required this.deloads,
     required this.phaseComplete,
     required this.planComplete,
   });
@@ -99,6 +105,7 @@ PlanState resolvePlan(
       remaining: [],
       isDeload: false,
       passesUntilDeload: null,
+      deloads: [],
       phaseComplete: false,
       planComplete: true,
     );
@@ -187,10 +194,206 @@ PlanState resolvePlan(
     isDeload: !complete && deloads.contains(pass),
     passesUntilDeload:
         complete || upcoming.isEmpty ? null : upcoming.first - pass,
+    deloads: deloads.toList()..sort(),
     phaseComplete: complete,
     planComplete: false,
   );
 }
+
+// ── Projected timeline ────────────────────────────────────────────────────────
+
+/// How many days back a plan's pace is measured over.
+const kPaceWindowDays = 28;
+
+/// The fewest sessions in the window that a pace is trusted from. With fewer,
+/// a pass is taken to last a week, which is what the UI calls it.
+const kPaceMinSessions = 3;
+
+/// The shortest a one-session pass is projected to take, whatever the pace.
+/// A rotation of a single session is that session once a week, not as often
+/// as the athlete trains; a longer rotation runs at the pace it is trained.
+const kMinPassDays = 7;
+
+/// One phase laid out in time. Dates are days, as UTC midnights.
+class PhaseProjection {
+  final PlanPhase phase;
+  final DateTime start;
+
+  /// The day the phase is expected to finish, which is the day the next one
+  /// starts. For a phase moved on from, the day that happened.
+  final DateTime end;
+
+  /// [start] comes from the log, not the pace: the day the phase before was
+  /// moved on from, or for the first phase its first session.
+  final bool started;
+
+  /// The phase has been moved on from, so [end] is not an estimate either.
+  final bool finished;
+
+  /// The expected first day of each deload pass still ahead in the phase.
+  final List<DateTime> deloads;
+
+  const PhaseProjection({
+    required this.phase,
+    required this.start,
+    required this.end,
+    required this.started,
+    required this.finished,
+    required this.deloads,
+  });
+}
+
+/// A plan laid out in time: the phases behind, from the log, and the rest
+/// estimated at the pace of the last [kPaceWindowDays] days.
+class PlanProjection {
+  /// In plan order. Empty for a plan without phases.
+  final List<PhaseProjection> phases;
+
+  /// The pace assumed, or null when there were too few recent sessions to
+  /// measure one and every pass was taken as a week.
+  final double? sessionsPerWeek;
+
+  /// Where the plan stands, as [resolvePlan] has it.
+  final PlanState state;
+
+  const PlanProjection({
+    required this.phases,
+    required this.sessionsPerWeek,
+    required this.state,
+  });
+
+  DateTime? get end => phases.lastOrNull?.end;
+}
+
+/// Lays out [phases] in time from [today], replaying [events] as
+/// [resolvePlan] does. Only sessions (done or skipped) move a plan, so the
+/// pace is the sessions logged per day lately, and a pass takes as long as
+/// its rotation does at that pace.
+PlanProjection projectPlan(
+  List<PlanPhase> phases,
+  Map<int, List<int>> rotations,
+  List<PlanEvent> events,
+  DateTime today,
+) {
+  today = _day(today);
+  final state = resolvePlan(phases, rotations, events);
+  final ordered = [...phases]
+    ..sort((x, y) => x.sortOrder.compareTo(y.sortOrder));
+  final perDay = _sessionsPerDay(events, today);
+
+  double passDays(int rotationLength) {
+    if (perDay == null || rotationLength == 0) return 7;
+    final days = rotationLength / perDay;
+    return rotationLength == 1 && days < kMinPassDays
+        ? kMinPassDays.toDouble()
+        : days;
+  }
+  DateTime after(double days) =>
+      today.add(Duration(days: days.round()));
+
+  // Days from today to where the phase being laid out begins.
+  var cursor = 0.0;
+  // When the last phase moved on from ended, which is when the next began.
+  DateTime? movedOn;
+  final out = <PhaseProjection>[];
+  for (final p in ordered) {
+    final own = [
+      for (final e in events)
+        if (e.phaseId == p.id) _day(dateFromStr(e.dateStr)),
+    ]..sort();
+    final advance = [
+      for (final e in events)
+        if (e.phaseId == p.id && e.kind == PlanEventKind.advance)
+          _day(dateFromStr(e.dateStr)),
+    ]..sort();
+    final rotation = rotations[p.id]?.length ?? 0;
+    final pass = passDays(rotation);
+
+    final began = movedOn ?? own.firstOrNull;
+    if (advance.isNotEmpty) {
+      movedOn = advance.last;
+      out.add(PhaseProjection(
+        phase: p,
+        start: began!,
+        end: advance.last,
+        started: true,
+        finished: true,
+        deloads: const [],
+      ));
+    } else if (p.id == state.phase?.id) {
+      // What is left of the pass under way, as a fraction of a pass, then
+      // the passes after it.
+      final partial = state.phaseComplete
+          ? 0.0
+          : rotation == 0
+              ? 1.0
+              : state.remaining.length / rotation;
+      final left = state.phaseComplete
+          ? 0.0
+          : partial + state.totalPasses - state.pass;
+      out.add(PhaseProjection(
+        phase: p,
+        start: began ?? today,
+        end: after(left * pass),
+        started: began != null,
+        finished: false,
+        deloads: [
+          if (!state.phaseComplete)
+            for (final d in state.deloads)
+              if (d == state.pass)
+                today
+              else if (d > state.pass)
+                after((partial + d - state.pass - 1) * pass),
+        ],
+      ));
+      cursor = left * pass;
+    } else {
+      final every = p.deloadEvery;
+      out.add(PhaseProjection(
+        phase: p,
+        start: after(cursor),
+        end: after(cursor + p.lengthPasses * pass),
+        started: false,
+        finished: false,
+        deloads: [
+          if (every != null && every > 0)
+            for (var d = every; d <= p.lengthPasses; d += every)
+              after(cursor + (d - 1) * pass),
+        ],
+      ));
+      cursor += p.lengthPasses * pass;
+    }
+  }
+  return PlanProjection(
+    phases: out,
+    sessionsPerWeek: perDay == null ? null : perDay * 7,
+    state: state,
+  );
+}
+
+/// Sessions done or skipped per day over the last [kPaceWindowDays] days up
+/// to [today], or since the first one if that is more recent — though never
+/// over fewer than seven days, so that one busy weekend isn't the pace.
+double? _sessionsPerDay(List<PlanEvent> events, DateTime today) {
+  final days = [
+    for (final e in events)
+      if (e.kind == PlanEventKind.done || e.kind == PlanEventKind.skip)
+        _day(dateFromStr(e.dateStr)),
+  ];
+  if (days.isEmpty) return null;
+  final windowStart = today.subtract(const Duration(days: kPaceWindowDays - 1));
+  final recent =
+      days.where((d) => !d.isBefore(windowStart) && !d.isAfter(today)).length;
+  if (recent < kPaceMinSessions) return null;
+  final first = days.reduce((x, y) => x.isBefore(y) ? x : y);
+  final from = first.isAfter(windowStart) ? first : windowStart;
+  final span = today.difference(from).inDays + 1;
+  return recent / (span < 7 ? 7 : span);
+}
+
+/// [d]'s calendar day as a UTC midnight, so that adding days never trips over
+/// a daylight-saving change.
+DateTime _day(DateTime d) => DateTime.utc(d.year, d.month, d.day);
 
 /// What an exercise is planned to be: any field may be unset.
 class Target {
