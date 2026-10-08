@@ -20,7 +20,7 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
   late final TextEditingController _notesCtrl;
   late final FocusNode _notesFocus;
   bool _notesInited = false;
-  bool _autoOpenedSheet = false;
+  bool _autoOpenChecked = false;
   String _savedNotes = '';
 
   @override
@@ -57,8 +57,8 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
     final workout = ref.watch(allWorkoutsProvider).value
         ?.firstWhere((w) => w.id == widget.workoutId,
             orElse: () => Workout(id: widget.workoutId, name: '', notes: ''));
-    final exercises =
-        ref.watch(workoutExercisesProvider(widget.workoutId)).value ?? [];
+    final exercisesAsync = ref.watch(workoutExercisesProvider(widget.workoutId));
+    final exercises = exercisesAsync.value ?? [];
 
     // Sync notes controller once when data first arrives. Skip if the user
     // is already typing — don't clobber in-progress edits.
@@ -68,12 +68,17 @@ class _WorkoutDetailScreenState extends ConsumerState<WorkoutDetailScreen> {
       _notesCtrl.text = workout.notes;
     }
 
-    // Auto-open exercise picker for empty workouts (e.g. just created)
-    if (!_autoOpenedSheet && exercises.isEmpty && workout != null) {
-      _autoOpenedSheet = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showAddExercisesSheet(context, exercises);
-      });
+    // Auto-open the exercise picker for a workout that is empty when it is
+    // opened (e.g. just created). Decided once, on the first load: before it
+    // every workout looks empty, and after it a workout emptied by a delete
+    // is on its way out.
+    if (!_autoOpenChecked && exercisesAsync.hasValue && workout != null) {
+      _autoOpenChecked = true;
+      if (exercises.isEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showAddExercisesSheet(context, exercises);
+        });
+      }
     }
 
     return Scaffold(

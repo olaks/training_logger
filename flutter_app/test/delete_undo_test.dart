@@ -84,12 +84,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Push'));
     await tester.pumpAndSettle();
-    // The screen opens its exercise picker while its exercises are still
-    // loading; dismiss it to reach the menu.
-    if (find.text('Search exercises').evaluate().isNotEmpty) {
-      await tester.tapAt(const Offset(400, 20));
-      await tester.pumpAndSettle();
-    }
     // The plans list stays in the tree under the pushed screen.
     await tester.tap(find.byIcon(Icons.more_vert).last);
     await tester.pumpAndSettle();
