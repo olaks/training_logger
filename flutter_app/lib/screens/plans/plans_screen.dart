@@ -8,7 +8,6 @@ import '../../utils/format_utils.dart';
 import '../../utils/periodization.dart';
 import '../../utils/pick_text_file.dart';
 import '../../utils/undo_snackbar.dart';
-import 'phases_section.dart';
 
 class PlansScreen extends ConsumerStatefulWidget {
   const PlansScreen({super.key});
@@ -152,15 +151,12 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
       builder: (_) => const _NameDialog(title: 'New periodized plan'),
     );
     if (name == null || !mounted) return;
-    // A new plan starts on the default cycle, which isn't a week.
-    final phase = await showPhaseDialog(context,
-        title: 'First phase', unit: cycleWord(8));
-    if (phase == null) return;
 
+    // The guide lays out the year; the plan behind it shows once it's done.
     final id = await ref.insertPlan(name);
-    await ref.insertPhase(id, phase.name,
-        lengthPasses: phase.weeks, deloadEvery: phase.deloadEvery);
-    if (mounted) context.push('/plans/$id');
+    if (!mounted) return;
+    context.push('/plans/$id');
+    context.push('/plans/$id/setup');
   }
 
   Future<void> _showCreateWorkoutDialog() async {

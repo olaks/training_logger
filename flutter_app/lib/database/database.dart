@@ -5,6 +5,7 @@ import 'tables.dart';
 export 'tables.dart' show PlanEventKind;
 import '../utils/format_utils.dart';
 import '../utils/periodization.dart';
+import '../utils/plan_setup.dart';
 
 part 'database.g.dart';
 
@@ -1894,6 +1895,67 @@ class AppDatabase extends _$AppDatabase {
       sortOrder: Value(next),
     ));
   }
+
+  /// Writes a plan set up in the guide over [planId]'s phases, in one go.
+  /// Phases are matched by id, so one that is renamed, resized or moved
+  /// keeps its log; a phase the setup dropped is deleted with its log, and
+  /// its snapshot returned for [restorePhase]. The guide names those phases
+  /// on its review step before anything is written.
+  Future<List<DeletedPhase>> applyPlanSetup(int planId, PlanSetup setup) =>
+      transaction(() async {
+        final existing = await (select(planPhases)
+              ..where((t) => t.planId.equals(planId)))
+            .map((p) => p.id)
+            .get();
+        final kept = {
+          for (final p in setup.phases)
+            if (existing.contains(p.id)) p.id!,
+        };
+        final removed = [
+          for (final id in existing)
+            if (!kept.contains(id)) (await deletePhase(id))!,
+        ];
+        await (delete(phaseSessions)..where((t) => t.phaseId.isIn(kept)))
+            .go();
+        await (update(plans)..where((t) => t.id.equals(planId)))
+            .write(PlansCompanion(cycleDays: Value(setup.cycleDays)));
+
+        final sessions = <PhaseSessionsCompanion>[];
+        for (var i = 0; i < setup.phases.length; i++) {
+          final draft = setup.phases[i];
+          final int id;
+          if (kept.contains(draft.id)) {
+            id = draft.id!;
+            await (update(planPhases)..where((t) => t.id.equals(id)))
+                .write(PlanPhasesCompanion(
+              name: Value(draft.name),
+              lengthPasses: Value(draft.cycles),
+              deloadEvery: Value(draft.deloadEvery),
+              sortOrder: Value(i),
+            ));
+          } else {
+            id = await insertPhase(planId, draft.name,
+                lengthPasses: draft.cycles, deloadEvery: draft.deloadEvery);
+            await (update(planPhases)..where((t) => t.id.equals(id)))
+                .write(PlanPhasesCompanion(sortOrder: Value(i)));
+          }
+          final cycle = setup.cycleOf(draft);
+          var order = 0;
+          for (final day in cycle.keys.toList()..sort()) {
+            if (day < 1 || day > setup.cycleDays) continue;
+            for (final w in cycle[day]!) {
+              sessions.add(PhaseSessionsCompanion.insert(
+                phaseId: id,
+                workoutId: w,
+                day: Value(day),
+                sortOrder: Value(order++),
+              ));
+            }
+          }
+        }
+        await batch((b) => b.insertAll(phaseSessions, sessions));
+        return removed;
+      });
 
   /// Sets how many days [planId]'s microcycles have. Refused (false) while a
   /// phase has a workout on a day past the new end, which would otherwise

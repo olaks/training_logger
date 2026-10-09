@@ -57,6 +57,12 @@ class PhasesSection extends ConsumerWidget {
                     color: primary)),
             const Spacer(),
             TextButton.icon(
+              onPressed: () => context.push('/plans/$planId/setup'),
+              icon: const Icon(Icons.auto_fix_high, size: 16),
+              label: const Text('Guided setup'),
+              style: TextButton.styleFrom(foregroundColor: primary),
+            ),
+            TextButton.icon(
               onPressed: () => _addPhase(context, ref),
               icon: const Icon(Icons.add, size: 16),
               label: const Text('Add phase'),

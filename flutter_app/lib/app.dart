@@ -8,6 +8,7 @@ import 'screens/detail/exercise_detail_screen.dart';
 import 'screens/import/import_screen.dart';
 import 'screens/plans/plans_screen.dart';
 import 'screens/settings/settings_screen.dart';
+import 'screens/plans/plan_setup_screen.dart';
 import 'screens/plans/plan_detail_screen.dart';
 import 'screens/plans/workout_detail_screen.dart';
 import 'screens/plans/workout_session_screen.dart';
@@ -54,6 +55,12 @@ final router = GoRouter(
       builder: (_, state) => WorkoutSessionScreen(
         workoutId: int.parse(state.pathParameters['id']!),
         dateStr: state.pathParameters['date']!,
+      ),
+    ),
+    GoRoute(
+      path: '/plans/:id/setup',
+      builder: (_, state) => PlanSetupScreen(
+        planId: int.parse(state.pathParameters['id']!),
       ),
     ),
     GoRoute(

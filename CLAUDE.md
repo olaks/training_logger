@@ -115,6 +115,12 @@ RPE 5; `resolveTarget` layers a workout exercise's own target, the phase's
 `PhaseExerciseTargets` override, and the deload. `activePlanProvider` and
 `exerciseTargetProvider` are what the UI reads.
 
+The setup guide (`/plans/:id/setup`) edits a `PlanSetup` draft
+(`utils/plan_setup.dart`): the year's shape, one template cycle, and per
+phase that template or its own copy. Nothing is written until
+`applyPlanSetup`, which matches phases by id so a renamed or moved phase
+keeps its log.
+
 ### Training load / ACWR
 
 `utils/training_load.dart` holds the whole model as plain functions over rows —
@@ -154,7 +160,7 @@ A stale Gradle cache can survive a dependency change and fail the APK build with
 
 ### Routes
 
-Defined in `app.dart`. Shell route with bottom nav (Home `/`, Exercises `/exercises`, Plans `/plans`, Timer `/hangboard`). Detail routes: `/exercise/:id/:date`, `/exercise/:id/edit`, `/workouts/:id`, `/workout-session/:id/:date`, `/plans/:id`, `/hangboard-session/:exerciseId`, `/import`, `/inspirations`, `/load`, `/load/method`, `/settings`.
+Defined in `app.dart`. Shell route with bottom nav (Home `/`, Exercises `/exercises`, Plans `/plans`, Timer `/hangboard`). Detail routes: `/exercise/:id/:date`, `/exercise/:id/edit`, `/workouts/:id`, `/workout-session/:id/:date`, `/plans/:id`, `/plans/:id/setup`, `/hangboard-session/:exerciseId`, `/import`, `/inspirations`, `/load`, `/load/method`, `/settings`.
 
 ## Web deployment note
 

@@ -125,6 +125,21 @@ plan in progress resolves where it stood. `closesPass` is renamed `closesDay`;
 with one day per cycle the meaning is unchanged. Backups and shared plans
 written before v19 import the same way.
 
+## Setup guide
+
+Setting up a year by hand meant entering the same cycle once per phase
+(about 100 taps for 4 phases on an 8-day cycle). Two ways to fix it were
+prototyped side by side, on branch `prototype/year-setup`: a guided builder
+and a days × phases grid. The guide won: about 35 taps against 50, it fits
+a phone without scrolling sideways, and nothing hides behind a long-press.
+The grid's side-by-side view became the guide's review step.
+
+`/plans/:id/setup`, from "Guided setup" on plan detail and from "New
+periodized plan": the shape of the year (cycle length, phases, a classic-year
+preset), the training cycle, what each phase changes and its deloads, then a
+review that names any phase being removed with its log. It opens on the plan
+as it stands, so it reworks a plan as well as starting one.
+
 ## Later
 
 - ~~**Projected timeline**~~ — done: `projectPlan` in `utils/periodization.dart`
