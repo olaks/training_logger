@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'screens/plans/prototype_year_setup/prototype_switcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -58,9 +60,16 @@ final router = GoRouter(
     ),
     GoRoute(
       path: '/plans/:id',
-      builder: (_, state) => PlanDetailScreen(
-        planId: int.parse(state.pathParameters['id']!),
-      ),
+      // PROTOTYPE: ?variant= swaps in a year-setup variant, debug builds only.
+      builder: (_, state) => kDebugMode &&
+              state.uri.queryParameters['variant'] != null
+          ? YearSetupPrototype(
+              planId: int.parse(state.pathParameters['id']!),
+              variant: state.uri.queryParameters['variant']!,
+            )
+          : PlanDetailScreen(
+              planId: int.parse(state.pathParameters['id']!),
+            ),
     ),
     GoRoute(
       path: '/hangboard-session/:exerciseId',
