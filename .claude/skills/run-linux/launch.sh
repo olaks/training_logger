@@ -44,9 +44,12 @@ mkfifo "$state/attach.in"
 # caller's pipe open and `launch.sh | tail` never returns.
 setsid sleep infinity > "$state/attach.in" 2> /dev/null < /dev/null &
 echo $! > "$state/hold.pid"
-(cd "$app" && setsid flutter attach -d linux --debug-url "$url" \
+# Not in a ( ) subshell: one would wait on attach after the script ends,
+# holding the caller's pipe open.
+cd "$app"
+setsid flutter attach -d linux --debug-url "$url" \
   < "$state/attach.in" > "$state/attach.log" 2>&1 &
-  echo $! > "$state/attach.pid")
+echo $! > "$state/attach.pid"
 for _ in $(seq 90); do
   grep -q 'Dart VM Service on Linux' "$state/attach.log" && break
   sleep 2

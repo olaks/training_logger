@@ -30,9 +30,12 @@ Delete that directory to reseed.
   `flutter attach` provides the expression compiler, so `navigate.sh`
   evaluates `router.go(...)` in `app.dart`. Use `navigate.sh -e '<expr>'` for
   any other expression in that scope.
-- **The demo data is in `seed_demo.py`.** Plan 1 is running, with one phase
-  done and one in progress, and the dates assume 2026-10-08. Plan 2 is
-  stopped and has never run. Add rows there when a screen needs more.
+- **The demo data is in `seed_demo.py`.** Plan 1 runs on an 8-day
+  microcycle, with one phase done and one in progress. Its log is dated
+  relative to today, with today's day still to train. Plan 2 is stopped on
+  a 7-day cycle and has never run. Add rows there when a screen needs more.
+  The seed is written against the current schema, so after a schema change
+  delete `$RUN_LINUX_DIR` and update the seed.
 
 ## Gotchas
 
