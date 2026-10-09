@@ -56,7 +56,7 @@ torn down so drift's stream-close timer can run.
 ### Stack
 
 - **State management:** Riverpod 3 (providers + `Notifier` for transient UI state)
-- **Database:** Drift (SQLite) with code generation — schema version 18, foreign keys enforced
+- **Database:** Drift (SQLite) with code generation — schema version 19, foreign keys enforced
 - **Routing:** go_router (URL-based, important for web)
 - **UI:** Material 3 with custom dark themes (4 accent colors)
 
@@ -94,15 +94,23 @@ migration — `test/schema_test.dart` checks the two agree.
 ### Periodized plans
 
 A plan with rows in `PlanPhases` is periodized: it runs its phases in order,
-each lasting a number of *passes* through its rotation (`PhaseSessions`), which
-the UI calls weeks. Missed days don't move it; only sessions do. Its weekday
-`PlanWorkouts` are ignored, and at most one periodized plan is active at a
-time (`setPlanActive`, `insertPhase`). Inactive plans schedule nothing.
+each lasting a number of *passes* through its microcycle — `Plans.cycleDays`
+days (default 8), each holding the phase's `PhaseSessions` for that `day`, or
+none for a rest day. The UI calls a pass a week when the cycle is 7 days (or
+1: plans from before microcycles migrated to one-day cycles holding their old
+rotation) and a cycle otherwise. The plan waits: the current day is the first
+not finished, missed days move nothing, and the calendar only moves rest
+days along — so `resolvePlan` takes today's date, and `ActivePlan.state`
+resolves on read. Its weekday `PlanWorkouts` are ignored, and at most one
+periodized plan is active at a time (`setPlanActive`, `insertPhase`).
+Inactive plans schedule nothing.
 
 Where a plan stands is never stored. `PlanEvents` logs done, skip, "deload now"
 and "move on to the next phase", and `resolvePlan` in
 `utils/periodization.dart` replays it — so undo is deleting an event, and
-editing a phase mid-plan just re-resolves. A deload pass forces every target to
+editing a phase mid-plan just re-resolves. Each session is stamped with the
+`pass` and `day` it was recorded for and whether it `closesDay`, so editing a
+cycle can't undo days already trained. A deload pass forces every target to
 RPE 5; `resolveTarget` layers a workout exercise's own target, the phase's
 `PhaseExerciseTargets` override, and the deload. `activePlanProvider` and
 `exerciseTargetProvider` are what the UI reads.

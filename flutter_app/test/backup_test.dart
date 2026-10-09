@@ -212,13 +212,14 @@ void main() {
       final plan = await db.insertPlan('Season');
       final capacity = await db.insertPhase(plan, 'Capacity',
           lengthPasses: 10, deloadEvery: 4);
-      await db.addSessionToPhase(capacity, a);
-      await db.addSessionToPhase(capacity, b);
+      // An 8-day cycle: A on day 1, B on day 2, rest after.
+      await db.addSessionToPhase(capacity, a, day: 1);
+      await db.addSessionToPhase(capacity, b, day: 2);
       await db.setPhaseExerciseTarget(
           capacity, bench, const Target(rpe: 7, reps: 10));
       final strength =
           await db.insertPhase(plan, 'Basic strength', lengthPasses: 8);
-      await db.addSessionToPhase(strength, a);
+      await db.addSessionToPhase(strength, a, day: 1);
 
       await db.finishSession(a, '2026-03-02');
       await db.finishSession(b, '2026-03-04');
@@ -238,9 +239,17 @@ void main() {
       expect(active.plan.name, 'Season');
       expect(active.phases.map((p) => (p.name, p.lengthPasses, p.deloadEvery)),
           [('Capacity', 10, 4), ('Basic strength', 8, null)]);
+      expect(active.plan.cycleDays, 8);
+      final days = {
+        for (final s in await restored.watchPlanSessions(active.plan.id).first)
+          if (s.phaseId == active.phases.first.id) s.workoutId: s.day,
+      };
+      expect(days.values.toList()..sort(), [1, 2],
+          reason: 'each workout keeps its day of the cycle');
       final s = active.state;
-      expect((s.phase?.name, s.pass, s.isDeload, s.totalPasses),
-          (before.phase?.name, before.pass, before.isDeload, before.totalPasses));
+      expect((s.phase?.name, s.pass, s.day, s.isDeload, s.totalPasses),
+          (before.phase?.name, before.pass, before.day, before.isDeload,
+              before.totalPasses));
       expect(s.remaining.length, before.remaining.length);
 
       final workouts = await restored.watchAllWorkouts().first;
@@ -278,7 +287,8 @@ void main() {
       final mine = await restored.insertPlan('Mine');
       final w = await restored.insertWorkout('Push');
       await restored.addSessionToPhase(
-          await restored.insertPhase(mine, 'Base', lengthPasses: 4), w);
+          await restored.insertPhase(mine, 'Base', lengthPasses: 4), w,
+          day: 1);
       await restored.importFromJson(json);
 
       expect((await restored.activePlan())?.plan.id, mine);
@@ -325,6 +335,7 @@ void main() {
         final from = AppDatabase.forTesting(NativeDatabase.memory());
         addTearDown(from.close);
         final plan = await from.insertPlan('Season');
+        await from.setCycleDays(plan, 1);
         final phase =
             await from.insertPhase(plan, 'Capacity', lengthPasses: 40);
         final ws = [
@@ -332,7 +343,7 @@ void main() {
             await from.insertWorkout(name),
         ];
         for (final w in ws) {
-          await from.addSessionToPhase(phase, w);
+          await from.addSessionToPhase(phase, w, day: 1);
         }
         for (var i = 0; i < weeks; i++) {
           for (final w in ws) {
@@ -387,9 +398,12 @@ void main() {
 
       final active = (await restored.activePlan())!;
       expect(active.phases.map((p) => p.name), ['Capacity', 'Basic strength']);
-      expect(active.state.pass, 1, reason: 'it starts from the beginning');
+      expect((active.state.pass, active.state.day), (1, 1),
+          reason: 'it starts from the beginning');
       expect(active.events, isEmpty);
-      expect(active.state.remaining, hasLength(2));
+      expect(active.plan.cycleDays, 8, reason: 'the cycle travels with it');
+      expect(active.state.remaining, hasLength(1),
+          reason: 'only day 1 is due; the other workout is on day 2');
       final override = (await restored
               .watchPhaseExerciseTargets(active.phases.first.id)
               .first)

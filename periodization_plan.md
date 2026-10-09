@@ -100,6 +100,31 @@ length or rotation mid-plan just re-resolves.
 5. **Track tab**: target label with RPE and deload flag; RPE prefill.
 6. **Workout edit sheet**: target RPE per exercise.
 
+## Microcycles (v19)
+
+A phase's rotation becomes a **microcycle**: a fixed number of days, each
+holding any number of workouts (climbing + bench press + shoulder press on day
+1, mobility + Bulgarian split squats on day 2), or none for a rest day. A
+pass is one microcycle.
+
+| Topic | Decision |
+|---|---|
+| Length | Per plan: `Plans.cycleDays`, default 8. Every phase's cycle has that many days. Shrinking it is refused while a day past the new end has workouts. |
+| Placing | `PhaseSessions.day` (1-based). A workout can sit on several days. |
+| Missed days | The plan waits. The current day is the first one not finished; finishing (doing or skipping) all its workouts makes the next day current from the next calendar day. Missing a day moves nothing. |
+| Rest days | A rest day takes one calendar day — the day after the one before it finished — and passes on its own once that date is behind. "Skip rest day" ends it at once. Doing a workout of the next training day during a rest day skips the rest. A plan that opens with a rest day waits on "Skip rest day", having no date to count from. |
+| Early | The next day's workouts can be done the same day the previous one finished (a double day); the UI shows that day as tomorrow's. |
+| Stamps | Each `done`/`skip` carries the cycle (`pass`) and `day` it was recorded in, and `closesDay` when it finished its day, so editing the cycle mid-plan can't undo days trained — as `pass`/`closesPass` did for rotations. |
+| Labels | A 7-day cycle is a "week" in the UI; any other length is a "cycle". |
+| Timeline | A cycle takes at least `cycleDays` calendar days, longer if recent sessions per day fall short of the cycle's sessions. A one-day cycle with no recent pace is taken as a week. |
+
+**Migration.** Existing phased plans get `cycleDays = 1` with every rotation
+session on day 1, and their logged sessions get `day = 1`. A one-day cycle
+whose workouts can be done in any order is exactly the old rotation, so every
+plan in progress resolves where it stood. `closesPass` is renamed `closesDay`;
+with one day per cycle the meaning is unchanged. Backups and shared plans
+written before v19 import the same way.
+
 ## Later
 
 - ~~**Projected timeline**~~ — done: `projectPlan` in `utils/periodization.dart`

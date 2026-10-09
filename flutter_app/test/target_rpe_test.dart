@@ -74,7 +74,7 @@ void main() {
   testWidgets('a deload pass shows RPE 5 and says so', (tester) async {
     final plan = await db.insertPlan('Season');
     final phase = await db.insertPhase(plan, 'Capacity', lengthPasses: 10);
-    await db.addSessionToPhase(phase, workout);
+    await db.addSessionToPhase(phase, workout, day: 1);
     await db.deloadNow(today);
 
     await pumpTrack(tester);

@@ -10,6 +10,7 @@ import 'package:training_logger/database/database.dart';
 import 'generated_migrations/schema.dart';
 import 'generated_migrations/schema_v16.dart' as v16;
 import 'generated_migrations/schema_v17.dart' as v17;
+import 'generated_migrations/schema_v18.dart' as v18;
 
 /// The migration chain is the one place a bug destroys data that no backup
 /// inside the app can recover, so these check the schema drift actually ends
@@ -117,13 +118,60 @@ void main() {
     await old.close();
 
     final db = AppDatabase.forTesting(schema.newConnection());
-    await verifier.migrateAndValidate(db, 18);
+    await verifier.migrateAndValidate(db, db.schemaVersion);
 
     final plan = (await db.watchAllPlans().first).single;
     expect(plan.name, 'Week');
     expect(plan.active, isTrue,
         reason: 'a plan that was scheduling workouts must keep doing so');
     expect((await db.watchPlanWorkouts(1).first).single.weekday, 3);
+    await db.close();
+  });
+
+  test('a v18 plan in progress becomes a one-day cycle and stays where it was',
+      () async {
+    final verifier = SchemaVerifier(GeneratedHelper());
+    final schema = await verifier.schemaAt(18);
+
+    // A rotation of A and B: the first pass done (B closing it), then A of
+    // the second. A weekly plan beside it has no phases.
+    final old = v18.DatabaseAtV18(schema.newConnection());
+    for (final sql in [
+      "INSERT INTO plans (id, name, active) VALUES (1, 'Year', 1)",
+      "INSERT INTO plans (id, name, active) VALUES (2, 'Week', 1)",
+      "INSERT INTO workouts (id, name) VALUES (1, 'A')",
+      "INSERT INTO workouts (id, name) VALUES (2, 'B')",
+      'INSERT INTO plan_phases (id, plan_id, sort_order, name, length_passes) '
+          "VALUES (1, 1, 0, 'Capacity', 3)",
+      'INSERT INTO phase_sessions (phase_id, workout_id, sort_order) '
+          'VALUES (1, 1, 0), (1, 2, 1)',
+      'INSERT INTO plan_events (plan_id, phase_id, workout_id, pass, '
+          'closes_pass, date_str, timestamp, kind) VALUES '
+          "(1, 1, 1, 1, 0, '2026-10-01', 1, 0), "
+          "(1, 1, 2, 1, 1, '2026-10-03', 2, 0), "
+          "(1, 1, 1, 2, 0, '2026-10-05', 3, 0)",
+    ]) {
+      await old.customStatement(sql);
+    }
+    await old.close();
+
+    final db = AppDatabase.forTesting(schema.newConnection());
+    await verifier.migrateAndValidate(db, db.schemaVersion);
+
+    final plans = {
+      for (final p in await db.watchAllPlans().first) p.name: p.cycleDays,
+    };
+    expect(plans, {'Year': 1, 'Week': 8},
+        reason: 'only a periodized plan becomes a one-day cycle');
+    expect((await db.watchPlanSessions(1).first).map((s) => s.day), [1, 1]);
+    final events = await db.watchPlanEvents(1).first;
+    expect(events.map((e) => (e.day, e.closesDay)),
+        unorderedEquals([(1, false), (1, true), (1, false)]));
+
+    final state = (await db.activePlan())!.state;
+    expect((state.pass, state.day), (2, 1),
+        reason: 'the plan must resolve where it stood before the upgrade');
+    expect(state.remaining, [2]);
     await db.close();
   });
 }

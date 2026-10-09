@@ -28,6 +28,10 @@ class Plans extends Table {
   // Inactive plans keep their contents but schedule nothing. At most one
   // active plan may have phases — see [PlanPhases].
   BoolColumn get active => boolean().withDefault(const Constant(true))();
+  // Days in a microcycle of each of this plan's phases. Plans that were
+  // periodized before microcycles migrated as 1: one day, holding the whole
+  // old rotation.
+  IntColumn  get cycleDays => integer().withDefault(const Constant(8))();
 }
 
 @TableIndex(name: 'idx_pw_plan', columns: {#planId})
@@ -58,7 +62,8 @@ class PlanPhases extends Table {
   IntColumn  get deloadEvery  => integer().nullable()(); // null = no scheduled deloads
 }
 
-/// The rotation of a phase: one row per session, in order.
+/// A phase's microcycle: one row per workout on a day, in order within the
+/// day. A day with no rows is a rest day.
 @TableIndex(name: 'idx_ps_phase', columns: {#phaseId, #sortOrder})
 @TableIndex(name: 'idx_ps_workout', columns: {#workoutId})
 class PhaseSessions extends Table {
@@ -66,6 +71,7 @@ class PhaseSessions extends Table {
   IntColumn get phaseId   => integer().references(PlanPhases, #id)();
   IntColumn get workoutId => integer().references(Workouts, #id)();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  IntColumn get day       => integer().withDefault(const Constant(1))(); // 1-based day of the cycle
 }
 
 /// A phase's targets for one exercise, overriding the workout's own for every
@@ -104,13 +110,16 @@ class PlanEvents extends Table {
   IntColumn  get planId    => integer().references(Plans, #id)();
   IntColumn  get phaseId   => integer().references(PlanPhases, #id)();
   IntColumn  get workoutId => integer().nullable().references(Workouts, #id)(); // done / skip only
-  // done / skip only: the 1-based pass of the phase it was recorded in. Passes
-  // before the latest one stamped are complete whatever the rotation is now,
-  // so editing a rotation mid-plan can't undo weeks already trained.
+  // done / skip only: the 1-based cycle (pass) of the phase and day of the
+  // cycle it was recorded in. Days before the latest one stamped are finished
+  // whatever the cycle holds now, so editing it mid-plan can't undo days
+  // already trained.
   IntColumn  get pass      => integer().nullable()();
-  // done / skip only: it was the last session still due in its pass, so the
-  // pass was finished then — even if a session has been added since.
-  BoolColumn get closesPass => boolean().withDefault(const Constant(false))();
+  IntColumn  get day       => integer().nullable()();
+  // done / skip only: it was the last workout still due on its day, so the
+  // day was finished then — even if a workout has been added to it since.
+  // A skip with no workout is "skip rest day".
+  BoolColumn get closesDay => boolean().withDefault(const Constant(false))();
   TextColumn get dateStr   => text()();
   IntColumn  get timestamp => integer()();
   IntColumn  get kind      => intEnum<PlanEventKind>()();

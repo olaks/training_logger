@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../database/database.dart';
 import '../../providers/app_providers.dart';
 import '../../utils/format_utils.dart';
+import '../../utils/periodization.dart';
 import '../../utils/pick_text_file.dart';
 import '../../utils/undo_snackbar.dart';
 import 'phases_section.dart';
@@ -106,7 +107,8 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   static String _runningLabel(ActivePlan running) {
     final s = running.state;
     if (s.planComplete) return 'Complete';
-    return '${s.phase!.name} \u00b7 week ${s.pass}/${s.totalPasses}';
+    return '${s.phase!.name} \u00b7 '
+        '${cycleWord(running.plan.cycleDays)} ${s.pass}/${s.totalPasses}';
   }
 
   /// A plan either repeats by weekday or runs in phases; which one is the
@@ -131,8 +133,8 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
             child: const ListTile(
               leading: Icon(Icons.timeline),
               title: Text('Periodized plan'),
-              subtitle: Text('Phases of weeks, each with its own sessions '
-                  'and target RPEs'),
+              subtitle: Text('Phases of repeating cycles of days, each '
+                  'with its own workouts and target RPEs'),
             ),
           ),
         ],
@@ -150,7 +152,9 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
       builder: (_) => const _NameDialog(title: 'New periodized plan'),
     );
     if (name == null || !mounted) return;
-    final phase = await showPhaseDialog(context, title: 'First phase');
+    // A new plan starts on the default cycle, which isn't a week.
+    final phase = await showPhaseDialog(context,
+        title: 'First phase', unit: cycleWord(8));
     if (phase == null) return;
 
     final id = await ref.insertPlan(name);

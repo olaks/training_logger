@@ -539,8 +539,11 @@ extension DbMutations on WidgetRef {
   Future<void> reorderPhases(List<int> phaseIds) => db.reorderPhases(phaseIds);
   Future<DeletedPhase?> deletePhase(int id) => db.deletePhase(id);
   Future<void> restorePhase(DeletedPhase d) => db.restorePhase(d);
-  Future<int> addSessionToPhase(int phaseId, int workoutId) =>
-      db.addSessionToPhase(phaseId, workoutId);
+  Future<int> addSessionToPhase(int phaseId, int workoutId,
+          {required int day}) =>
+      db.addSessionToPhase(phaseId, workoutId, day: day);
+  Future<bool> setCycleDays(int planId, int days) =>
+      db.setCycleDays(planId, days);
   Future<int> removePhaseSession(int id) => db.removePhaseSession(id);
   Future<void> setPhaseExerciseTarget(
           int phaseId, int categoryId, Target target) =>

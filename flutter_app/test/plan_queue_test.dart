@@ -34,10 +34,11 @@ void main() {
         board, await db.insertOrGetCategory('Board climbing'));
 
     plan = await db.insertPlan('Season');
+    await db.setCycleDays(plan, 1);
     capacity = await db.insertPhase(plan, 'Capacity',
         lengthPasses: 10, deloadEvery: 4);
-    await db.addSessionToPhase(capacity, strengthA);
-    await db.addSessionToPhase(capacity, board);
+    await db.addSessionToPhase(capacity, strengthA, day: 1);
+    await db.addSessionToPhase(capacity, board, day: 1);
   });
   tearDown(() => db.close());
 
@@ -67,7 +68,7 @@ void main() {
     await pumpApp(tester);
 
     expect(find.textContaining('Capacity · week 1/10'), findsOneWidget);
-    expect(find.text('2 sessions left this week'), findsOneWidget);
+    expect(find.text('2 workouts left this week'), findsOneWidget);
     expect(find.text('STRENGTH A'), findsOneWidget);
     expect(find.text('BOARD'), findsOneWidget);
 
@@ -83,13 +84,13 @@ void main() {
     await tester.tap(find.text('FINISH'));
     await tester.pumpAndSettle();
 
-    expect(find.text('1 session left this week'), findsOneWidget);
+    expect(find.text('1 workout left this week'), findsOneWidget);
     expect(find.text('Strength A done'), findsOneWidget,
         reason: 'the snackbar confirms it, with an undo');
 
     await tester.tap(find.text('UNDO'));
     await tester.pumpAndSettle();
-    expect(find.text('2 sessions left this week'), findsOneWidget);
+    expect(find.text('2 workouts left this week'), findsOneWidget);
 
     await teardownTree(tester);
   });

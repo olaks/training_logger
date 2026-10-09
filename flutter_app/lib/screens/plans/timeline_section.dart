@@ -19,14 +19,16 @@ class TimelineSection extends ConsumerWidget {
     final running = ref.watch(activePlanProvider).value?.plan.id == planId;
     if (phases.isEmpty) return const SizedBox.shrink();
 
-    final rotations = <int, List<int>>{
-      for (final p in phases) p.id: [],
-    };
-    for (final s in sessions) {
-      rotations[s.phaseId]?.add(s.workoutId);
-    }
+    final cycleDays = ref
+            .watch(allPlansProvider)
+            .value
+            ?.where((p) => p.id == planId)
+            .firstOrNull
+            ?.cycleDays ??
+        8;
     final now = DateTime.now();
-    final projection = projectPlan(phases, rotations, events, now);
+    final projection = projectPlan(phases, cyclesOf(phases, sessions), events,
+        cycleDays: cycleDays, today: now);
     final state = projection.state;
 
     final primary = Theme.of(context).colorScheme.primary;
@@ -39,7 +41,8 @@ class TimelineSection extends ConsumerWidget {
 
     final pace = projection.sessionsPerWeek;
     final paceLine = pace == null
-        ? 'A week per pass, until a few sessions give a pace'
+        ? 'A ${cycleWord(cycleDays)} at a time, until a few sessions give '
+            'a pace'
         : 'At ${pace.toStringAsFixed(1)} sessions a week, '
             'from the last $kPaceWindowDays days';
 

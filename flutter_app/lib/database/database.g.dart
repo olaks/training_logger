@@ -941,8 +941,16 @@ class $PlansTable extends Plans with TableInfo<$PlansTable, Plan> {
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('CHECK ("active" IN (0, 1))'),
       defaultValue: const Constant(true));
+  static const VerificationMeta _cycleDaysMeta =
+      const VerificationMeta('cycleDays');
   @override
-  List<GeneratedColumn> get $columns => [id, name, active];
+  late final GeneratedColumn<int> cycleDays = GeneratedColumn<int>(
+      'cycle_days', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(8));
+  @override
+  List<GeneratedColumn> get $columns => [id, name, active, cycleDays];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -966,6 +974,10 @@ class $PlansTable extends Plans with TableInfo<$PlansTable, Plan> {
       context.handle(_activeMeta,
           active.isAcceptableOrUnknown(data['active']!, _activeMeta));
     }
+    if (data.containsKey('cycle_days')) {
+      context.handle(_cycleDaysMeta,
+          cycleDays.isAcceptableOrUnknown(data['cycle_days']!, _cycleDaysMeta));
+    }
     return context;
   }
 
@@ -981,6 +993,8 @@ class $PlansTable extends Plans with TableInfo<$PlansTable, Plan> {
           .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
       active: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}active'])!,
+      cycleDays: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}cycle_days'])!,
     );
   }
 
@@ -994,13 +1008,19 @@ class Plan extends DataClass implements Insertable<Plan> {
   final int id;
   final String name;
   final bool active;
-  const Plan({required this.id, required this.name, required this.active});
+  final int cycleDays;
+  const Plan(
+      {required this.id,
+      required this.name,
+      required this.active,
+      required this.cycleDays});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['name'] = Variable<String>(name);
     map['active'] = Variable<bool>(active);
+    map['cycle_days'] = Variable<int>(cycleDays);
     return map;
   }
 
@@ -1009,6 +1029,7 @@ class Plan extends DataClass implements Insertable<Plan> {
       id: Value(id),
       name: Value(name),
       active: Value(active),
+      cycleDays: Value(cycleDays),
     );
   }
 
@@ -1019,6 +1040,7 @@ class Plan extends DataClass implements Insertable<Plan> {
       id: serializer.fromJson<int>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       active: serializer.fromJson<bool>(json['active']),
+      cycleDays: serializer.fromJson<int>(json['cycleDays']),
     );
   }
   @override
@@ -1028,19 +1050,22 @@ class Plan extends DataClass implements Insertable<Plan> {
       'id': serializer.toJson<int>(id),
       'name': serializer.toJson<String>(name),
       'active': serializer.toJson<bool>(active),
+      'cycleDays': serializer.toJson<int>(cycleDays),
     };
   }
 
-  Plan copyWith({int? id, String? name, bool? active}) => Plan(
+  Plan copyWith({int? id, String? name, bool? active, int? cycleDays}) => Plan(
         id: id ?? this.id,
         name: name ?? this.name,
         active: active ?? this.active,
+        cycleDays: cycleDays ?? this.cycleDays,
       );
   Plan copyWithCompanion(PlansCompanion data) {
     return Plan(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
       active: data.active.present ? data.active.value : this.active,
+      cycleDays: data.cycleDays.present ? data.cycleDays.value : this.cycleDays,
     );
   }
 
@@ -1049,54 +1074,65 @@ class Plan extends DataClass implements Insertable<Plan> {
     return (StringBuffer('Plan(')
           ..write('id: $id, ')
           ..write('name: $name, ')
-          ..write('active: $active')
+          ..write('active: $active, ')
+          ..write('cycleDays: $cycleDays')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, active);
+  int get hashCode => Object.hash(id, name, active, cycleDays);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Plan &&
           other.id == this.id &&
           other.name == this.name &&
-          other.active == this.active);
+          other.active == this.active &&
+          other.cycleDays == this.cycleDays);
 }
 
 class PlansCompanion extends UpdateCompanion<Plan> {
   final Value<int> id;
   final Value<String> name;
   final Value<bool> active;
+  final Value<int> cycleDays;
   const PlansCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.active = const Value.absent(),
+    this.cycleDays = const Value.absent(),
   });
   PlansCompanion.insert({
     this.id = const Value.absent(),
     required String name,
     this.active = const Value.absent(),
+    this.cycleDays = const Value.absent(),
   }) : name = Value(name);
   static Insertable<Plan> custom({
     Expression<int>? id,
     Expression<String>? name,
     Expression<bool>? active,
+    Expression<int>? cycleDays,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (active != null) 'active': active,
+      if (cycleDays != null) 'cycle_days': cycleDays,
     });
   }
 
   PlansCompanion copyWith(
-      {Value<int>? id, Value<String>? name, Value<bool>? active}) {
+      {Value<int>? id,
+      Value<String>? name,
+      Value<bool>? active,
+      Value<int>? cycleDays}) {
     return PlansCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
       active: active ?? this.active,
+      cycleDays: cycleDays ?? this.cycleDays,
     );
   }
 
@@ -1112,6 +1148,9 @@ class PlansCompanion extends UpdateCompanion<Plan> {
     if (active.present) {
       map['active'] = Variable<bool>(active.value);
     }
+    if (cycleDays.present) {
+      map['cycle_days'] = Variable<int>(cycleDays.value);
+    }
     return map;
   }
 
@@ -1120,7 +1159,8 @@ class PlansCompanion extends UpdateCompanion<Plan> {
     return (StringBuffer('PlansCompanion(')
           ..write('id: $id, ')
           ..write('name: $name, ')
-          ..write('active: $active')
+          ..write('active: $active, ')
+          ..write('cycleDays: $cycleDays')
           ..write(')'))
         .toString();
   }
@@ -1818,8 +1858,16 @@ class $PhaseSessionsTable extends PhaseSessions
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
   @override
-  List<GeneratedColumn> get $columns => [id, phaseId, workoutId, sortOrder];
+  late final GeneratedColumn<int> day = GeneratedColumn<int>(
+      'day', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(1));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, phaseId, workoutId, sortOrder, day];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1849,6 +1897,10 @@ class $PhaseSessionsTable extends PhaseSessions
       context.handle(_sortOrderMeta,
           sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
     }
+    if (data.containsKey('day')) {
+      context.handle(
+          _dayMeta, day.isAcceptableOrUnknown(data['day']!, _dayMeta));
+    }
     return context;
   }
 
@@ -1866,6 +1918,8 @@ class $PhaseSessionsTable extends PhaseSessions
           .read(DriftSqlType.int, data['${effectivePrefix}workout_id'])!,
       sortOrder: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+      day: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}day'])!,
     );
   }
 
@@ -1880,11 +1934,13 @@ class PhaseSession extends DataClass implements Insertable<PhaseSession> {
   final int phaseId;
   final int workoutId;
   final int sortOrder;
+  final int day;
   const PhaseSession(
       {required this.id,
       required this.phaseId,
       required this.workoutId,
-      required this.sortOrder});
+      required this.sortOrder,
+      required this.day});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1892,6 +1948,7 @@ class PhaseSession extends DataClass implements Insertable<PhaseSession> {
     map['phase_id'] = Variable<int>(phaseId);
     map['workout_id'] = Variable<int>(workoutId);
     map['sort_order'] = Variable<int>(sortOrder);
+    map['day'] = Variable<int>(day);
     return map;
   }
 
@@ -1901,6 +1958,7 @@ class PhaseSession extends DataClass implements Insertable<PhaseSession> {
       phaseId: Value(phaseId),
       workoutId: Value(workoutId),
       sortOrder: Value(sortOrder),
+      day: Value(day),
     );
   }
 
@@ -1912,6 +1970,7 @@ class PhaseSession extends DataClass implements Insertable<PhaseSession> {
       phaseId: serializer.fromJson<int>(json['phaseId']),
       workoutId: serializer.fromJson<int>(json['workoutId']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      day: serializer.fromJson<int>(json['day']),
     );
   }
   @override
@@ -1922,16 +1981,18 @@ class PhaseSession extends DataClass implements Insertable<PhaseSession> {
       'phaseId': serializer.toJson<int>(phaseId),
       'workoutId': serializer.toJson<int>(workoutId),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'day': serializer.toJson<int>(day),
     };
   }
 
   PhaseSession copyWith(
-          {int? id, int? phaseId, int? workoutId, int? sortOrder}) =>
+          {int? id, int? phaseId, int? workoutId, int? sortOrder, int? day}) =>
       PhaseSession(
         id: id ?? this.id,
         phaseId: phaseId ?? this.phaseId,
         workoutId: workoutId ?? this.workoutId,
         sortOrder: sortOrder ?? this.sortOrder,
+        day: day ?? this.day,
       );
   PhaseSession copyWithCompanion(PhaseSessionsCompanion data) {
     return PhaseSession(
@@ -1939,6 +2000,7 @@ class PhaseSession extends DataClass implements Insertable<PhaseSession> {
       phaseId: data.phaseId.present ? data.phaseId.value : this.phaseId,
       workoutId: data.workoutId.present ? data.workoutId.value : this.workoutId,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      day: data.day.present ? data.day.value : this.day,
     );
   }
 
@@ -1948,13 +2010,14 @@ class PhaseSession extends DataClass implements Insertable<PhaseSession> {
           ..write('id: $id, ')
           ..write('phaseId: $phaseId, ')
           ..write('workoutId: $workoutId, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('day: $day')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, phaseId, workoutId, sortOrder);
+  int get hashCode => Object.hash(id, phaseId, workoutId, sortOrder, day);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1962,7 +2025,8 @@ class PhaseSession extends DataClass implements Insertable<PhaseSession> {
           other.id == this.id &&
           other.phaseId == this.phaseId &&
           other.workoutId == this.workoutId &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.day == this.day);
 }
 
 class PhaseSessionsCompanion extends UpdateCompanion<PhaseSession> {
@@ -1970,17 +2034,20 @@ class PhaseSessionsCompanion extends UpdateCompanion<PhaseSession> {
   final Value<int> phaseId;
   final Value<int> workoutId;
   final Value<int> sortOrder;
+  final Value<int> day;
   const PhaseSessionsCompanion({
     this.id = const Value.absent(),
     this.phaseId = const Value.absent(),
     this.workoutId = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.day = const Value.absent(),
   });
   PhaseSessionsCompanion.insert({
     this.id = const Value.absent(),
     required int phaseId,
     required int workoutId,
     this.sortOrder = const Value.absent(),
+    this.day = const Value.absent(),
   })  : phaseId = Value(phaseId),
         workoutId = Value(workoutId);
   static Insertable<PhaseSession> custom({
@@ -1988,12 +2055,14 @@ class PhaseSessionsCompanion extends UpdateCompanion<PhaseSession> {
     Expression<int>? phaseId,
     Expression<int>? workoutId,
     Expression<int>? sortOrder,
+    Expression<int>? day,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (phaseId != null) 'phase_id': phaseId,
       if (workoutId != null) 'workout_id': workoutId,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (day != null) 'day': day,
     });
   }
 
@@ -2001,12 +2070,14 @@ class PhaseSessionsCompanion extends UpdateCompanion<PhaseSession> {
       {Value<int>? id,
       Value<int>? phaseId,
       Value<int>? workoutId,
-      Value<int>? sortOrder}) {
+      Value<int>? sortOrder,
+      Value<int>? day}) {
     return PhaseSessionsCompanion(
       id: id ?? this.id,
       phaseId: phaseId ?? this.phaseId,
       workoutId: workoutId ?? this.workoutId,
       sortOrder: sortOrder ?? this.sortOrder,
+      day: day ?? this.day,
     );
   }
 
@@ -2025,6 +2096,9 @@ class PhaseSessionsCompanion extends UpdateCompanion<PhaseSession> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (day.present) {
+      map['day'] = Variable<int>(day.value);
+    }
     return map;
   }
 
@@ -2034,7 +2108,8 @@ class PhaseSessionsCompanion extends UpdateCompanion<PhaseSession> {
           ..write('id: $id, ')
           ..write('phaseId: $phaseId, ')
           ..write('workoutId: $workoutId, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('day: $day')
           ..write(')'))
         .toString();
   }
@@ -2444,15 +2519,20 @@ class $PlanEventsTable extends PlanEvents
   late final GeneratedColumn<int> pass = GeneratedColumn<int>(
       'pass', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _closesPassMeta =
-      const VerificationMeta('closesPass');
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
   @override
-  late final GeneratedColumn<bool> closesPass = GeneratedColumn<bool>(
-      'closes_pass', aliasedName, false,
+  late final GeneratedColumn<int> day = GeneratedColumn<int>(
+      'day', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _closesDayMeta =
+      const VerificationMeta('closesDay');
+  @override
+  late final GeneratedColumn<bool> closesDay = GeneratedColumn<bool>(
+      'closes_day', aliasedName, false,
       type: DriftSqlType.bool,
       requiredDuringInsert: false,
       defaultConstraints:
-          GeneratedColumn.constraintIsAlways('CHECK ("closes_pass" IN (0, 1))'),
+          GeneratedColumn.constraintIsAlways('CHECK ("closes_day" IN (0, 1))'),
       defaultValue: const Constant(false));
   static const VerificationMeta _dateStrMeta =
       const VerificationMeta('dateStr');
@@ -2478,7 +2558,8 @@ class $PlanEventsTable extends PlanEvents
         phaseId,
         workoutId,
         pass,
-        closesPass,
+        day,
+        closesDay,
         dateStr,
         timestamp,
         kind
@@ -2516,11 +2597,13 @@ class $PlanEventsTable extends PlanEvents
       context.handle(
           _passMeta, pass.isAcceptableOrUnknown(data['pass']!, _passMeta));
     }
-    if (data.containsKey('closes_pass')) {
+    if (data.containsKey('day')) {
       context.handle(
-          _closesPassMeta,
-          closesPass.isAcceptableOrUnknown(
-              data['closes_pass']!, _closesPassMeta));
+          _dayMeta, day.isAcceptableOrUnknown(data['day']!, _dayMeta));
+    }
+    if (data.containsKey('closes_day')) {
+      context.handle(_closesDayMeta,
+          closesDay.isAcceptableOrUnknown(data['closes_day']!, _closesDayMeta));
     }
     if (data.containsKey('date_str')) {
       context.handle(_dateStrMeta,
@@ -2553,8 +2636,10 @@ class $PlanEventsTable extends PlanEvents
           .read(DriftSqlType.int, data['${effectivePrefix}workout_id']),
       pass: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}pass']),
-      closesPass: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}closes_pass'])!,
+      day: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}day']),
+      closesDay: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}closes_day'])!,
       dateStr: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}date_str'])!,
       timestamp: attachedDatabase.typeMapping
@@ -2579,7 +2664,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
   final int phaseId;
   final int? workoutId;
   final int? pass;
-  final bool closesPass;
+  final int? day;
+  final bool closesDay;
   final String dateStr;
   final int timestamp;
   final PlanEventKind kind;
@@ -2589,7 +2675,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
       required this.phaseId,
       this.workoutId,
       this.pass,
-      required this.closesPass,
+      this.day,
+      required this.closesDay,
       required this.dateStr,
       required this.timestamp,
       required this.kind});
@@ -2605,7 +2692,10 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
     if (!nullToAbsent || pass != null) {
       map['pass'] = Variable<int>(pass);
     }
-    map['closes_pass'] = Variable<bool>(closesPass);
+    if (!nullToAbsent || day != null) {
+      map['day'] = Variable<int>(day);
+    }
+    map['closes_day'] = Variable<bool>(closesDay);
     map['date_str'] = Variable<String>(dateStr);
     map['timestamp'] = Variable<int>(timestamp);
     {
@@ -2623,7 +2713,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
           ? const Value.absent()
           : Value(workoutId),
       pass: pass == null && nullToAbsent ? const Value.absent() : Value(pass),
-      closesPass: Value(closesPass),
+      day: day == null && nullToAbsent ? const Value.absent() : Value(day),
+      closesDay: Value(closesDay),
       dateStr: Value(dateStr),
       timestamp: Value(timestamp),
       kind: Value(kind),
@@ -2639,7 +2730,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
       phaseId: serializer.fromJson<int>(json['phaseId']),
       workoutId: serializer.fromJson<int?>(json['workoutId']),
       pass: serializer.fromJson<int?>(json['pass']),
-      closesPass: serializer.fromJson<bool>(json['closesPass']),
+      day: serializer.fromJson<int?>(json['day']),
+      closesDay: serializer.fromJson<bool>(json['closesDay']),
       dateStr: serializer.fromJson<String>(json['dateStr']),
       timestamp: serializer.fromJson<int>(json['timestamp']),
       kind: $PlanEventsTable.$converterkind
@@ -2655,7 +2747,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
       'phaseId': serializer.toJson<int>(phaseId),
       'workoutId': serializer.toJson<int?>(workoutId),
       'pass': serializer.toJson<int?>(pass),
-      'closesPass': serializer.toJson<bool>(closesPass),
+      'day': serializer.toJson<int?>(day),
+      'closesDay': serializer.toJson<bool>(closesDay),
       'dateStr': serializer.toJson<String>(dateStr),
       'timestamp': serializer.toJson<int>(timestamp),
       'kind':
@@ -2669,7 +2762,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
           int? phaseId,
           Value<int?> workoutId = const Value.absent(),
           Value<int?> pass = const Value.absent(),
-          bool? closesPass,
+          Value<int?> day = const Value.absent(),
+          bool? closesDay,
           String? dateStr,
           int? timestamp,
           PlanEventKind? kind}) =>
@@ -2679,7 +2773,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
         phaseId: phaseId ?? this.phaseId,
         workoutId: workoutId.present ? workoutId.value : this.workoutId,
         pass: pass.present ? pass.value : this.pass,
-        closesPass: closesPass ?? this.closesPass,
+        day: day.present ? day.value : this.day,
+        closesDay: closesDay ?? this.closesDay,
         dateStr: dateStr ?? this.dateStr,
         timestamp: timestamp ?? this.timestamp,
         kind: kind ?? this.kind,
@@ -2691,8 +2786,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
       phaseId: data.phaseId.present ? data.phaseId.value : this.phaseId,
       workoutId: data.workoutId.present ? data.workoutId.value : this.workoutId,
       pass: data.pass.present ? data.pass.value : this.pass,
-      closesPass:
-          data.closesPass.present ? data.closesPass.value : this.closesPass,
+      day: data.day.present ? data.day.value : this.day,
+      closesDay: data.closesDay.present ? data.closesDay.value : this.closesDay,
       dateStr: data.dateStr.present ? data.dateStr.value : this.dateStr,
       timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
       kind: data.kind.present ? data.kind.value : this.kind,
@@ -2707,7 +2802,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
           ..write('phaseId: $phaseId, ')
           ..write('workoutId: $workoutId, ')
           ..write('pass: $pass, ')
-          ..write('closesPass: $closesPass, ')
+          ..write('day: $day, ')
+          ..write('closesDay: $closesDay, ')
           ..write('dateStr: $dateStr, ')
           ..write('timestamp: $timestamp, ')
           ..write('kind: $kind')
@@ -2716,8 +2812,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
   }
 
   @override
-  int get hashCode => Object.hash(id, planId, phaseId, workoutId, pass,
-      closesPass, dateStr, timestamp, kind);
+  int get hashCode => Object.hash(id, planId, phaseId, workoutId, pass, day,
+      closesDay, dateStr, timestamp, kind);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2727,7 +2823,8 @@ class PlanEvent extends DataClass implements Insertable<PlanEvent> {
           other.phaseId == this.phaseId &&
           other.workoutId == this.workoutId &&
           other.pass == this.pass &&
-          other.closesPass == this.closesPass &&
+          other.day == this.day &&
+          other.closesDay == this.closesDay &&
           other.dateStr == this.dateStr &&
           other.timestamp == this.timestamp &&
           other.kind == this.kind);
@@ -2739,7 +2836,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
   final Value<int> phaseId;
   final Value<int?> workoutId;
   final Value<int?> pass;
-  final Value<bool> closesPass;
+  final Value<int?> day;
+  final Value<bool> closesDay;
   final Value<String> dateStr;
   final Value<int> timestamp;
   final Value<PlanEventKind> kind;
@@ -2749,7 +2847,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
     this.phaseId = const Value.absent(),
     this.workoutId = const Value.absent(),
     this.pass = const Value.absent(),
-    this.closesPass = const Value.absent(),
+    this.day = const Value.absent(),
+    this.closesDay = const Value.absent(),
     this.dateStr = const Value.absent(),
     this.timestamp = const Value.absent(),
     this.kind = const Value.absent(),
@@ -2760,7 +2859,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
     required int phaseId,
     this.workoutId = const Value.absent(),
     this.pass = const Value.absent(),
-    this.closesPass = const Value.absent(),
+    this.day = const Value.absent(),
+    this.closesDay = const Value.absent(),
     required String dateStr,
     required int timestamp,
     required PlanEventKind kind,
@@ -2775,7 +2875,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
     Expression<int>? phaseId,
     Expression<int>? workoutId,
     Expression<int>? pass,
-    Expression<bool>? closesPass,
+    Expression<int>? day,
+    Expression<bool>? closesDay,
     Expression<String>? dateStr,
     Expression<int>? timestamp,
     Expression<int>? kind,
@@ -2786,7 +2887,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
       if (phaseId != null) 'phase_id': phaseId,
       if (workoutId != null) 'workout_id': workoutId,
       if (pass != null) 'pass': pass,
-      if (closesPass != null) 'closes_pass': closesPass,
+      if (day != null) 'day': day,
+      if (closesDay != null) 'closes_day': closesDay,
       if (dateStr != null) 'date_str': dateStr,
       if (timestamp != null) 'timestamp': timestamp,
       if (kind != null) 'kind': kind,
@@ -2799,7 +2901,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
       Value<int>? phaseId,
       Value<int?>? workoutId,
       Value<int?>? pass,
-      Value<bool>? closesPass,
+      Value<int?>? day,
+      Value<bool>? closesDay,
       Value<String>? dateStr,
       Value<int>? timestamp,
       Value<PlanEventKind>? kind}) {
@@ -2809,7 +2912,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
       phaseId: phaseId ?? this.phaseId,
       workoutId: workoutId ?? this.workoutId,
       pass: pass ?? this.pass,
-      closesPass: closesPass ?? this.closesPass,
+      day: day ?? this.day,
+      closesDay: closesDay ?? this.closesDay,
       dateStr: dateStr ?? this.dateStr,
       timestamp: timestamp ?? this.timestamp,
       kind: kind ?? this.kind,
@@ -2834,8 +2938,11 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
     if (pass.present) {
       map['pass'] = Variable<int>(pass.value);
     }
-    if (closesPass.present) {
-      map['closes_pass'] = Variable<bool>(closesPass.value);
+    if (day.present) {
+      map['day'] = Variable<int>(day.value);
+    }
+    if (closesDay.present) {
+      map['closes_day'] = Variable<bool>(closesDay.value);
     }
     if (dateStr.present) {
       map['date_str'] = Variable<String>(dateStr.value);
@@ -2858,7 +2965,8 @@ class PlanEventsCompanion extends UpdateCompanion<PlanEvent> {
           ..write('phaseId: $phaseId, ')
           ..write('workoutId: $workoutId, ')
           ..write('pass: $pass, ')
-          ..write('closesPass: $closesPass, ')
+          ..write('day: $day, ')
+          ..write('closesDay: $closesDay, ')
           ..write('dateStr: $dateStr, ')
           ..write('timestamp: $timestamp, ')
           ..write('kind: $kind')
@@ -5781,11 +5889,13 @@ typedef $$PlansTableCreateCompanionBuilder = PlansCompanion Function({
   Value<int> id,
   required String name,
   Value<bool> active,
+  Value<int> cycleDays,
 });
 typedef $$PlansTableUpdateCompanionBuilder = PlansCompanion Function({
   Value<int> id,
   Value<String> name,
   Value<bool> active,
+  Value<int> cycleDays,
 });
 
 final class $$PlansTableReferences
@@ -5851,6 +5961,9 @@ class $$PlansTableFilterComposer extends Composer<_$AppDatabase, $PlansTable> {
 
   ColumnFilters<bool> get active => $composableBuilder(
       column: $table.active, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get cycleDays => $composableBuilder(
+      column: $table.cycleDays, builder: (column) => ColumnFilters(column));
 
   Expression<bool> planWorkoutsRefs(
       Expression<bool> Function($$PlanWorkoutsTableFilterComposer f) f) {
@@ -5933,6 +6046,9 @@ class $$PlansTableOrderingComposer
 
   ColumnOrderings<bool> get active => $composableBuilder(
       column: $table.active, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get cycleDays => $composableBuilder(
+      column: $table.cycleDays, builder: (column) => ColumnOrderings(column));
 }
 
 class $$PlansTableAnnotationComposer
@@ -5952,6 +6068,9 @@ class $$PlansTableAnnotationComposer
 
   GeneratedColumn<bool> get active =>
       $composableBuilder(column: $table.active, builder: (column) => column);
+
+  GeneratedColumn<int> get cycleDays =>
+      $composableBuilder(column: $table.cycleDays, builder: (column) => column);
 
   Expression<T> planWorkoutsRefs<T extends Object>(
       Expression<T> Function($$PlanWorkoutsTableAnnotationComposer a) f) {
@@ -6044,21 +6163,25 @@ class $$PlansTableTableManager extends RootTableManager<
             Value<int> id = const Value.absent(),
             Value<String> name = const Value.absent(),
             Value<bool> active = const Value.absent(),
+            Value<int> cycleDays = const Value.absent(),
           }) =>
               PlansCompanion(
             id: id,
             name: name,
             active: active,
+            cycleDays: cycleDays,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             required String name,
             Value<bool> active = const Value.absent(),
+            Value<int> cycleDays = const Value.absent(),
           }) =>
               PlansCompanion.insert(
             id: id,
             name: name,
             active: active,
+            cycleDays: cycleDays,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) =>
@@ -6996,6 +7119,7 @@ typedef $$PhaseSessionsTableCreateCompanionBuilder = PhaseSessionsCompanion
   required int phaseId,
   required int workoutId,
   Value<int> sortOrder,
+  Value<int> day,
 });
 typedef $$PhaseSessionsTableUpdateCompanionBuilder = PhaseSessionsCompanion
     Function({
@@ -7003,6 +7127,7 @@ typedef $$PhaseSessionsTableUpdateCompanionBuilder = PhaseSessionsCompanion
   Value<int> phaseId,
   Value<int> workoutId,
   Value<int> sortOrder,
+  Value<int> day,
 });
 
 final class $$PhaseSessionsTableReferences
@@ -7053,6 +7178,9 @@ class $$PhaseSessionsTableFilterComposer
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
       column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get day => $composableBuilder(
+      column: $table.day, builder: (column) => ColumnFilters(column));
 
   $$PlanPhasesTableFilterComposer get phaseId {
     final $$PlanPhasesTableFilterComposer composer = $composerBuilder(
@@ -7110,6 +7238,9 @@ class $$PhaseSessionsTableOrderingComposer
   ColumnOrderings<int> get sortOrder => $composableBuilder(
       column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get day => $composableBuilder(
+      column: $table.day, builder: (column) => ColumnOrderings(column));
+
   $$PlanPhasesTableOrderingComposer get phaseId {
     final $$PlanPhasesTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -7165,6 +7296,9 @@ class $$PhaseSessionsTableAnnotationComposer
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<int> get day =>
+      $composableBuilder(column: $table.day, builder: (column) => column);
 
   $$PlanPhasesTableAnnotationComposer get phaseId {
     final $$PlanPhasesTableAnnotationComposer composer = $composerBuilder(
@@ -7234,24 +7368,28 @@ class $$PhaseSessionsTableTableManager extends RootTableManager<
             Value<int> phaseId = const Value.absent(),
             Value<int> workoutId = const Value.absent(),
             Value<int> sortOrder = const Value.absent(),
+            Value<int> day = const Value.absent(),
           }) =>
               PhaseSessionsCompanion(
             id: id,
             phaseId: phaseId,
             workoutId: workoutId,
             sortOrder: sortOrder,
+            day: day,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
             required int phaseId,
             required int workoutId,
             Value<int> sortOrder = const Value.absent(),
+            Value<int> day = const Value.absent(),
           }) =>
               PhaseSessionsCompanion.insert(
             id: id,
             phaseId: phaseId,
             workoutId: workoutId,
             sortOrder: sortOrder,
+            day: day,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
@@ -7693,7 +7831,8 @@ typedef $$PlanEventsTableCreateCompanionBuilder = PlanEventsCompanion Function({
   required int phaseId,
   Value<int?> workoutId,
   Value<int?> pass,
-  Value<bool> closesPass,
+  Value<int?> day,
+  Value<bool> closesDay,
   required String dateStr,
   required int timestamp,
   required PlanEventKind kind,
@@ -7704,7 +7843,8 @@ typedef $$PlanEventsTableUpdateCompanionBuilder = PlanEventsCompanion Function({
   Value<int> phaseId,
   Value<int?> workoutId,
   Value<int?> pass,
-  Value<bool> closesPass,
+  Value<int?> day,
+  Value<bool> closesDay,
   Value<String> dateStr,
   Value<int> timestamp,
   Value<PlanEventKind> kind,
@@ -7772,8 +7912,11 @@ class $$PlanEventsTableFilterComposer
   ColumnFilters<int> get pass => $composableBuilder(
       column: $table.pass, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get closesPass => $composableBuilder(
-      column: $table.closesPass, builder: (column) => ColumnFilters(column));
+  ColumnFilters<int> get day => $composableBuilder(
+      column: $table.day, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get closesDay => $composableBuilder(
+      column: $table.closesDay, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get dateStr => $composableBuilder(
       column: $table.dateStr, builder: (column) => ColumnFilters(column));
@@ -7862,8 +8005,11 @@ class $$PlanEventsTableOrderingComposer
   ColumnOrderings<int> get pass => $composableBuilder(
       column: $table.pass, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get closesPass => $composableBuilder(
-      column: $table.closesPass, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get day => $composableBuilder(
+      column: $table.day, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get closesDay => $composableBuilder(
+      column: $table.closesDay, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<String> get dateStr => $composableBuilder(
       column: $table.dateStr, builder: (column) => ColumnOrderings(column));
@@ -7950,8 +8096,11 @@ class $$PlanEventsTableAnnotationComposer
   GeneratedColumn<int> get pass =>
       $composableBuilder(column: $table.pass, builder: (column) => column);
 
-  GeneratedColumn<bool> get closesPass => $composableBuilder(
-      column: $table.closesPass, builder: (column) => column);
+  GeneratedColumn<int> get day =>
+      $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumn<bool> get closesDay =>
+      $composableBuilder(column: $table.closesDay, builder: (column) => column);
 
   GeneratedColumn<String> get dateStr =>
       $composableBuilder(column: $table.dateStr, builder: (column) => column);
@@ -8051,7 +8200,8 @@ class $$PlanEventsTableTableManager extends RootTableManager<
             Value<int> phaseId = const Value.absent(),
             Value<int?> workoutId = const Value.absent(),
             Value<int?> pass = const Value.absent(),
-            Value<bool> closesPass = const Value.absent(),
+            Value<int?> day = const Value.absent(),
+            Value<bool> closesDay = const Value.absent(),
             Value<String> dateStr = const Value.absent(),
             Value<int> timestamp = const Value.absent(),
             Value<PlanEventKind> kind = const Value.absent(),
@@ -8062,7 +8212,8 @@ class $$PlanEventsTableTableManager extends RootTableManager<
             phaseId: phaseId,
             workoutId: workoutId,
             pass: pass,
-            closesPass: closesPass,
+            day: day,
+            closesDay: closesDay,
             dateStr: dateStr,
             timestamp: timestamp,
             kind: kind,
@@ -8073,7 +8224,8 @@ class $$PlanEventsTableTableManager extends RootTableManager<
             required int phaseId,
             Value<int?> workoutId = const Value.absent(),
             Value<int?> pass = const Value.absent(),
-            Value<bool> closesPass = const Value.absent(),
+            Value<int?> day = const Value.absent(),
+            Value<bool> closesDay = const Value.absent(),
             required String dateStr,
             required int timestamp,
             required PlanEventKind kind,
@@ -8084,7 +8236,8 @@ class $$PlanEventsTableTableManager extends RootTableManager<
             phaseId: phaseId,
             workoutId: workoutId,
             pass: pass,
-            closesPass: closesPass,
+            day: day,
+            closesDay: closesDay,
             dateStr: dateStr,
             timestamp: timestamp,
             kind: kind,

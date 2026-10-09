@@ -25,7 +25,7 @@ class HomeScreen extends ConsumerWidget {
         ref.watch(plannedWorkoutsForDateProvider(dateStr)).value ?? [];
 
     // A periodized plan's sessions aren't tied to a date, so they show on
-    // today only: what is still due this week, and what was done today.
+    // today only: what is due now, and what was done today.
     final running = ref.watch(activePlanProvider).value;
     final isToday = dateStr == dateStrFrom(DateTime.now());
     final plan = isToday && running?.state.phase != null ? running : null;
@@ -115,7 +115,7 @@ class HomeScreen extends ConsumerWidget {
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
                   children: [
-                    // ── Periodized plan: this week's sessions ────────────
+                    // ── Periodized plan: today's sessions ────────────────
                     if (plan != null)
                       PlanBanner(active: plan, dateStr: dateStr),
                     for (final (workout, exercises, done) in sessions) ...[
@@ -213,12 +213,17 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  /// The running plan's sessions to show today, in rotation order: those
-  /// still due this week, and those already done today. None while a
-  /// finished phase waits to be moved on from — the banner asks about that.
+  /// The running plan's sessions to show today, in cycle order: those due
+  /// now — the current day's, or on a rest day the next training day's — and
+  /// those already done today. None while a finished phase waits to be
+  /// moved on from; the banner asks about that.
   List<_Session> _sessionsToday(
       WidgetRef ref, ActivePlan plan, String dateStr) {
-    final phase = plan.state.phase!;
+    final state = plan.state;
+    final phase = state.phase!;
+    final due = state.phaseComplete
+        ? const <int>[]
+        : state.due?.workouts ?? const <int>[];
     final doneToday = {
       for (final e in plan.events)
         if (e.kind == PlanEventKind.done &&
@@ -229,8 +234,7 @@ class HomeScreen extends ConsumerWidget {
     final workouts = ref.watch(allWorkoutsProvider).value ?? [];
     return [
       for (final id in {...?plan.rotations[phase.id]})
-        if (doneToday.contains(id) ||
-            (!plan.state.phaseComplete && plan.state.remaining.contains(id)))
+        if (doneToday.contains(id) || due.contains(id))
           if (workouts.where((w) => w.id == id).firstOrNull case final w?)
             (
               w,

@@ -4,11 +4,13 @@ import 'format_utils.dart';
 /// Where a periodized plan stands, replayed from its event log.
 ///
 /// A plan runs its phases in order. A phase lasts a number of *passes* — one
-/// trip through its rotation of sessions, which the UI calls a week — so
-/// missed days never move the plan; only logged sessions do. Nothing about the
-/// position is stored: everything here is a pure function of the phases, their
-/// rotations and the events, so it can be tested without a database, and undo
-/// or editing a phase mid-plan just means replaying again.
+/// trip through its microcycle, a fixed number of days each holding some
+/// workouts (or none, for rest) — so missed days never move the plan; only
+/// logged sessions do, and the calendar only moves rest days along. Nothing
+/// about the position is stored: everything here is a pure function of the
+/// phases, their cycles, the events and today's date, so it can be tested
+/// without a database, and undo or editing a phase mid-plan just means
+/// replaying again.
 
 /// The target RPE for every exercise during a deload pass.
 const kDeloadRpe = 5;
@@ -17,13 +19,66 @@ const kDeloadRpe = 5;
 /// "deload now" takes early. Any further off and the manual deload is extra.
 const kDeloadReplaceWindow = 2;
 
+/// A phase's microcycle: 1-based day → the workout ids on it, in order. A day
+/// missing from the map or holding nothing is a rest day.
+typedef Cycle = Map<int, List<int>>;
+
+/// Each phase's cycle from its [sessions] rows: every phase of [phases] gets
+/// one, empty if it has no sessions yet.
+Map<int, Cycle> cyclesOf(
+    List<PlanPhase> phases, List<PhaseSession> sessions) {
+  final rows = [...sessions]..sort((x, y) => x.day != y.day
+      ? x.day.compareTo(y.day)
+      : x.sortOrder.compareTo(y.sortOrder));
+  final cycles = {for (final p in phases) p.id: <int, List<int>>{}};
+  for (final s in rows) {
+    cycles[s.phaseId]?.putIfAbsent(s.day, () => []).add(s.workoutId);
+  }
+  return cycles;
+}
+
+/// Every workout in [cycle], each once, in day order.
+List<int> cycleWorkouts(Cycle cycle) => {
+      for (final d in cycle.keys.toList()..sort()) ...cycle[d]!,
+    }.toList();
+
+/// What the UI calls a pass of a plan whose cycles have [cycleDays] days: a
+/// week when it is one — and for a one-day cycle, which holds a whole
+/// rotation of the kind the UI always called a week.
+String cycleWord(int cycleDays) =>
+    cycleDays == 7 || cycleDays == 1 ? 'week' : 'cycle';
+
+/// What is left to train of the current day, or that it is up tomorrow when
+/// the day before it finished today. A one-day cycle's day lasts as long as
+/// its workouts take, so its count is for the week, and it is never
+/// "tomorrow".
+String workoutsLeftLine(PlanState s, DateTime now) {
+  final left = s.remaining.length;
+  final workouts = left == 1 ? '1 workout' : '$left workouts';
+  if (s.cycleDays == 1) return '$workouts left this week';
+  final upFrom = s.upFrom;
+  if (upFrom != null && upFrom.isAfter(_day(now))) {
+    return 'Day ${s.day} is up tomorrow: $workouts';
+  }
+  return '$workouts left today';
+}
+
+/// The day whose workouts are due, and which of them still are.
+typedef DueDay = ({int pass, int day, List<int> workouts});
+
 /// The position of a plan, as [resolvePlan] works it out.
 class PlanState {
   /// The phase being worked through, or null once the plan is over.
   final PlanPhase? phase;
 
-  /// 1-based pass within [phase].
+  /// 1-based pass (microcycle) within [phase].
   final int pass;
+
+  /// 1-based day of [pass].
+  final int day;
+
+  /// Days in a microcycle.
+  final int cycleDays;
 
   /// Passes of [phase] finished so far. Unlike [pass], not capped at
   /// [totalPasses]: a finished phase keeps counting while it waits.
@@ -33,13 +88,26 @@ class PlanState {
   final int totalPasses;
 
   /// Sessions done and skipped in [phase] so far, every one logged — a
-  /// session repeated within its pass counts again here, though it does
-  /// nothing for the pass.
+  /// session repeated within its day counts again here, though it does
+  /// nothing for the day.
   final int sessionsDone;
   final int sessionsSkipped;
 
-  /// Sessions of the current pass not yet done or skipped, in rotation order.
+  /// Workouts of the current day not yet done or skipped, in order. Empty on
+  /// a rest day.
   final List<int> remaining;
+
+  /// The current day has no workouts.
+  final bool isRestDay;
+
+  /// The first calendar day the current day is up: the day after the one
+  /// before it finished. Null when no day of the phase has finished yet.
+  final DateTime? upFrom;
+
+  /// What can be trained now: the current day's [remaining] workouts, or on
+  /// a rest day the whole of the next day with workouts — training it skips
+  /// the rest. Null when nothing in the phase is left.
+  final DueDay? due;
 
   /// The current pass is a deload: every target drops to [kDeloadRpe].
   final bool isDeload;
@@ -60,11 +128,16 @@ class PlanState {
   const PlanState({
     required this.phase,
     required this.pass,
+    required this.day,
+    required this.cycleDays,
     required this.passesDone,
     required this.totalPasses,
     required this.sessionsDone,
     required this.sessionsSkipped,
     required this.remaining,
+    required this.isRestDay,
+    required this.upFrom,
+    required this.due,
     required this.isDeload,
     required this.passesUntilDeload,
     required this.deloads,
@@ -74,12 +147,17 @@ class PlanState {
 }
 
 /// Replays [events] against [phases] (in any order; sorted by `sortOrder`)
-/// and their [rotations] (phase id → workout ids in rotation order).
+/// and their [cycles] (phase id → its microcycle of [cycleDays] days), as of
+/// [today], which moves rest days along.
 PlanState resolvePlan(
   List<PlanPhase> phases,
-  Map<int, List<int>> rotations,
-  List<PlanEvent> events,
-) {
+  Map<int, Cycle> cycles,
+  List<PlanEvent> events, {
+  required int cycleDays,
+  required DateTime today,
+}) {
+  today = _day(today);
+  final days = cycleDays < 1 ? 1 : cycleDays;
   final ordered = [...phases]
     ..sort((x, y) => x.sortOrder.compareTo(y.sortOrder));
   final log = [...events]
@@ -95,23 +173,29 @@ PlanState resolvePlan(
   };
   final current = ordered.where((p) => !advanced.contains(p.id)).firstOrNull;
   if (current == null) {
-    return const PlanState(
+    return PlanState(
       phase: null,
       pass: 0,
+      day: 0,
+      cycleDays: days,
       passesDone: 0,
       totalPasses: 0,
       sessionsDone: 0,
       sessionsSkipped: 0,
-      remaining: [],
+      remaining: const [],
+      isRestDay: false,
+      upFrom: null,
+      due: null,
       isDeload: false,
       passesUntilDeload: null,
-      deloads: [],
+      deloads: const [],
       phaseComplete: false,
       planComplete: true,
     );
   }
 
-  final rotation = rotations[current.id] ?? const <int>[];
+  final cycle = cycles[current.id] ?? const <int, List<int>>{};
+  List<int> on(int day) => cycle[day] ?? const [];
   var total = current.lengthPasses;
   // 1-based passes that are deloads: the phase's rule first, then reshaped by
   // each "deload now" as it comes.
@@ -121,40 +205,78 @@ PlanState resolvePlan(
       for (var p = every; p <= total; p += every) p,
   };
   var passesDone = 0;
+  var day = 1;
   var sessionsDone = 0;
   var sessionsSkipped = 0;
   final covered = <int>{};
-  var started = false;
+  // The phase's first day is up from the day the phase before it was moved
+  // on from; with no phase before, there is no date to count a rest from.
+  DateTime? upFrom = log
+      .where((e) => e.kind == PlanEventKind.advance)
+      .map((e) => _day(dateFromStr(e.dateStr)))
+      .fold<DateTime?>(null, (m, d) => m == null || d.isAfter(m) ? d : m);
+
+  void nextDay(DateTime up) {
+    covered.clear();
+    upFrom = up;
+    if (++day > days) {
+      day = 1;
+      passesDone++;
+    }
+  }
+
+  // A rest day takes the one calendar day it is up on, and is over once that
+  // date is behind [date].
+  void restBefore(DateTime date) {
+    while (passesDone < total &&
+        on(day).isEmpty &&
+        upFrom != null &&
+        upFrom!.isBefore(date)) {
+      nextDay(upFrom!.add(const Duration(days: 1)));
+    }
+  }
+
   for (final e in log.where((e) => e.phaseId == current.id)) {
+    final date = _day(dateFromStr(e.dateStr));
     switch (e.kind) {
       case PlanEventKind.done:
       case PlanEventKind.skip:
+        // A skip with no workout is "skip rest day", not a session — or a
+        // skipped session whose workout has since been deleted, which goes
+        // uncounted with it.
         if (e.kind == PlanEventKind.done) {
           sessionsDone++;
-        } else {
+        } else if (e.workoutId != null) {
           sessionsSkipped++;
         }
-        // Each session carries the pass it was recorded in, and whether it
-        // finished that pass. Both stand whatever the rotation has become
-        // since: a later stamp means every pass before it was finished, an
-        // earlier one belongs to a pass that is already behind.
-        final stamp = e.pass ?? passesDone + 1;
-        if (stamp < passesDone + 1) continue;
-        if (stamp > passesDone + 1) {
-          passesDone = stamp - 1;
+        restBefore(date);
+        // Each session carries the day it was recorded for, and whether it
+        // finished that day. Both stand whatever the cycle has become since:
+        // a later stamp means every day before it was finished (a rest day
+        // trained through, or days since removed), an earlier one belongs to
+        // a day already behind.
+        final stampPass = e.pass ?? passesDone + 1;
+        final stampDay = e.day ?? day;
+        final behind = stampPass != passesDone + 1
+            ? stampPass < passesDone + 1
+            : stampDay < day;
+        if (behind) continue;
+        if (stampPass != passesDone + 1 || stampDay != day) {
+          passesDone = stampPass - 1;
+          day = stampDay;
           covered.clear();
         }
-        started = true;
-        // A session outside the rotation (or whose workout is gone) still
-        // starts its pass, but doesn't bring it any closer to done.
-        if (rotation.contains(e.workoutId)) covered.add(e.workoutId!);
-        if (e.closesPass || rotation.every(covered.contains)) {
-          passesDone++;
-          covered.clear();
-          started = false;
+        // A workout not on the day (or whose workout is gone) does nothing
+        // for it unless it was the one that finished it.
+        if (on(day).contains(e.workoutId)) covered.add(e.workoutId!);
+        if (e.closesDay || on(day).every(covered.contains)) {
+          // A rest day ended early ("skip rest day") puts the next day up at
+          // once; a trained day's next is up the day after.
+          nextDay(on(day).isEmpty ? date : date.add(const Duration(days: 1)));
         }
       case PlanEventKind.deload:
         // The deload goes on the first pass not yet started.
+        final started = day > 1 || covered.isNotEmpty;
         final target = passesDone + (started ? 2 : 1);
         if (deloads.contains(target)) continue;
         final next = deloads.where((p) => p > target).fold<int?>(
@@ -174,23 +296,54 @@ PlanState resolvePlan(
         break;
     }
   }
+  restBefore(today);
 
   // Sessions done after the last pass are kept rather than capped, so that
   // lengthening a finished phase credits them.
   final complete = passesDone >= total;
   final pass = complete ? total : passesDone + 1;
   final upcoming = deloads.where((p) => p >= pass).toList()..sort();
+  final remaining = complete
+      ? const <int>[]
+      : [
+          for (final w in on(day))
+            if (!covered.contains(w)) w,
+        ];
+  final isRest = !complete && on(day).isEmpty;
+
+  DueDay? due;
+  if (!complete && !isRest) {
+    due = (pass: pass, day: day, workouts: remaining);
+  } else if (isRest) {
+    // The next day with workouts within the phase. One lap of the cycle
+    // finds it if there is one at all.
+    var p = pass, d = day;
+    for (var i = 0; i < days; i++) {
+      if (++d > days) {
+        d = 1;
+        p++;
+      }
+      if (p > total) break;
+      if (on(d).isNotEmpty) {
+        due = (pass: p, day: d, workouts: on(d));
+        break;
+      }
+    }
+  }
+
   return PlanState(
     phase: current,
     pass: pass,
+    day: complete ? days : day,
+    cycleDays: days,
     passesDone: passesDone,
     totalPasses: total,
     sessionsDone: sessionsDone,
     sessionsSkipped: sessionsSkipped,
-    remaining: [
-      for (final w in rotation)
-        if (!covered.contains(w)) w,
-    ],
+    remaining: remaining,
+    isRestDay: isRest,
+    upFrom: complete ? null : upFrom,
+    due: due,
     isDeload: !complete && deloads.contains(pass),
     passesUntilDeload:
         complete || upcoming.isEmpty ? null : upcoming.first - pass,
@@ -206,13 +359,8 @@ PlanState resolvePlan(
 const kPaceWindowDays = 28;
 
 /// The fewest sessions in the window that a pace is trusted from. With fewer,
-/// a pass is taken to last a week, which is what the UI calls it.
+/// a pass is taken to last its cycle's days (a one-day cycle, a week).
 const kPaceMinSessions = 3;
-
-/// The shortest a one-session pass is projected to take, whatever the pace.
-/// A rotation of a single session is that session once a week, not as often
-/// as the athlete trains; a longer rotation runs at the pace it is trained.
-const kMinPassDays = 7;
 
 /// One phase laid out in time. Dates are days, as UTC midnights.
 class PhaseProjection {
@@ -250,7 +398,7 @@ class PlanProjection {
   final List<PhaseProjection> phases;
 
   /// The pace assumed, or null when there were too few recent sessions to
-  /// measure one and every pass was taken as a week.
+  /// measure one and every cycle was taken at its length.
   final double? sessionsPerWeek;
 
   /// Where the plan stands, as [resolvePlan] has it.
@@ -266,30 +414,34 @@ class PlanProjection {
 }
 
 /// Lays out [phases] in time from [today], replaying [events] as
-/// [resolvePlan] does. Only sessions (done or skipped) move a plan, so the
-/// pace is the sessions logged per day lately, and a pass takes as long as
-/// its rotation does at that pace.
+/// [resolvePlan] does. A cycle takes at least its [cycleDays] — a day can't
+/// be trained before it is up — and longer when the sessions logged per day
+/// lately fall short of the cycle's.
 PlanProjection projectPlan(
   List<PlanPhase> phases,
-  Map<int, List<int>> rotations,
-  List<PlanEvent> events,
-  DateTime today,
-) {
+  Map<int, Cycle> cycles,
+  List<PlanEvent> events, {
+  required int cycleDays,
+  required DateTime today,
+}) {
   today = _day(today);
-  final state = resolvePlan(phases, rotations, events);
+  final state = resolvePlan(phases, cycles, events,
+      cycleDays: cycleDays, today: today);
+  final days = state.cycleDays;
   final ordered = [...phases]
     ..sort((x, y) => x.sortOrder.compareTo(y.sortOrder));
   final perDay = _sessionsPerDay(events, today);
 
-  double passDays(int rotationLength) {
-    if (perDay == null || rotationLength == 0) return 7;
-    final days = rotationLength / perDay;
-    return rotationLength == 1 && days < kMinPassDays
-        ? kMinPassDays.toDouble()
-        : days;
+  int sessionsIn(Cycle c) => c.values.fold(0, (n, w) => n + w.length);
+  double passDays(int sessions) {
+    // A one-day cycle is a whole old rotation, which ran about a week.
+    final floor = days == 1 && perDay == null ? 7.0 : days.toDouble();
+    if (perDay == null || sessions == 0) return floor;
+    final atPace = sessions / perDay;
+    return atPace < floor ? floor : atPace;
   }
-  DateTime after(double days) =>
-      today.add(Duration(days: days.round()));
+
+  DateTime after(double days) => today.add(Duration(days: days.round()));
 
   // Days from today to where the phase being laid out begins.
   var cursor = 0.0;
@@ -306,8 +458,9 @@ PlanProjection projectPlan(
         if (e.phaseId == p.id && e.kind == PlanEventKind.advance)
           _day(dateFromStr(e.dateStr)),
     ]..sort();
-    final rotation = rotations[p.id]?.length ?? 0;
-    final pass = passDays(rotation);
+    final cycle = cycles[p.id] ?? const <int, List<int>>{};
+    final sessions = sessionsIn(cycle);
+    final pass = passDays(sessions);
 
     final began = movedOn ?? own.firstOrNull;
     if (advance.isNotEmpty) {
@@ -321,13 +474,20 @@ PlanProjection projectPlan(
         deloads: const [],
       ));
     } else if (p.id == state.phase?.id) {
-      // What is left of the pass under way, as a fraction of a pass, then
-      // the passes after it.
-      final partial = state.phaseComplete
-          ? 0.0
-          : rotation == 0
-              ? 1.0
-              : state.remaining.length / rotation;
+      // What is left of the cycle under way, as a fraction of a cycle —
+      // by sessions when it has any, else by days — then the cycles after.
+      final double partial;
+      if (state.phaseComplete) {
+        partial = 0;
+      } else if (sessions == 0) {
+        partial = (days - state.day + 1) / days;
+      } else {
+        var left = state.remaining.length;
+        for (var d = state.day + 1; d <= days; d++) {
+          left += cycle[d]?.length ?? 0;
+        }
+        partial = left / sessions;
+      }
       final left = state.phaseComplete
           ? 0.0
           : partial + state.totalPasses - state.pass;
@@ -371,13 +531,15 @@ PlanProjection projectPlan(
   );
 }
 
-/// Sessions done or skipped per day over the last [kPaceWindowDays] days up
+/// Workouts done or skipped per day over the last [kPaceWindowDays] days up
 /// to [today], or since the first one if that is more recent — though never
 /// over fewer than seven days, so that one busy weekend isn't the pace.
 double? _sessionsPerDay(List<PlanEvent> events, DateTime today) {
   final days = [
     for (final e in events)
-      if (e.kind == PlanEventKind.done || e.kind == PlanEventKind.skip)
+      // A skip with no workout is a rest day skipped, not a session.
+      if (e.kind == PlanEventKind.done ||
+          (e.kind == PlanEventKind.skip && e.workoutId != null))
         _day(dateFromStr(e.dateStr)),
   ];
   if (days.isEmpty) return null;

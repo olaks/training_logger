@@ -18,7 +18,7 @@ class PlanDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final plan = ref.watch(allPlansProvider).value
-        ?.firstWhere((p) => p.id == planId, orElse: () => Plan(id: planId, name: '', active: true));
+        ?.firstWhere((p) => p.id == planId, orElse: () => Plan(id: planId, name: '', active: true, cycleDays: 8));
     final allPlanWorkouts = ref.watch(planWorkoutsProvider(planId)).value ?? [];
     final periodized =
         (ref.watch(planPhasesProvider(planId)).value ?? []).isNotEmpty;
@@ -84,6 +84,21 @@ class PlanDetailScreen extends ConsumerWidget {
               value: plan.active,
               onChanged: (v) => ref.setPlanActive(plan.id, v),
             ),
+          if (plan != null && periodized)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Microcycle'),
+              subtitle: Text(
+                'Every phase repeats a cycle of days, each with its own '
+                'workouts or a rest day',
+                style: TextStyle(
+                    fontSize: 12, color: Colors.white.withValues(alpha: 0.5)),
+              ),
+              trailing: Text(
+                  plan.cycleDays == 1 ? '1 day' : '${plan.cycleDays} days',
+                  style: const TextStyle(fontSize: 15)),
+              onTap: () => _editCycleDays(context, ref, plan),
+            ),
           const SizedBox(height: 8),
 
           // A plan with phases schedules by rotation, so its weekday grid
@@ -96,8 +111,8 @@ class PlanDetailScreen extends ConsumerWidget {
 
           PhasesSection(
             planId: planId,
-            onAddSession: (phaseId) =>
-                _showAddSessionSheet(context, ref, phaseId),
+            onAddSession: (phaseId, day) =>
+                _showAddSessionSheet(context, ref, phaseId, day),
           ),
         ],
       ),
@@ -193,7 +208,51 @@ class PlanDetailScreen extends ConsumerWidget {
     ];
   }
 
-  void _showAddSessionSheet(BuildContext context, WidgetRef ref, int phaseId) {
+  Future<void> _editCycleDays(
+      BuildContext context, WidgetRef ref, Plan plan) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ctrl = TextEditingController(text: '${plan.cycleDays}');
+    final days = await showDialog<int>(
+      context: context,
+      useRootNavigator: false,
+      builder: (dialogCtx) {
+        void save() {
+          final n = int.tryParse(ctrl.text.trim());
+          if (n != null && n >= 1 && n <= 28) Navigator.pop(dialogCtx, n);
+        }
+
+        return AlertDialog(
+          title: const Text('Microcycle length'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            onSubmitted: (_) => save(),
+            decoration: const InputDecoration(
+              labelText: 'Days',
+              helperText: '1 to 28. Seven makes it a week.',
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text('Cancel')),
+            TextButton(onPressed: save, child: const Text('Save')),
+          ],
+        );
+      },
+    );
+    ctrl.dispose();
+    if (days == null || days == plan.cycleDays) return;
+    if (!await ref.setCycleDays(plan.id, days)) {
+      messenger.showSnackBar(SnackBar(
+          content: Text('Move the workouts off the days past day $days '
+              'first.')));
+    }
+  }
+
+  void _showAddSessionSheet(
+      BuildContext context, WidgetRef ref, int phaseId, int day) {
     showModalBottomSheet(
       context: context,
       useRootNavigator: false,
@@ -206,7 +265,7 @@ class PlanDetailScreen extends ConsumerWidget {
             EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: _PickWorkoutSheet(
           onPick: (workoutId, _) async {
-            await ref.addSessionToPhase(phaseId, workoutId);
+            await ref.addSessionToPhase(phaseId, workoutId, day: day);
             if (ctx.mounted) Navigator.pop(ctx);
           },
         ),

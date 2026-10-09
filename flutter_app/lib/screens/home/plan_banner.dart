@@ -7,8 +7,9 @@ import '../../utils/periodization.dart';
 import '../../utils/undo_snackbar.dart';
 
 /// Where the running periodized plan stands, at the top of today's view:
-/// the phase and week, how far off the next deload is, and — once every week
-/// of a phase is done — the choice between moving on and adding a week.
+/// the phase, cycle and day, how far off the next deload is, a rest day and
+/// the way out of it, and — once every cycle of a phase is done — the choice
+/// between moving on and adding another.
 class PlanBanner extends ConsumerWidget {
   final ActivePlan active;
   final String dateStr;
@@ -21,15 +22,18 @@ class PlanBanner extends ConsumerWidget {
     final primary = Theme.of(context).colorScheme.primary;
     final color = s.isDeload ? Colors.amber : primary;
 
+    final unit = cycleWord(s.cycleDays);
     final headline = [
-      '${phase.name} · week ${s.pass}/${s.totalPasses}',
+      '${phase.name} · $unit ${s.pass}/${s.totalPasses}',
+      if (!s.phaseComplete && s.cycleDays > 1) 'day ${s.day}/${s.cycleDays}',
       if (s.isDeload)
         'deload, RPE $kDeloadRpe'
       else if (!s.phaseComplete && s.passesUntilDeload != null)
         'deload in ${s.passesUntilDeload}',
     ].join(' · ');
 
-    final left = s.remaining.length;
+    final dim =
+        TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.55));
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       color: color.withValues(alpha: 0.08),
@@ -67,18 +71,39 @@ class PlanBanner extends ConsumerWidget {
             ),
             if (s.phaseComplete)
               _PhaseDone(active: active, dateStr: dateStr)
+            else if (s.isRestDay)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                        s.due == null
+                            ? 'Rest day.'
+                            : 'Rest day. Or train day ${s.due!.day} now '
+                                'instead.',
+                        style: dim),
+                  ),
+                  TextButton(
+                    onPressed: () => _skipRest(context, ref),
+                    child: const Text('Skip rest day'),
+                  ),
+                ],
+              )
             else
-              Text(
-                left == 1
-                    ? '1 session left this week'
-                    : '$left sessions left this week',
-                style: TextStyle(
-                    fontSize: 12, color: Colors.white.withValues(alpha: 0.55)),
-              ),
+              Text(workoutsLeftLine(s, DateTime.now()), style: dim),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _skipRest(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final db = ref.read(dbProvider);
+    final event = await db.skipRestDay(dateStr);
+    if (event == null) return;
+    showUndoSnackBar(messenger,
+        message: 'Rest day skipped',
+        onUndo: () => db.deletePlanEvent(event.id));
   }
 
   Future<void> _deloadNow(BuildContext context, WidgetRef ref) async {
@@ -113,8 +138,9 @@ class _PhaseDone extends ConsumerWidget {
           child: Text(
             next == null
                 ? '${phase.name} is done, and with it the plan.'
-                : '${phase.name} is done. Move on, or add a week if it is '
-                    'still paying off?',
+                : '${phase.name} is done. Move on, or add another '
+                    '${cycleWord(active.plan.cycleDays)} if it is still '
+                    'paying off?',
             style: TextStyle(
                 fontSize: 12, color: Colors.white.withValues(alpha: 0.7)),
           ),
@@ -131,7 +157,7 @@ class _PhaseDone extends ConsumerWidget {
                   name: phase.name,
                   lengthPasses: phase.lengthPasses + 1,
                   deloadEvery: phase.deloadEvery),
-              child: const Text('Add a week'),
+              child: Text('Add a ${cycleWord(active.plan.cycleDays)}'),
             ),
           ],
         ),

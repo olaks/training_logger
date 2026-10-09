@@ -13,16 +13,18 @@ void main() {
   setUp(() => db = AppDatabase.forTesting(NativeDatabase.memory()));
   tearDown(() => db.close());
 
-  /// A plan with one phase rotating through two new workouts.
+  /// A plan with one phase rotating through two new workouts: a one-day
+  /// cycle holding both, as a plan from before microcycles migrated.
   Future<({int plan, int phase, int a, int b})> capacityPlan(
       {int passes = 10, int? deloadEvery}) async {
     final plan = await db.insertPlan('Season');
+    await db.setCycleDays(plan, 1);
     final phase = await db.insertPhase(plan, 'Capacity',
         lengthPasses: passes, deloadEvery: deloadEvery);
     final a = await db.insertWorkout('Strength A');
     final b = await db.insertWorkout('Board');
-    await db.addSessionToPhase(phase, a);
-    await db.addSessionToPhase(phase, b);
+    await db.addSessionToPhase(phase, a, day: 1);
+    await db.addSessionToPhase(phase, b, day: 1);
     return (plan: plan, phase: phase, a: a, b: b);
   }
 
@@ -409,7 +411,7 @@ void main() {
       final p = await capacityPlan();
       await db.finishSession(p.a, '2026-03-02');
       await db.finishSession(p.b, '2026-03-03');
-      await db.addSessionToPhase(p.phase, await db.insertWorkout('Legs'));
+      await db.addSessionToPhase(p.phase, await db.insertWorkout('Legs'), day: 1);
 
       expect((await db.activePlan())!.state.pass, 2);
     });
@@ -422,6 +424,84 @@ void main() {
       await db.removePhaseSession(sessions.first.id);
 
       expect((await db.activePlan())!.rotations[p.phase], [p.b]);
+    });
+  });
+
+  group('microcycles', () {
+    /// An 8-day cycle with A on day 1 and B on day 3, and day 1 trained
+    /// today: day 2 is a rest day, up tomorrow.
+    Future<({int plan, int a, int b, String today})> afterDayOne() async {
+      final plan = await db.insertPlan('Season');
+      final phase = await db.insertPhase(plan, 'Capacity', lengthPasses: 4);
+      final a = await db.insertWorkout('Climbing');
+      final b = await db.insertWorkout('Legs');
+      await db.addSessionToPhase(phase, a, day: 1);
+      await db.addSessionToPhase(phase, b, day: 3);
+      final today = dateStrFrom(DateTime.now());
+      await db.finishSession(a, today);
+      return (plan: plan, a: a, b: b, today: today);
+    }
+
+    test('a new plan has 8-day cycles', () async {
+      final p = await afterDayOne();
+
+      final state = (await db.activePlan())!.state;
+      expect(state.cycleDays, 8);
+      expect((state.day, state.isRestDay), (2, true));
+      expect(state.due?.workouts, [p.b]);
+    });
+
+    test('skipping the rest day puts the next day up today', () async {
+      final p = await afterDayOne();
+
+      expect(await db.skipRestDay(p.today), isNotNull);
+
+      final state = (await db.activePlan())!.state;
+      expect((state.day, state.isRestDay), (3, false));
+      expect(state.remaining, [p.b]);
+    });
+
+    test('training the next day on a rest day records it for that day',
+        () async {
+      final p = await afterDayOne();
+
+      final event = await db.finishSession(p.b, p.today);
+
+      expect((event?.pass, event?.day, event?.closesDay), (1, 3, true));
+      expect((await db.activePlan())!.state.day, 4);
+    });
+
+    test('a day off the end of the cycle refuses to be cut', () async {
+      final p = await afterDayOne();
+
+      expect(await db.setCycleDays(p.plan, 2), isFalse,
+          reason: 'Legs is on day 3');
+      expect(await db.setCycleDays(p.plan, 3), isTrue);
+      expect((await db.activePlan())!.plan.cycleDays, 3);
+    });
+
+    test('a shared plan from before microcycles comes in as a one-day cycle',
+        () async {
+      const json = """{
+        "version": 1,
+        "plan": {
+          "name": "Old season",
+          "workouts": [{"name": "A", "exercises": []},
+                       {"name": "B", "exercises": []}],
+          "assignments": [],
+          "phases": [{"name": "Capacity", "lengthPasses": 6,
+                      "sessions": ["A", "B"], "targets": []}]
+        }
+      }""";
+
+      final id = await db.importPlanFromJson(json);
+
+      final active = (await db.activePlan())!;
+      expect((active.plan.id, active.plan.cycleDays), (id, 1));
+      expect((await db.watchPlanSessions(id).first).map((s) => s.day),
+          [1, 1]);
+      expect(active.state.remaining, hasLength(2),
+          reason: 'its rotation is due as one, in any order');
     });
   });
 }

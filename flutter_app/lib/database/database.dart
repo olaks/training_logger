@@ -22,7 +22,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -187,6 +187,32 @@ class AppDatabase extends _$AppDatabase {
         ]) {
           await m.createIndex(index);
         }
+      }
+      if (from < 19) {
+        // Microcycles. A plan periodized before them becomes a one-day cycle
+        // holding its whole rotation, which is exactly the old rotation:
+        // every plan in progress replays to where it stood.
+        //
+        // An upgrade from before v18 has just created phase_sessions and
+        // plan_events above from today's definitions, which already have
+        // these columns; only a v18 database lacks them.
+        if (!await _hasColumn('plans', 'cycle_days')) {
+          await m.addColumn(plans, plans.cycleDays);
+        }
+        if (!await _hasColumn('phase_sessions', 'day')) {
+          await m.addColumn(phaseSessions, phaseSessions.day);
+        }
+        if (!await _hasColumn('plan_events', 'day')) {
+          await m.addColumn(planEvents, planEvents.day);
+        }
+        if (await _hasColumn('plan_events', 'closes_pass')) {
+          await m.renameColumn(planEvents, 'closes_pass', planEvents.closesDay);
+        }
+        await customStatement(
+            'UPDATE plans SET cycle_days = 1 WHERE EXISTS '
+            '(SELECT 1 FROM plan_phases ph WHERE ph.plan_id = plans.id)');
+        await customStatement(
+            'UPDATE plan_events SET day = 1 WHERE pass IS NOT NULL');
       }
     },
     beforeOpen: (details) async {
@@ -691,6 +717,7 @@ class AppDatabase extends _$AppDatabase {
       'exportedAt': DateTime.now().toIso8601String(),
       'plan': {
         'name':        plan.name,
+        'cycleDays':   plan.cycleDays,
         'workouts':    workoutsJson,
         'assignments': assignmentsJson,
         // A shared plan is a template: its phases travel, its log doesn't.
@@ -827,6 +854,7 @@ class AppDatabase extends _$AppDatabase {
           }
         }
         await _phasesFromJson(planId, phasesJson,
+            cycleDays: _cycleDaysFromJson(planJson),
             workoutId: (name) => workoutIdByName[name.toLowerCase()],
             categoryId: (name) => catIdByName[name.toLowerCase()]);
         final active = existingPlan == null || inProgress || existingPlan.active;
@@ -856,7 +884,10 @@ class AppDatabase extends _$AppDatabase {
     final ids = phases.map((p) => p.id);
     final sessions = await (select(phaseSessions)
           ..where((t) => t.phaseId.isIn(ids))
-          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.day),
+            (t) => OrderingTerm.asc(t.sortOrder),
+          ]))
         .get();
     final targets = await (select(phaseExerciseTargets)
           ..where((t) => t.phaseId.isIn(ids)))
@@ -875,7 +906,11 @@ class AppDatabase extends _$AppDatabase {
           if (phase.deloadEvery != null) 'deloadEvery': phase.deloadEvery,
           'sessions': [
             for (final s in sessions)
-              if (s.phaseId == phase.id) workoutNames[s.workoutId] ?? '',
+              if (s.phaseId == phase.id)
+                <String, dynamic>{
+                  'workout': workoutNames[s.workoutId] ?? '',
+                  'day': s.day,
+                },
           ],
           'targets': [
             for (final t in targets)
@@ -894,7 +929,8 @@ class AppDatabase extends _$AppDatabase {
                     if (e.workoutId != null)
                       'workout': workoutNames[e.workoutId] ?? '',
                     if (e.pass != null) 'pass': e.pass,
-                    if (e.closesPass) 'closesPass': true,
+                    if (e.day != null) 'day': e.day,
+                    if (e.closesDay) 'closesDay': true,
                     'date': e.dateStr,
                     'timestamp': e.timestamp,
                   },
@@ -916,8 +952,14 @@ class AppDatabase extends _$AppDatabase {
         rpe:  (json['targetRpe']  as num?)?.toInt(),
       );
 
+  /// The cycle length an export gives a plan. One written before microcycles
+  /// has none; its phases, if any, were rotations — one-day cycles.
+  static int _cycleDaysFromJson(Map<String, dynamic> planJson) =>
+      (planJson['cycleDays'] as num?)?.toInt() ??
+      ((planJson['phases'] as List? ?? const []).isEmpty ? 8 : 1);
+
   /// Adds [phasesJson] (as written by [_phasesToJson]) to [planId], which
-  /// has no phases. Sessions and targets naming a workout or exercise that
+  /// has no phases, and sets its [cycleDays]. Sessions and targets naming a workout or exercise that
   /// can't be found are dropped rather than failing the import; a log entry
   /// keeps its place without its workout, the way deleting one leaves it.
   ///
@@ -926,9 +968,12 @@ class AppDatabase extends _$AppDatabase {
   Future<void> _phasesFromJson(
     int planId,
     List<Map<String, dynamic>> phasesJson, {
+    required int cycleDays,
     required int? Function(String name) workoutId,
     required int? Function(String name) categoryId,
   }) async {
+    await (update(plans)..where((t) => t.id.equals(planId)))
+        .write(PlansCompanion(cycleDays: Value(cycleDays)));
     final sessions = <PhaseSessionsCompanion>[];
     final targets  = <PhaseExerciseTargetsCompanion>[];
     final events   = <PlanEventsCompanion>[];
@@ -942,12 +987,19 @@ class AppDatabase extends _$AppDatabase {
         sortOrder:    Value(i),
       ));
 
-      final names = (p['sessions'] as List? ?? []).cast<String>();
-      for (var j = 0; j < names.length; j++) {
-        final w = workoutId(names[j]);
+      // A session is {workout, day}; before microcycles it was the workout's
+      // name alone, on the one day of its cycle.
+      final entries = p['sessions'] as List? ?? const [];
+      for (var j = 0; j < entries.length; j++) {
+        final s = entries[j];
+        final w = workoutId(s is Map ? s['workout'] as String : s as String);
         if (w == null) continue;
         sessions.add(PhaseSessionsCompanion.insert(
-            phaseId: phaseId, workoutId: w, sortOrder: Value(j)));
+          phaseId:   phaseId,
+          workoutId: w,
+          day:       Value(s is Map ? (s['day'] as num?)?.toInt() ?? 1 : 1),
+          sortOrder: Value(j),
+        ));
       }
       for (final t in (p['targets'] as List? ?? []).cast<Map<String, dynamic>>()) {
         final c = categoryId(t['exercise'] as String);
@@ -972,7 +1024,12 @@ class AppDatabase extends _$AppDatabase {
           phaseId:    phaseId,
           workoutId:  Value(workoutName == null ? null : workoutId(workoutName)),
           pass:       Value((e['pass'] as num?)?.toInt()),
-          closesPass: Value(e['closesPass'] as bool? ?? false),
+          // A log from before microcycles stamped the pass alone: its day is
+          // the cycle's one day, and closing the pass closed that day.
+          day:        Value((e['day'] as num?)?.toInt() ??
+                          (e['pass'] == null ? null : 1)),
+          closesDay:  Value(e['closesDay'] as bool? ??
+                          e['closesPass'] as bool? ?? false),
           dateStr:    e['date'] as String,
           timestamp:  (e['timestamp'] as num).toInt(),
           kind:       kind,
@@ -1068,6 +1125,7 @@ class AppDatabase extends _$AppDatabase {
         <String, dynamic>{
           'name': p.name,
           if (!p.active) 'active': false,
+          'cycleDays': p.cycleDays,
           'assignments': (pwByPlan[p.id] ?? []).map((pw) => <String, dynamic>{
             'workout': workoutNameById[pw.workoutId] ?? '',
             if (pw.weekday != null) 'weekday': pw.weekday,
@@ -1299,6 +1357,7 @@ class AppDatabase extends _$AppDatabase {
             (p['phases'] as List?)?.cast<Map<String, dynamic>>() ?? [];
         if (phasesData.isNotEmpty && periodized.add(planId)) {
           await _phasesFromJson(planId, phasesData,
+              cycleDays: _cycleDaysFromJson(p),
               workoutId: (name) => workoutIdByName[name.toLowerCase()],
               categoryId: (name) => catIdByName[name.toLowerCase()]);
           runningPlanId = await _settleRunningPlan(
@@ -1824,28 +1883,50 @@ class AppDatabase extends _$AppDatabase {
     ));
   });
 
-  /// Appends [workoutId] to the end of a phase's rotation.
-  Future<int> addSessionToPhase(int phaseId, int workoutId) async {
+  /// Puts [workoutId] last on [day] of a phase's cycle.
+  Future<int> addSessionToPhase(int phaseId, int workoutId,
+      {required int day}) async {
     final next = await _nextSortOrder('phase_sessions', 'phase_id', phaseId);
     return into(phaseSessions).insert(PhaseSessionsCompanion.insert(
       phaseId: phaseId,
       workoutId: workoutId,
+      day: Value(day),
       sortOrder: Value(next),
     ));
   }
+
+  /// Sets how many days [planId]'s microcycles have. Refused (false) while a
+  /// phase has a workout on a day past the new end, which would otherwise
+  /// silently drop out of the plan.
+  Future<bool> setCycleDays(int planId, int days) => transaction(() async {
+        final beyond = await customSelect(
+          'SELECT 1 FROM phase_sessions ps '
+          'JOIN plan_phases ph ON ph.id = ps.phase_id '
+          'WHERE ph.plan_id = ? AND ps.day > ? LIMIT 1',
+          variables: [Variable.withInt(planId), Variable.withInt(days)],
+          readsFrom: {phaseSessions, planPhases},
+        ).getSingleOrNull();
+        if (beyond != null) return false;
+        await (update(plans)..where((t) => t.id.equals(planId)))
+            .write(PlansCompanion(cycleDays: Value(days)));
+        return true;
+      });
 
   Stream<List<PlanPhase>> watchPlanPhases(int planId) => (select(planPhases)
         ..where((t) => t.planId.equals(planId))
         ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
       .watch();
 
-  /// The rotations of every phase in [planId], each in rotation order.
+  /// The cycles of every phase in [planId], by day and in order within it.
   Stream<List<PhaseSession>> watchPlanSessions(int planId) =>
       (select(phaseSessions)
             ..where((t) => t.phaseId.isInQuery(selectOnly(planPhases)
               ..addColumns([planPhases.id])
               ..where(planPhases.planId.equals(planId))))
-            ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.day),
+              (t) => OrderingTerm.asc(t.sortOrder),
+            ]))
           .watch();
 
   /// Every event in [planId]'s log, in no particular order.
@@ -1953,25 +2034,17 @@ class AppDatabase extends _$AppDatabase {
           ..where((t) => t.planId.equals(plan.id)))
         .get();
     final sessions = await (select(phaseSessions)
-          ..where((t) => t.phaseId.isIn(phases.map((p) => p.id)))
-          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          ..where((t) => t.phaseId.isIn(phases.map((p) => p.id))))
         .get();
     final events = await (select(planEvents)
           ..where((t) => t.planId.equals(plan.id)))
         .get();
 
-    final rotations = <int, List<int>>{
-      for (final p in phases) p.id: [],
-    };
-    for (final s in sessions) {
-      rotations[s.phaseId]!.add(s.workoutId);
-    }
     return ActivePlan(
       plan: plan,
       phases: phases,
-      rotations: rotations,
+      cycles: cyclesOf(phases, sessions),
       events: events,
-      state: resolvePlan(phases, rotations, events),
     );
   }
 
@@ -1982,7 +2055,8 @@ class AppDatabase extends _$AppDatabase {
   static (PlanState?, List<int>) _planStateOn(
       ActivePlan active, String dateStr) {
     if (dateStr.compareTo(dateStrFrom(DateTime.now())) >= 0) {
-      return (active.state, active.state.remaining);
+      final state = active.state;
+      return (state, state.due?.workouts ?? const <int>[]);
     }
     final thatDay = [
       for (final e in active.events)
@@ -1995,7 +2069,8 @@ class AppDatabase extends _$AppDatabase {
         if (_byTime(e, first) < 0) e,
     ];
     return (
-      resolvePlan(active.phases, active.rotations, before),
+      resolvePlan(active.phases, active.cycles, before,
+          cycleDays: active.plan.cycleDays, today: dateFromStr(dateStr)),
       [for (final e in thatDay) e.workoutId!],
     );
   }
@@ -2010,16 +2085,27 @@ class AppDatabase extends _$AppDatabase {
         readsFrom: {plans, planPhases, phaseSessions, planEvents},
       ).watch().asyncMap((_) => activePlan());
 
-  /// Marks [workoutId] done in the active plan's current pass. Returns the
-  /// event (for undo), or null when the workout isn't due this pass — not in
-  /// the rotation, already done, or no periodized plan running.
+  /// Marks [workoutId] done on the active plan's current day — or, on a rest
+  /// day, on the next day with workouts, which skips the rest. Returns the
+  /// event (for undo), or null when the workout isn't due: not on that day,
+  /// already done, or no periodized plan running.
   Future<PlanEvent?> finishSession(int workoutId, String dateStr) =>
       _recordSession(PlanEventKind.done, workoutId, dateStr);
 
-  /// Lets the current pass finish without [workoutId]. Null as for
+  /// Lets the current day finish without [workoutId]. Null as for
   /// [finishSession].
   Future<PlanEvent?> skipSession(int workoutId, String dateStr) =>
       _recordSession(PlanEventKind.skip, workoutId, dateStr);
+
+  /// Ends today's rest day early, so the next day is up at once. Null when
+  /// the plan isn't on a rest day.
+  Future<PlanEvent?> skipRestDay(String dateStr) async {
+    final active = await activePlan();
+    final state = active?.state;
+    if (active == null || state == null || !state.isRestDay) return null;
+    return _insertEvent(active, PlanEventKind.skip, dateStr,
+        stamp: (pass: state.pass, day: state.day), closesDay: true);
+  }
 
   /// Makes the next pass that hasn't started a deload.
   Future<PlanEvent?> deloadNow(String dateStr) =>
@@ -2041,10 +2127,14 @@ class AppDatabase extends _$AppDatabase {
   Future<PlanEvent?> _recordSession(
       PlanEventKind kind, int workoutId, String dateStr) async {
     final active = await activePlan();
-    if (active == null || !active.state.remaining.contains(workoutId)) {
+    final due = active?.state.due;
+    if (active == null || due == null || !due.workouts.contains(workoutId)) {
       return null;
     }
-    return _insertEvent(active, kind, dateStr, workoutId: workoutId);
+    return _insertEvent(active, kind, dateStr,
+        workoutId: workoutId,
+        stamp: (pass: due.pass, day: due.day),
+        closesDay: due.workouts.length == 1);
   }
 
   Future<PlanEvent?> _recordEvent(PlanEventKind kind, String dateStr) async {
@@ -2053,17 +2143,18 @@ class AppDatabase extends _$AppDatabase {
     return _insertEvent(active, kind, dateStr);
   }
 
+  /// [stamp] is the day a done or skip is recorded for; [closesDay], that it
+  /// was the last thing due on it.
   Future<PlanEvent> _insertEvent(
       ActivePlan active, PlanEventKind kind, String dateStr,
-      {int? workoutId}) {
+      {int? workoutId, ({int pass, int day})? stamp, bool closesDay = false}) {
     return into(planEvents).insertReturning(PlanEventsCompanion.insert(
       planId: active.plan.id,
       phaseId: active.state.phase!.id,
       workoutId: Value(workoutId),
-      pass: Value(workoutId == null ? null : active.state.passesDone + 1),
-      closesPass: Value(workoutId != null &&
-          active.state.remaining.length == 1 &&
-          active.state.remaining.single == workoutId),
+      pass: Value(stamp?.pass),
+      day: Value(stamp?.day),
+      closesDay: Value(closesDay),
       dateStr: dateStr,
       timestamp: DateTime.now().millisecondsSinceEpoch,
       kind: kind,
@@ -2317,23 +2408,45 @@ class DeletedPhase {
   });
 }
 
-/// The active periodized plan, with what [resolvePlan] made of it.
+/// The active periodized plan, and what [resolvePlan] makes of it.
 class ActivePlan {
   final Plan plan;
   final List<PlanPhase> phases;
 
-  /// Phase id → workout ids, in rotation order.
-  final Map<int, List<int>> rotations;
+  /// Phase id → its microcycle.
+  final Map<int, Cycle> cycles;
   final List<PlanEvent> events;
-  final PlanState state;
 
-  const ActivePlan({
+  ActivePlan({
     required this.plan,
     required this.phases,
-    required this.rotations,
+    required this.cycles,
     required this.events,
-    required this.state,
   });
+
+  /// Phase id → every workout in its cycle, each once, in day order.
+  late final Map<int, List<int>> rotations = {
+    for (final MapEntry(:key, :value) in cycles.entries)
+      key: cycleWorkouts(value),
+  };
+
+  /// Where the plan stands today. Resolved when asked rather than when the
+  /// plan was read, because a rest day passes with the date even when
+  /// nothing is written.
+  PlanState get state {
+    final today = dateStrFrom(DateTime.now());
+    if (_stateDay != today) {
+      _state = stateOn(DateTime.now());
+      _stateDay = today;
+    }
+    return _state!;
+  }
+
+  PlanState? _state;
+  String? _stateDay;
+
+  PlanState stateOn(DateTime day) => resolvePlan(phases, cycles, events,
+      cycleDays: plan.cycleDays, today: day);
 
   /// The phase after the current one, or null if it is the last.
   PlanPhase? get nextPhase {
