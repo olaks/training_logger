@@ -19,3 +19,6 @@ flutter_app/build/
 flutter_app/.dart_tool/
 flutter_app/.flutter-plugins
 flutter_app/.flutter-plugins-dependencies
+
+# graphify knowledge-graph output (any directory)
+graphify-out/
