@@ -398,7 +398,11 @@ class _TrackTabState extends ConsumerState<TrackTab> {
                       letterSpacing: 1,
                       color: Colors.white.withValues(alpha: 0.4))),
             const SizedBox(height: 8),
-            ...todaySets.asMap().entries.map(
+            // Sends read newest first, so the boulder just logged sits right
+            // under the SAVE button; each keeps the number it was logged as.
+            ...(isClimbing
+                    ? todaySets.asMap().entries.toList().reversed
+                    : todaySets.asMap().entries).map(
               (e) => _LoggedSetRow(
                 set: e.value,
                 index: e.key,
